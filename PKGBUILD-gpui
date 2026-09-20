@@ -19,10 +19,10 @@ depends=(
     'libxkbcommon'
     'libxkbcommon-x11'
     'wayland'
-    'libGL'
+    'libglvnd'
     'mesa'
     'vulkan-icd-loader'
-    'alpm'
+    'pacman'
     'polkit'
 )
 makedepends=(
@@ -67,6 +67,7 @@ build() {
     # 2. Compiler le frontend GPUI (Rust)
     echo ">>> Compilation du frontend GPUI (Rust)..."
     cd Shelly.Ui.Gpui
+    export CARGO_TARGET_DIR="target"
     # Pointe SHELLY_BIN vers le CLI local compilé pour les tests éventuels
     SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
         cargo build --release --locked 2>/dev/null || \
@@ -76,24 +77,18 @@ build() {
 
 check() {
     cd "${srcdir}/${pkgname}/Shelly.Ui.Gpui"
+    export CARGO_TARGET_DIR="target"
     cargo test --release 2>/dev/null || true
 }
 
 package() {
     cd "${srcdir}/${pkgname}"
 
-    # Trouver l'emplacement du binaire compilé (respecte CARGO_TARGET_DIR si défini)
-    local _target_bin
-    _target_bin=$(find "Shelly.Ui.Gpui/target" "${CARGO_TARGET_DIR:-/nonexistent}" -name "shelly-gpui" -type f -perm -111 2>/dev/null | head -n1)
-    if [ -z "${_target_bin}" ] || [ ! -f "${_target_bin}" ]; then
-        _target_bin="Shelly.Ui.Gpui/target/release/shelly-gpui"
-    fi
-
     # ── Binaires ──────────────────────────────────────────────────────────────
     install -Dm755 "Shelly.Cli.Zig/zig-out/bin/shelly" \
         "${pkgdir}/usr/lib/shelly/shelly"
 
-    install -Dm755 "${_target_bin}" \
+    install -Dm755 "Shelly.Ui.Gpui/target/release/shelly-gpui" \
         "${pkgdir}/usr/lib/shelly/shelly-gpui-bin"
 
     # Wrapper /usr/bin/shelly-gpui qui positionne SHELLY_BIN et lance le binaire
