@@ -102,6 +102,18 @@ impl PackageWorkstationView {
         }
     }
 
+    pub fn set_reduce_motion(&mut self, reduce_motion: bool, cx: &mut Context<Self>) {
+        if self.reduce_motion != reduce_motion {
+            self.reduce_motion = reduce_motion;
+            cx.notify();
+        }
+    }
+
+    pub fn set_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
+        self.theme = theme;
+        cx.notify();
+    }
+
     pub fn on_pointer_up(&mut self, cx: &mut Context<Self>) {
         if self.drag_state.is_some() {
             self.drag_state = None;
@@ -140,13 +152,13 @@ impl Render for PackageWorkstationView {
             )
         };
 
-        let packages: Vec<UnifiedPackage> = {
+        let packages: std::sync::Arc<[UnifiedPackage]> = {
             let store = self.store.read(cx);
             match destination {
-                NavDestination::Browse => store.active_results.clone(),
-                NavDestination::Installed => store.installed_packages.clone(),
-                NavDestination::Updates => store.updates_packages.clone(),
-                _ => Vec::new(),
+                NavDestination::Browse => std::sync::Arc::clone(&store.active_results),
+                NavDestination::Installed => std::sync::Arc::clone(&store.installed_packages),
+                NavDestination::Updates => std::sync::Arc::clone(&store.updates_packages),
+                _ => std::sync::Arc::from([]),
             }
         };
 

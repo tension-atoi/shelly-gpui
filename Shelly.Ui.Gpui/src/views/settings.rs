@@ -307,39 +307,40 @@ impl SettingsView {
 
         root = root.child(ui_section);
 
-        // Bouton de sauvegarde explicite
+        // Bouton de sauvegarde explicite (inerte et non cliquable si propre / non modifié)
         let on_save = props.on_save;
-        let save_btn = div().flex().justify_end().mt_6().child(
+        let save_btn = div().flex().justify_end().mt_6().child(if is_dirty {
             div()
                 .id("save_settings_btn")
                 .px_6()
                 .py_2()
                 .rounded_md()
-                .bg(if is_dirty {
-                    theme.accent
-                } else {
-                    theme.bg_surface_active
-                })
+                .bg(theme.accent)
                 .border_1()
-                .border_color(if is_dirty { theme.accent } else { theme.border })
+                .border_color(theme.accent)
                 .text_sm()
                 .font_weight(FontWeight::BOLD)
-                .text_color(if is_dirty {
-                    theme.bg_app
-                } else {
-                    theme.text_secondary
-                })
+                .text_color(theme.bg_app)
                 .cursor_pointer()
                 .hover(move |s| s.bg(theme.accent_hover).text_color(theme.bg_app))
-                .child(if is_dirty {
-                    "Enregistrer les paramètres *"
-                } else {
-                    "Paramètres enregistrés"
-                })
+                .child("Enregistrer les paramètres *")
                 .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
                     on_save(window, cx);
-                }),
-        );
+                })
+        } else {
+            div()
+                .id("save_settings_btn")
+                .px_6()
+                .py_2()
+                .rounded_md()
+                .bg(theme.bg_surface_active)
+                .border_1()
+                .border_color(theme.border)
+                .text_sm()
+                .font_weight(FontWeight::BOLD)
+                .text_color(theme.text_muted)
+                .child("Paramètres enregistrés")
+        });
 
         root = root.child(save_btn);
         root
@@ -465,5 +466,34 @@ mod tests {
 
         settings.toggle_reduce_motion();
         assert!(!settings.draft_gpui.reduce_motion);
+    }
+
+    #[test]
+    fn test_settings_clean_state_and_draft_isolation() {
+        let initial_shelly = ShellySettings::default();
+        let initial_gpui = GpuiUiConfig::default();
+        let mut settings = SettingsView::new(initial_shelly.clone(), initial_gpui.clone());
+        assert!(!settings.is_dirty);
+
+        // Toggling reduce motion makes it dirty
+        settings.toggle_reduce_motion();
+        assert!(settings.is_dirty);
+        assert_ne!(
+            settings.draft_gpui.reduce_motion,
+            initial_gpui.reduce_motion
+        );
+
+        // Toggling back does not automatically clear is_dirty (draft was touched)
+        settings.toggle_reduce_motion();
+        assert!(settings.is_dirty);
+        assert_eq!(
+            settings.draft_gpui.reduce_motion,
+            initial_gpui.reduce_motion
+        );
+
+        // Only explicit save clears is_dirty
+        let result = settings.save_with(|_| Ok(()), |_| Ok(()));
+        assert!(result.is_ok());
+        assert!(!settings.is_dirty);
     }
 }

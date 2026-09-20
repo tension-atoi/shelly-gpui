@@ -2,6 +2,7 @@ use gpui::*;
 use std::time::{Duration, Instant};
 
 pub const TOAST_DISPLAY_DURATION: Duration = Duration::from_millis(3500);
+pub const TOAST_ANIMATION_DURATION: Duration = Duration::from_millis(120);
 pub const TOAST_MAX_VISIBLE: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +112,30 @@ impl ToastCenter {
         self.toasts.retain(|t| t.id != id);
     }
 
+    /// Ferme un toast avec animation de sortie (120ms) ou suppression immédiate sous reduce_motion
+    pub fn dismiss(&mut self, id: u64, reduce_motion: bool, cx: &mut Context<Self>) {
+        if reduce_motion {
+            self.remove_toast(id);
+            cx.notify();
+        } else if let Some(toast) = self.toasts.iter_mut().find(|t| t.id == id) {
+            if toast.lifecycle != ToastLifecycle::Exiting {
+                toast.lifecycle = ToastLifecycle::Exiting;
+                cx.notify();
+
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(TOAST_ANIMATION_DURATION)
+                        .await;
+                    let _ = this.update(cx, |center, cx| {
+                        center.remove_toast(id);
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+        }
+    }
+
     /// Poste un toast dans l'entité et planifie son cycle de vie via l'exécuteur GPUI
     pub fn post(
         &mut self,
@@ -138,7 +163,7 @@ impl ToastCenter {
             // Transition d'entrée -> Visible (120ms)
             cx.spawn(async move |this, cx| {
                 cx.background_executor()
-                    .timer(Duration::from_millis(120))
+                    .timer(TOAST_ANIMATION_DURATION)
                     .await;
                 let _ = this.update(cx, |center, cx| {
                     center.set_lifecycle(id, ToastLifecycle::Visible);
@@ -152,9 +177,9 @@ impl ToastCenter {
                     cx.notify();
                 });
 
-                // Transition de sortie (160ms) puis suppression
+                // Transition de sortie (120ms) puis suppression
                 cx.background_executor()
-                    .timer(Duration::from_millis(160))
+                    .timer(TOAST_ANIMATION_DURATION)
                     .await;
                 let _ = this.update(cx, |center, cx| {
                     center.remove_toast(id);
@@ -266,5 +291,15 @@ mod tests {
             "Under reduced motion, toast lifecycle must immediately snap to Visible"
         );
         assert_eq!(center.toasts[0].id, id);
+    }
+
+    #[test]
+    fn test_toast_dismiss_transitions() {
+        let mut center = ToastCenter::new();
+        let now = Instant::now();
+        let id = center.push_toast(ToastKind::Info, "T", "M", None, now, false);
+        assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Entering);
+        center.set_lifecycle(id, ToastLifecycle::Exiting);
+        assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Exiting);
     }
 }

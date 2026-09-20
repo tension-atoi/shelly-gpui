@@ -3,6 +3,7 @@ use crate::backend::models::{AlpmPackage, UnifiedPackage};
 use crate::state::session::{PackageKey, SourceFilter};
 use gpui::*;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Clé d'indexation pour le cache de recherche en session
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -32,9 +33,9 @@ pub enum PackageStoreEvent {
 /// Magasin d'état applicatif gérant les collections de paquets, caches et invalidations
 pub struct PackageStore {
     pub client: ShellyClient,
-    pub active_results: Vec<UnifiedPackage>,
-    pub installed_packages: Vec<UnifiedPackage>,
-    pub updates_packages: Vec<UnifiedPackage>,
+    pub active_results: Arc<[UnifiedPackage]>,
+    pub installed_packages: Arc<[UnifiedPackage]>,
+    pub updates_packages: Arc<[UnifiedPackage]>,
     pub updates_count: usize,
     pub detail_cache: HashMap<PackageKey, AlpmPackage>,
     pub search_cache: HashMap<SearchKey, Vec<UnifiedPackage>>,
@@ -48,9 +49,9 @@ impl PackageStore {
     pub fn new(client: ShellyClient) -> Self {
         Self {
             client,
-            active_results: Vec::new(),
-            installed_packages: Vec::new(),
-            updates_packages: Vec::new(),
+            active_results: Arc::from([]),
+            installed_packages: Arc::from([]),
+            updates_packages: Arc::from([]),
             updates_count: 0,
             detail_cache: HashMap::new(),
             search_cache: HashMap::new(),
@@ -89,7 +90,7 @@ impl PackageStore {
     ) {
         if generation >= self.in_flight_generation {
             self.in_flight_generation = generation;
-            self.active_results = results;
+            self.active_results = Arc::from(results);
             cx.emit(PackageStoreEvent::ResultsChanged);
             cx.notify();
         }
@@ -98,7 +99,7 @@ impl PackageStore {
     /// Définit la liste des paquets installés
     pub fn set_installed_packages(&mut self, pkgs: Vec<UnifiedPackage>, cx: &mut Context<Self>) {
         let count = pkgs.len();
-        self.installed_packages = pkgs;
+        self.installed_packages = Arc::from(pkgs);
         cx.emit(PackageStoreEvent::InstalledChanged(count));
         cx.notify();
     }
@@ -106,7 +107,7 @@ impl PackageStore {
     /// Définit la liste des mises à jour disponibles
     pub fn set_updates_packages(&mut self, pkgs: Vec<UnifiedPackage>, cx: &mut Context<Self>) {
         self.updates_count = pkgs.len();
-        self.updates_packages = pkgs;
+        self.updates_packages = Arc::from(pkgs);
         cx.emit(PackageStoreEvent::UpdatesChanged(self.updates_count));
         cx.notify();
     }
@@ -144,7 +145,7 @@ impl PackageStore {
 
     /// Invalide le cache des paquets installés
     pub fn invalidate_installed(&mut self, cx: &mut Context<Self>) {
-        self.installed_packages.clear();
+        self.installed_packages = Arc::from([]);
         self.search_cache.clear();
         cx.emit(PackageStoreEvent::InstalledChanged(0));
         cx.notify();
@@ -152,7 +153,7 @@ impl PackageStore {
 
     /// Invalide le cache des mises à jour
     pub fn invalidate_updates(&mut self, cx: &mut Context<Self>) {
-        self.updates_packages.clear();
+        self.updates_packages = Arc::from([]);
         self.updates_count = 0;
         cx.emit(PackageStoreEvent::UpdatesChanged(0));
         cx.notify();

@@ -8,6 +8,7 @@ pub type ToastActionHandler = Rc<dyn Fn(ToastAction, &mut Window, &mut App) + 's
 
 pub struct ToastOverlayProps<'a> {
     pub toasts: &'a [Toast],
+    pub reduce_motion: bool,
     pub theme: &'a Theme,
     pub on_dismiss: ToastDismissHandler,
     pub on_action: ToastActionHandler,
@@ -39,12 +40,6 @@ impl ToastOverlay {
                 ToastKind::Error => theme.danger,
             };
 
-            let opacity = match toast.lifecycle {
-                ToastLifecycle::Entering => 0.85,
-                ToastLifecycle::Visible => 1.0,
-                ToastLifecycle::Exiting => 0.0,
-            };
-
             let mut toast_el = div()
                 .id(ElementId::NamedInteger("toast-item".into(), toast.id))
                 .flex()
@@ -54,8 +49,7 @@ impl ToastOverlay {
                 .rounded_md()
                 .bg(theme.bg_surface)
                 .border_1()
-                .border_color(border_color)
-                .opacity(opacity);
+                .border_color(border_color);
 
             // En-tête du toast (Icône, Titre, Bouton fermeture)
             let header = div()
@@ -129,7 +123,33 @@ impl ToastOverlay {
                 toast_el = toast_el.child(action_btn);
             }
 
-            container = container.child(toast_el);
+            if props.reduce_motion {
+                container = container.child(toast_el.opacity(1.0));
+            } else {
+                match toast.lifecycle {
+                    ToastLifecycle::Entering => {
+                        let animated = toast_el.with_animation(
+                            ElementId::NamedInteger("toast-enter".into(), toast_id),
+                            Animation::new(std::time::Duration::from_millis(120))
+                                .with_easing(gpui::ease_out_quint()),
+                            |el, delta| el.opacity(delta),
+                        );
+                        container = container.child(animated);
+                    }
+                    ToastLifecycle::Visible => {
+                        container = container.child(toast_el.opacity(1.0));
+                    }
+                    ToastLifecycle::Exiting => {
+                        let animated = toast_el.with_animation(
+                            ElementId::NamedInteger("toast-exit".into(), toast_id),
+                            Animation::new(std::time::Duration::from_millis(120))
+                                .with_easing(gpui::ease_out_quint()),
+                            |el, delta| el.opacity(1.0 - delta),
+                        );
+                        container = container.child(animated);
+                    }
+                }
+            }
         }
 
         container

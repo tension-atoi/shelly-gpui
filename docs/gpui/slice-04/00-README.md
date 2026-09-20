@@ -12,26 +12,30 @@ It purposefully delivers:
    - Complete removal of render-time disk mutations (`save_*` calls during rendering).
    - Pure, in-memory draft configuration state (`SettingsDraft`) with dirty tracking (`is_dirty()`).
    - Explicit "Save Settings" dispatch with persistent storage via `ConfigManager` and immediate toast feedback.
+   - Clean save button is strictly inert (no cursor pointer, no hover style, no click listener).
 2. **Backward-Compatible Motion Configuration**:
    - `reduce_motion: bool` integrated into `GpuiUiConfig` with `#[serde(default)]` and robust JSON compatibility.
-   - Complete support for user preference toggling with instant motion suppression.
+   - Live synchronization across all open views immediately upon toggle.
 3. **Formalized Motion System & Primitives (`state::motion`)**:
    - Standardized motion token durations: `FAST = 120ms`, `STANDARD = 160ms`, `EMPHASIS = 220ms`.
-   - Continuous, interruptible, reversible transitions via `AnimatedScalar` with quintic (`ease_out_quint`) and sinusoidal (`ease_in_out`) easings.
-   - Discrete element transitions: 120ms opacity fade for destinations and inspector tabs (`with_animation`), with stationary hero header.
+   - Continuous, interruptible, reversible transitions via `AnimatedScalar` with quintic (`ease_out_quint`) and piecewise quadratic (`ease_in_out`) easings.
+   - Discrete element transitions: 120ms entrance opacity fade (`0.0 -> 1.0`) for destinations and inspector tabs (`with_animation`), with stationary hero header.
 4. **High-Frequency UI Invalidation Isolation**:
    - Encapsulation of list pane, splitter, and inspector into a dedicated `PackageWorkstationView`.
    - Pure pointer-delta drag math: `(start_width + (current_x - start_x)).clamp(280.0, 700.0)`.
-   - Splitter dragging and hover states strictly invalidate only the child workstation, protecting root `WorkspaceView` and sidebar from unnecessary layout reflows.
-5. **Continuous Sidebar & Console Drawer Disclosure**:
-   - Sidebar continuous width transition (56px ↔ 190px) with text clipping (`overflow_hidden()`) preventing label wrapping/bleed.
-   - Console log drawer continuous height transition (0px ↔ 220px) with clean scroll viewport clipping and interruptible reversal.
+   - Zero-copy package list rendering with `Arc<[UnifiedPackage]>` slices in `PackageStore`.
+   - Splitter dragging strictly invalidates only the child workstation, protecting root `WorkspaceView` and sidebar from layout reflows.
+5. **Continuous Frame Ownership Isolation**:
+   - `SidebarView` (`views/sidebar.rs`) encapsulates sidebar width transition (56px ↔ 190px) and drives its own `request_animation_frame()` loop exclusively during active motion.
+   - `OperationConsoleView` (`views/operation_console.rs`) encapsulates console drawer disclosure (0px ↔ 220px) and drives its own local frame loop.
+   - `WorkspaceView::render` performs **zero** continuous frame requests.
 6. **Bounded Toast Center & Feedback Overlay (`ToastCenter` & `ToastOverlay`)**:
    - Monotonic IDs, bounded maximum of 3 concurrent visible notifications.
    - Deterministic FIFO eviction policy strictly preserving high-severity error notifications.
-   - Self-contained 3.5-second decay timers with interactive actions (e.g. `OpenLogs`).
-7. **Strict Compiler Enforcement & Zero Deadcode**:
+   - 120ms entering fade-in, 3500ms visible steady state, and 120ms exiting fade-out via GPUI `with_animation`.
+7. **Strict Compiler Enforcement & Zero Scaffolding**:
    - Hard `#![deny(dead_code)]`, `#![deny(unused_variables)]`, `#![deny(unused_imports)]`, `#![deny(unused_must_use)]`.
+   - Zero test hooks or screenshot environment variables in production code.
    - 0 warnings, pinned GPUI 0.2.2 compatibility.
 
 ---
@@ -59,8 +63,10 @@ Functional upstream authority:
 ## Documentation Kit Map
 
 - [`00-README.md`](00-README.md): High-level slice scope, primitives, and repository baseline.
-- [`01-CURRENT-STATE.md`](01-CURRENT-STATE.md): Architectural snapshot and component inventory.
+- [`01-CURRENT-STATE.md`](01-CURRENT-STATE.md): Architectural snapshot and component inventory with continuous frame isolation.
 - [`02-WORK-CONTRACT.md`](02-WORK-CONTRACT.md): Detailed work contract commitments, constraints, and scope boundaries.
-- [`03-MOTION-SPECIFICATION.md`](03-MOTION-SPECIFICATION.md): Mathematical motion specification, easing curves, and timing policies.
-- [`04-ACCEPTANCE-MATRIX.md`](04-ACCEPTANCE-MATRIX.md): Verification matrix mapping specifications to evidence classes.
-- [`05-ACCEPTANCE-REPORT.md`](05-ACCEPTANCE-REPORT.md): Final acceptance report with empirical test telemetry and native Wayland runtime evidence.
+- [`03-MOTION-ARCHITECTURE.md`](03-MOTION-ARCHITECTURE.md): Mathematical motion architecture, piecewise quadratic easing curves, and duration tokens.
+- [`04-FEEDBACK-MODEL.md`](04-FEEDBACK-MODEL.md): Notification overlay system, GPUI animation lifecycle, search telemetry, and dirty-state feedback.
+- [`05-PERFORMANCE-EVIDENCE.md`](05-PERFORMANCE-EVIDENCE.md): Pointer drag isolation, zero-copy Arc slices, isolated RAF loops, and zero scaffolding audit.
+- [`06-ACCEPTANCE-MATRIX.md`](06-ACCEPTANCE-MATRIX.md): Comprehensive verification matrix mapping requirements to evidence classes and empirical proofs.
+- [`07-ACCEPTANCE-REPORT.md`](07-ACCEPTANCE-REPORT.md): Final acceptance signoff with 48 automated test results and native Wayland framebuffer evidence.

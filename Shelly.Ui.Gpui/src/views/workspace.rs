@@ -1,23 +1,22 @@
 use crate::backend::client::ShellyClient;
 use crate::backend::models::{ArchNewsItem, UnifiedPackage};
 use crate::backend::process::LogStreamEvent;
-use crate::components::log_drawer::{LogDrawer, LogDrawerProps};
-use crate::components::sidebar::{Sidebar, SidebarProps};
 use crate::components::toast_overlay::{ToastOverlay, ToastOverlayProps};
 use crate::config::{ConfigManager, GpuiUiConfig, ShellySettings};
 use crate::state::{
-    AnimatedScalar, AppSession, ConsoleEvent, ConsoleModel, InspectorTab, MotionDurations,
-    NavDestination, PackageKey, PackageSourceKind, PackageStore, PackageStoreEvent, SessionEvent,
-    SourceFilter, ToastAction, ToastCenter, ToastKind,
+    AppSession, ConsoleEvent, ConsoleModel, InspectorTab, MotionDurations, NavDestination,
+    PackageKey, PackageSourceKind, PackageStore, PackageStoreEvent, SessionEvent, SourceFilter,
+    ToastAction, ToastCenter, ToastKind,
 };
 use crate::theme::Theme;
 use crate::views::news::{NewsView, NewsViewProps};
+use crate::views::operation_console::OperationConsoleView;
 use crate::views::package_workstation::PackageWorkstationView;
 use crate::views::settings::{SettingsView, SettingsViewProps};
+use crate::views::sidebar::SidebarView;
 use gpui::ScrollStrategy;
 use gpui::*;
 use std::rc::Rc;
-use std::time::Instant;
 use tokio::sync::mpsc;
 
 enum MutationAction {
@@ -32,6 +31,8 @@ pub struct WorkspaceView {
     pub console: Entity<ConsoleModel>,
     pub toast_center: Entity<ToastCenter>,
     pub workstation: Entity<PackageWorkstationView>,
+    pub sidebar: Entity<SidebarView>,
+    pub console_view: Entity<OperationConsoleView>,
     pub settings: SettingsView,
     pub shelly_settings: ShellySettings,
     pub gpui_config: GpuiUiConfig,
@@ -42,10 +43,7 @@ pub struct WorkspaceView {
     pub news: Vec<ArchNewsItem>,
     pub is_loading_news: bool,
     pub is_mutating: bool,
-    pub sidebar_width_scalar: AnimatedScalar,
-    pub console_height_scalar: AnimatedScalar,
     pub motion_policy: crate::state::motion::MotionPolicy,
-    pub logs_copied_feedback: bool,
 }
 
 impl WorkspaceView {
@@ -93,18 +91,19 @@ impl WorkspaceView {
             )
         });
 
-        let sidebar_width_scalar = AnimatedScalar::new(if gpui_config.compact_view {
-            56.0
-        } else {
-            190.0
-        });
+        let sidebar =
+            cx.new(|cx| SidebarView::new(session.clone(), store.clone(), theme, reduce_motion, cx));
 
-        let mut console_height_scalar = AnimatedScalar::new(if gpui_config.log_drawer_open {
-            gpui_config.log_drawer_height
-        } else {
-            0.0
+        let console_view = cx.new(|cx| {
+            OperationConsoleView::new(
+                console.clone(),
+                toast_center.clone(),
+                gpui_config.log_drawer_height,
+                theme,
+                reduce_motion,
+                cx,
+            )
         });
-        console_height_scalar.easing = crate::state::motion::ease_in_out;
 
         let settings = SettingsView::new(shelly_settings.clone(), gpui_config.clone());
 
@@ -140,14 +139,7 @@ impl WorkspaceView {
                 }
                 cx.notify();
             }
-            SessionEvent::SidebarToggled(collapsed) => {
-                let target = if *collapsed { 56.0 } else { 190.0 };
-                this.sidebar_width_scalar.retarget(
-                    target,
-                    MotionDurations::STANDARD,
-                    Instant::now(),
-                    this.gpui_config.reduce_motion,
-                );
+            SessionEvent::SidebarToggled(_) => {
                 cx.notify();
             }
             SessionEvent::ViewModeChanged(_) => {
@@ -191,15 +183,6 @@ impl WorkspaceView {
                 cx.notify();
             }
             ConsoleEvent::OperationStarted(_) => {
-                if this.gpui_config.log_drawer_open {
-                    this.console.update(cx, |c, cx| c.set_open(true, cx));
-                    this.console_height_scalar.retarget(
-                        this.gpui_config.log_drawer_height,
-                        MotionDurations::STANDARD,
-                        Instant::now(),
-                        this.gpui_config.reduce_motion,
-                    );
-                }
                 cx.notify();
             }
             ConsoleEvent::OperationFinished(status) => {
@@ -216,31 +199,12 @@ impl WorkspaceView {
                     ),
                     _ => return,
                 };
-                if matches!(status, crate::state::OperationStatus::Error(_)) {
-                    this.console_height_scalar.retarget(
-                        this.gpui_config.log_drawer_height,
-                        MotionDurations::EMPHASIS,
-                        Instant::now(),
-                        this.gpui_config.reduce_motion,
-                    );
-                }
                 this.toast_center.update(cx, |tc, cx| {
                     tc.post(kind, title, msg, action, reduce, cx);
                 });
                 cx.notify();
             }
-            ConsoleEvent::Toggled(is_open) => {
-                let target = if *is_open {
-                    this.gpui_config.log_drawer_height
-                } else {
-                    0.0
-                };
-                this.console_height_scalar.retarget(
-                    target,
-                    MotionDurations::STANDARD,
-                    Instant::now(),
-                    this.gpui_config.reduce_motion,
-                );
+            ConsoleEvent::Toggled(_) => {
                 cx.notify();
             }
             ConsoleEvent::AutoScrollToggled(_) => {
@@ -252,12 +216,14 @@ impl WorkspaceView {
         })
         .detach();
 
-        let mut view = Self {
+        let view = Self {
             session,
             store,
             console,
             toast_center,
             workstation,
+            sidebar,
+            console_view,
             settings,
             shelly_settings,
             gpui_config: gpui_config.clone(),
@@ -268,10 +234,7 @@ impl WorkspaceView {
             news: Vec::new(),
             is_loading_news: false,
             is_mutating: false,
-            sidebar_width_scalar,
-            console_height_scalar,
             motion_policy: crate::state::motion::MotionPolicy::new(gpui_config.reduce_motion),
-            logs_copied_feedback: false,
         };
 
         // Liaison des mutations depuis PackageWorkstationView vers WorkspaceView
@@ -320,114 +283,6 @@ impl WorkspaceView {
         // Chargement initial asynchrone non-bloquant
         view.trigger_initial_load(cx);
 
-        // Configuration d'environnement pour automatisation / captures d'acceptation
-        if let Ok(dest) = std::env::var("SHELLY_NAV_DESTINATION") {
-            let parsed_dest = match dest.to_ascii_lowercase().as_str() {
-                "settings" => Some(NavDestination::Settings),
-                "updates" => Some(NavDestination::Updates),
-                "installed" => Some(NavDestination::Installed),
-                "news" => Some(NavDestination::News),
-                "browse" | "packages" => Some(NavDestination::Browse),
-                _ => None,
-            };
-            if let Some(d) = parsed_dest {
-                view.session.update(cx, |s, cx| s.set_destination(d, cx));
-            }
-        }
-
-        if let Ok(mode) = std::env::var("SHELLY_VIEW_MODE") {
-            if mode.eq_ignore_ascii_case("table") {
-                view.session.update(cx, |s, cx| {
-                    s.set_view_mode(crate::state::PackageViewMode::Table, cx)
-                });
-            } else if mode.eq_ignore_ascii_case("cards") {
-                view.session.update(cx, |s, cx| {
-                    s.set_view_mode(crate::state::PackageViewMode::Cards, cx)
-                });
-            }
-        }
-
-        if let Ok(tab) = std::env::var("SHELLY_INSPECTOR_TAB") {
-            let parsed_tab = match tab.to_ascii_lowercase().as_str() {
-                "dependencies" => Some(InspectorTab::Dependencies),
-                "files_build" | "build" | "files" => Some(InspectorTab::FilesBuild),
-                "overview" => Some(InspectorTab::Overview),
-                _ => None,
-            };
-            if let Some(t) = parsed_tab {
-                view.session.update(cx, |s, cx| s.set_inspector_tab(t, cx));
-            }
-        }
-
-        if let Ok(collapsed) = std::env::var("SHELLY_SIDEBAR_COLLAPSED") {
-            if collapsed == "1" || collapsed.eq_ignore_ascii_case("true") {
-                view.session
-                    .update(cx, |s, cx| s.set_sidebar_collapsed(true, cx));
-                view.sidebar_width_scalar.snap(56.0);
-            }
-        }
-
-        if let Ok(console_open) = std::env::var("SHELLY_CONSOLE_OPEN") {
-            if console_open == "1" || console_open.eq_ignore_ascii_case("true") {
-                view.console.update(cx, |c, cx| c.set_open(true, cx));
-                view.console_height_scalar.snap(220.0);
-            } else if console_open == "0" || console_open.eq_ignore_ascii_case("false") {
-                view.console.update(cx, |c, cx| c.set_open(false, cx));
-                view.console_height_scalar.snap(0.0);
-            }
-        }
-
-        if let Ok(width_str) = std::env::var("SHELLY_SPLITTER_WIDTH") {
-            if let Ok(w) = width_str.parse::<f32>() {
-                view.workstation.update(cx, |ws, _cx| {
-                    ws.list_pane_width = w.clamp(280.0, 700.0);
-                });
-            }
-        }
-
-        if let Ok(toast_kind) = std::env::var("SHELLY_TRIGGER_TOAST") {
-            let (kind, title, msg, action) = match toast_kind.to_ascii_lowercase().as_str() {
-                "error" => (
-                    ToastKind::Error,
-                    "Échec de l'opération",
-                    "Impossible de synchroniser le dépôt cible.",
-                    Some(ToastAction::OpenLogs),
-                ),
-                "warning" => (
-                    ToastKind::Warning,
-                    "Avertissement",
-                    "Le PKGBUILD n'a pu être vérifié en ligne.",
-                    None,
-                ),
-                "info" => (
-                    ToastKind::Info,
-                    "Information",
-                    "Journaux copiés dans le presse-papiers.",
-                    None,
-                ),
-                _ => (
-                    ToastKind::Success,
-                    "Opération réussie",
-                    "Paramètres enregistrés avec succès.",
-                    None,
-                ),
-            };
-            let reduce = view.gpui_config.reduce_motion;
-            view.toast_center.update(cx, |tc, cx| {
-                tc.post(kind, title, msg, action, reduce, cx);
-            });
-        }
-
-        if let Ok(query) = std::env::var("SHELLY_SEARCH_QUERY") {
-            if !query.trim().is_empty() {
-                view.search_input_buffer = query.clone();
-                view.session.update(cx, |s, _cx| {
-                    s.search_query = query.clone();
-                });
-                view.execute_search(query, cx);
-            }
-        }
-
         view
     }
 
@@ -460,21 +315,6 @@ impl WorkspaceView {
                     view.store.update(cx, |st, cx| {
                         st.set_installed_packages(unified, cx);
                     });
-                    if let Ok(target) = std::env::var("SHELLY_SELECT_PACKAGE") {
-                        if view.session.read(cx).selected_package_key.is_none() {
-                            let store = view.store.read(cx);
-                            if let Some(pkg) = store
-                                .installed_packages
-                                .iter()
-                                .find(|p| p.name.eq_ignore_ascii_case(&target))
-                            {
-                                let key = pkg.key();
-                                view.session.update(cx, |s, cx| {
-                                    s.select_package(Some(key), cx);
-                                });
-                            }
-                        }
-                    }
                 });
             }
         })
@@ -807,24 +647,12 @@ impl WorkspaceView {
             let _ = this.update(cx, |view, cx| {
                 let current_gen = view.session.read(cx).search_generation;
                 if current_gen == gen {
-                    let mut selected_key_to_set = None;
-                    if let Ok(target) = std::env::var("SHELLY_SELECT_PACKAGE") {
-                        if let Some(pkg) = results
-                            .iter()
-                            .find(|p| p.name.eq_ignore_ascii_case(&target))
-                        {
-                            selected_key_to_set = Some(pkg.key());
-                        }
-                    }
                     view.store.update(cx, |st, cx| {
                         st.cache_search(&query_clone, filter, results.clone());
                         st.set_active_results(results, gen, cx);
                     });
                     view.session.update(cx, |s, cx| {
                         s.set_searching(false, cx);
-                        if let Some(key) = selected_key_to_set {
-                            s.select_package(Some(key), cx);
-                        }
                     });
                     view.workstation.update(cx, |ws, _cx| {
                         ws.scroll_handle.scroll_to_item(0, ScrollStrategy::Top)
@@ -853,15 +681,6 @@ impl WorkspaceView {
         self.console.update(cx, |c, cx| {
             c.start_operation(action_name, cx);
         });
-
-        if self.gpui_config.log_drawer_open {
-            self.console_height_scalar.retarget(
-                self.gpui_config.log_drawer_height,
-                MotionDurations::STANDARD,
-                Instant::now(),
-                self.gpui_config.reduce_motion,
-            );
-        }
 
         let (tx, mut rx) = mpsc::unbounded_channel::<LogStreamEvent>();
         let client = self.store.read(cx).client.clone();
@@ -947,9 +766,20 @@ impl WorkspaceView {
                     crate::state::motion::MotionPolicy::new(self.gpui_config.reduce_motion);
                 let reduce = self.motion_policy.reduce_motion;
 
-                self.workstation.update(cx, |ws, _cx| {
-                    ws.theme = theme;
-                    ws.reduce_motion = reduce;
+                self.workstation.update(cx, |ws, cx| {
+                    ws.set_theme(theme, cx);
+                    ws.set_reduce_motion(reduce, cx);
+                });
+
+                self.sidebar.update(cx, |sb, cx| {
+                    sb.set_theme(theme, cx);
+                    sb.set_reduce_motion(reduce, cx);
+                });
+
+                self.console_view.update(cx, |cv, cx| {
+                    cv.set_theme(theme, cx);
+                    cv.set_reduce_motion(reduce, cx);
+                    cv.set_configured_height(self.gpui_config.log_drawer_height, cx);
                 });
 
                 self.toast_center.update(cx, |tc, cx| {
@@ -1051,44 +881,6 @@ impl WorkspaceView {
             _ => {}
         }
     }
-
-    /// Copie les logs de la console dans le presse-papiers
-    pub fn copy_logs_to_clipboard(&mut self, cx: &mut Context<Self>) {
-        let logs_text = self
-            .console
-            .read(cx)
-            .logs
-            .iter()
-            .map(|l| l.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        cx.write_to_clipboard(ClipboardItem::new_string(logs_text));
-        self.logs_copied_feedback = true;
-        let reduce = self.gpui_config.reduce_motion;
-        self.toast_center.update(cx, |tc, cx| {
-            tc.post(
-                ToastKind::Info,
-                "Journaux copiés",
-                "Le contenu de la console a été copié dans le presse-papiers.",
-                None,
-                reduce,
-                cx,
-            );
-        });
-        cx.notify();
-
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_secs(2))
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                view.logs_copied_feedback = false;
-                cx.notify();
-            });
-        })
-        .detach();
-    }
 }
 
 impl Render for WorkspaceView {
@@ -1096,54 +888,13 @@ impl Render for WorkspaceView {
         let theme = self.theme;
         let entity = cx.entity().clone();
 
-        // ── Animation continue de la barre latérale et du tiroir de logs ─────
-        let sidebar_animating = self.sidebar_width_scalar.update(Instant::now());
-        let console_animating = self.console_height_scalar.update(Instant::now());
-        if sidebar_animating
-            || console_animating
-            || self.sidebar_width_scalar.is_active()
-            || self.console_height_scalar.is_active()
-        {
-            _window.request_animation_frame();
-        }
-
-        let current_sidebar_width = self.sidebar_width_scalar.current;
-        let current_console_height = self.console_height_scalar.current;
-
         // ── Lecture de l'état de session ────────────────────────────────────
-        let (destination, is_sidebar_collapsed, destination_epoch) = {
+        let (destination, destination_epoch) = {
             let session = self.session.read(cx);
-            (
-                session.destination,
-                session.sidebar_collapsed,
-                session.destination_epoch,
-            )
+            (session.destination, session.destination_epoch)
         };
 
-        let updates_count = self.store.read(cx).updates_count;
-
-        // ── 1. Barre latérale de navigation ─────────────────────────────────
-        let entity_dest = entity.clone();
-        let entity_toggle = entity.clone();
-        let nav_sidebar = Sidebar::render(SidebarProps {
-            active_destination: destination,
-            updates_count,
-            is_collapsed: is_sidebar_collapsed,
-            current_width: current_sidebar_width,
-            theme: &theme,
-            on_select_destination: Rc::new(move |dest, _w, cx| {
-                entity_dest.update(cx, |view, cx| {
-                    view.session.update(cx, |s, cx| s.set_destination(dest, cx));
-                });
-            }),
-            on_toggle_collapse: Rc::new(move |_w, cx| {
-                entity_toggle.update(cx, |view, cx| {
-                    view.session.update(cx, |s, cx| s.toggle_sidebar(cx));
-                });
-            }),
-        });
-
-        // ── 2. Contenu principal selon la destination ───────────────────────
+        // ── 1. Contenu principal selon la destination ───────────────────────
         let main_content = match destination {
             NavDestination::Browse | NavDestination::Installed | NavDestination::Updates => {
                 div().size_full().child(self.workstation.clone())
@@ -1231,6 +982,17 @@ impl Render for WorkspaceView {
                             Rc::new(move |_w, cx| {
                                 e.update(cx, |view, cx| {
                                     view.settings.toggle_dark_theme();
+                                    let theme = if view.settings.draft_gpui.dark_theme {
+                                        Theme::dark()
+                                    } else {
+                                        Theme::light()
+                                    };
+                                    view.theme = theme;
+                                    view.workstation
+                                        .update(cx, |ws, cx| ws.set_theme(theme, cx));
+                                    view.sidebar.update(cx, |sb, cx| sb.set_theme(theme, cx));
+                                    view.console_view
+                                        .update(cx, |cv, cx| cv.set_theme(theme, cx));
                                     cx.notify();
                                 })
                             })
@@ -1240,6 +1002,9 @@ impl Render for WorkspaceView {
                             Rc::new(move |_w, cx| {
                                 e.update(cx, |view, cx| {
                                     view.settings.toggle_compact_view();
+                                    let compact = view.settings.draft_gpui.compact_view;
+                                    view.session
+                                        .update(cx, |s, cx| s.set_sidebar_collapsed(compact, cx));
                                     cx.notify();
                                 })
                             })
@@ -1258,6 +1023,16 @@ impl Render for WorkspaceView {
                             Rc::new(move |_w, cx| {
                                 e.update(cx, |view, cx| {
                                     view.settings.toggle_reduce_motion();
+                                    let live_reduce = view.settings.draft_gpui.reduce_motion;
+                                    view.gpui_config.reduce_motion = live_reduce;
+                                    view.motion_policy =
+                                        crate::state::motion::MotionPolicy::new(live_reduce);
+                                    view.workstation
+                                        .update(cx, |ws, cx| ws.set_reduce_motion(live_reduce, cx));
+                                    view.sidebar
+                                        .update(cx, |sb, cx| sb.set_reduce_motion(live_reduce, cx));
+                                    view.console_view
+                                        .update(cx, |cv, cx| cv.set_reduce_motion(live_reduce, cx));
                                     cx.notify();
                                 })
                             })
@@ -1295,55 +1070,20 @@ impl Render for WorkspaceView {
                 .into_any_element()
         };
 
-        // ── 3. Tiroir de console d'opérations avec transition continue ───────
-        let entity_log_toggle = entity.clone();
-        let entity_log_copy = entity.clone();
-        let entity_log_clear = entity.clone();
-        let entity_log_auto = entity.clone();
-
-        let console_read = self.console.read(cx);
-        let log_drawer = LogDrawer::render(LogDrawerProps {
-            logs: &console_read.logs,
-            status: &console_read.status,
-            is_open: console_read.is_open,
-            auto_scroll: console_read.auto_scroll,
-            height: current_console_height,
-            copied_feedback: self.logs_copied_feedback,
-            scroll_handle: &console_read.scroll_handle,
-            theme: &theme,
-            on_toggle: Some(Rc::new(move |_e, _w, cx| {
-                entity_log_toggle.update(cx, |view, cx| {
-                    view.console.update(cx, |c, cx| c.toggle_drawer(cx));
-                });
-            })),
-            on_copy: Some(Rc::new(move |_e, _w, cx| {
-                entity_log_copy.update(cx, |view, cx| view.copy_logs_to_clipboard(cx));
-            })),
-            on_clear: Some(Rc::new(move |_e, _w, cx| {
-                entity_log_clear.update(cx, |view, cx| {
-                    view.console.update(cx, |c, cx| c.clear_logs(cx))
-                });
-            })),
-            on_toggle_autoscroll: Some(Rc::new(move |_e, _w, cx| {
-                entity_log_auto.update(cx, |view, cx| {
-                    view.console.update(cx, |c, cx| c.toggle_auto_scroll(cx))
-                });
-            })),
-        });
-
-        // ── 4. Overlay de notifications (Toasts) ────────────────────────────
+        // ── 2. Overlay de notifications (Toasts) ────────────────────────────
         let toasts = self.toast_center.read(cx).toasts.clone();
         let entity_toast_dismiss = entity.clone();
         let entity_toast_action = entity.clone();
 
         let toast_overlay = ToastOverlay::render(ToastOverlayProps {
             toasts: &toasts,
+            reduce_motion,
             theme: &theme,
             on_dismiss: Rc::new(move |id, _w, cx| {
                 entity_toast_dismiss.update(cx, |view, cx| {
+                    let reduce = view.gpui_config.reduce_motion;
                     view.toast_center.update(cx, |tc, cx| {
-                        tc.remove_toast(id);
-                        cx.notify();
+                        tc.dismiss(id, reduce, cx);
                     });
                 });
             }),
@@ -1351,19 +1091,12 @@ impl Render for WorkspaceView {
                 entity_toast_action.update(cx, |view, cx| match action {
                     ToastAction::OpenLogs => {
                         view.console.update(cx, |c, cx| c.set_open(true, cx));
-                        view.console_height_scalar.retarget(
-                            view.gpui_config.log_drawer_height,
-                            MotionDurations::STANDARD,
-                            Instant::now(),
-                            view.gpui_config.reduce_motion,
-                        );
-                        cx.notify();
                     }
                 });
             }),
         });
 
-        // ── 5. Assemblage final du shell ─────────────────────────────────────
+        // ── 3. Assemblage final du shell ─────────────────────────────────────
         let entity_key = entity.clone();
 
         div()
@@ -1380,7 +1113,7 @@ impl Render for WorkspaceView {
                     view.on_key_down(event, window, cx);
                 });
             })
-            .child(nav_sidebar)
+            .child(self.sidebar.clone())
             .child(
                 div()
                     .flex_1()
@@ -1395,7 +1128,7 @@ impl Render for WorkspaceView {
                             .overflow_hidden()
                             .child(destination_element),
                     )
-                    .child(log_drawer),
+                    .child(self.console_view.clone()),
             )
             .child(toast_overlay)
     }
