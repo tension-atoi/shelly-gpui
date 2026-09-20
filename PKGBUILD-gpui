@@ -49,49 +49,45 @@ pkgver() {
 }
 
 prepare() {
-    cd "${srcdir}/${pkgname}"
-    # Pré-charge les dépendances Cargo sans accès réseau à l'étape build
-    cd Shelly.Ui.Gpui
-    cargo fetch --locked 2>/dev/null || cargo fetch
+    cd "${srcdir}/${pkgname}/Shelly.Ui.Gpui"
+    cargo fetch --locked
 }
 
 build() {
     cd "${srcdir}/${pkgname}"
 
-    # 1. Compiler le CLI Zig (backend Shelly)
-    echo ">>> Compilation du backend Shelly CLI (Zig)..."
+    # 1. Compile Shelly CLI backend (Zig)
+    echo ">>> Compiling Shelly CLI backend (Zig)..."
     cd Shelly.Cli.Zig
     zig build -Doptimize=ReleaseSafe
     cd ..
 
-    # 2. Compiler le frontend GPUI (Rust)
-    echo ">>> Compilation du frontend GPUI (Rust)..."
+    # 2. Compile Shelly GPUI frontend (Rust)
+    echo ">>> Compiling Shelly GPUI frontend (Rust)..."
     cd Shelly.Ui.Gpui
     export CARGO_TARGET_DIR="target"
-    # Pointe SHELLY_BIN vers le CLI local compilé pour les tests éventuels
     SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
-        cargo build --release --locked 2>/dev/null || \
-    SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
-        cargo build --release
+        cargo build --release --locked
 }
 
 check() {
     cd "${srcdir}/${pkgname}/Shelly.Ui.Gpui"
     export CARGO_TARGET_DIR="target"
-    cargo test --release
+    SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
+        cargo test --release --locked
 }
 
 package() {
     cd "${srcdir}/${pkgname}"
 
-    # ── Binaires ──────────────────────────────────────────────────────────────
+    # ── Binaries ─────────────────────────────────────────────────────────────
     install -Dm755 "Shelly.Cli.Zig/zig-out/bin/shelly" \
         "${pkgdir}/usr/lib/shelly/shelly"
 
     install -Dm755 "Shelly.Ui.Gpui/target/release/shelly-gpui" \
         "${pkgdir}/usr/lib/shelly/shelly-gpui-bin"
 
-    # Wrapper /usr/bin/shelly-gpui qui positionne SHELLY_BIN et lance le binaire
+    # Wrapper /usr/bin/shelly-gpui setting SHELLY_BIN and executing binary
     install -dm755 "${pkgdir}/usr/bin"
     cat > "${pkgdir}/usr/bin/shelly-gpui" << 'EOF'
 #!/bin/sh
@@ -99,22 +95,21 @@ SHELLY_BIN=/usr/lib/shelly/shelly exec /usr/lib/shelly/shelly-gpui-bin "$@"
 EOF
     chmod 755 "${pkgdir}/usr/bin/shelly-gpui"
 
-    # ── Fichier .desktop ──────────────────────────────────────────────────────
+    # ── Desktop Entry ────────────────────────────────────────────────────────
     install -Dm644 "Shelly.Ui.Gpui/assets/com.shellyorg.shelly-gpui.desktop" \
         "${pkgdir}/usr/share/applications/com.shellyorg.shelly-gpui.desktop"
 
-    # ── Icône SVG ─────────────────────────────────────────────────────────────
+    # ── SVG Icon ─────────────────────────────────────────────────────────────
     install -Dm644 "Shelly.Ui.Gpui/assets/shelly-gpui.svg" \
         "${pkgdir}/usr/share/icons/hicolor/scalable/apps/shelly-gpui.svg"
 
-    # ── Licence ───────────────────────────────────────────────────────────────
+    # ── License ──────────────────────────────────────────────────────────────
     if [ -f LICENSE ]; then
         install -Dm644 LICENSE \
             "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
     fi
 
-    # ── Règle Polkit ─────────────────────────────────────────────────────────
+    # ── Polkit Policy ────────────────────────────────────────────────────────
     install -Dm644 "Shelly.Ui.Gpui/assets/com.shellyorg.shelly-gpui.policy" \
-        "${pkgdir}/usr/share/polkit-1/actions/com.shellyorg.shelly-gpui.policy" \
-        2>/dev/null || true
+        "${pkgdir}/usr/share/polkit-1/actions/com.shellyorg.shelly-gpui.policy"
 }

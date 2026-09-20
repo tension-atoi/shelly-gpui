@@ -4,7 +4,7 @@ pub mod overview;
 
 use crate::backend::models::{AlpmPackage, UnifiedPackage};
 use crate::components::inspector_header::{
-    InspectorHeader, InspectorHeaderProps, MouseClickHandler, TabSelectHandler, WindowActionHandler,
+    InspectorHeader, InspectorHeaderProps, TabSelectHandler, WindowActionHandler,
 };
 use crate::components::semantic_value::StringActionHandler;
 use crate::state::{InspectorTab, PackageCapabilities};
@@ -24,8 +24,8 @@ pub struct PackageInspectorProps<'a> {
     pub is_busy: bool,
     pub copy_feedback: bool,
     pub on_select_tab: TabSelectHandler,
-    pub on_install: Option<MouseClickHandler>,
-    pub on_remove: Option<MouseClickHandler>,
+    pub on_install: Option<WindowActionHandler>,
+    pub on_remove: Option<WindowActionHandler>,
     pub on_copy_install_cmd: Option<WindowActionHandler>,
     pub on_copy_pkgbuild: Option<WindowActionHandler>,
     pub on_navigate_package: Option<StringActionHandler>,

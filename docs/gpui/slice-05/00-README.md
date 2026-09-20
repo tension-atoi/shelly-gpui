@@ -48,12 +48,12 @@ This slice builds upon the Slice-04 interaction and motion layer, executing a co
 
 7. **Desktop Integration & Strict Packaging (`assets/`, `PKGBUILD-gpui`)**:
    - Standards-compliant `.desktop` file with English default strings and bilingual French translations.
-   - Strict `PKGBUILD-gpui` with `cargo test --release` enforced without error suppression (`|| true` removed).
+   - Strict `PKGBUILD-gpui` with `cargo fetch --locked`, `cargo build --release --locked`, and `cargo test --release --locked` enforced without error suppression or fallback chains.
    - Interactive news feed linking directly to Arch Linux official announcements via `cx.open_url`.
 
 8. **Strict Compiler Enforcement & Zero-Deadcode Architecture**:
    - `#![deny(dead_code)]`, `#![deny(unused_variables)]`, `#![deny(unused_imports)]`, `#![deny(unused_must_use)]` strictly enforced.
-   - 65 unit tests passing with zero failures and zero linter warnings under `cargo clippy -- -D warnings`.
+   - 70 unit tests passing with zero failures and zero linter warnings under `cargo clippy -- -D warnings`.
 
 ---
 

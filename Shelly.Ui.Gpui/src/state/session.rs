@@ -221,9 +221,14 @@ impl EventEmitter<SessionEvent> for AppSession {}
 
 impl AppSession {
     pub fn new() -> Self {
+        Self::with_initial_tab(0)
+    }
+
+    pub fn with_initial_tab(tab_idx: usize) -> Self {
+        let initial_dest = NavDestination::from_config_index(tab_idx);
         Self {
-            destination: NavDestination::Browse,
-            last_workspace_destination: NavDestination::Browse,
+            destination: initial_dest,
+            last_workspace_destination: initial_dest,
             source_filter: SourceFilter::All,
             search_query: String::new(),
             selected_package_key: None,
@@ -433,6 +438,27 @@ mod tests {
             session.last_workspace_destination,
             NavDestination::Installed
         );
+        assert_eq!(
+            session.last_workspace_destination.workspace_config_index(),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_startup_session_preserves_last_workspace_destination_across_settings() {
+        let mut session = AppSession::with_initial_tab(1); // 1 = Installed
+        assert_eq!(session.destination, NavDestination::Installed);
+        assert_eq!(
+            session.last_workspace_destination,
+            NavDestination::Installed
+        );
+        assert_eq!(
+            session.last_workspace_destination.workspace_config_index(),
+            Some(1)
+        );
+
+        // Transition to Settings preserves last_workspace_destination = Installed
+        session.destination = NavDestination::Settings;
         assert_eq!(
             session.last_workspace_destination.workspace_config_index(),
             Some(1)

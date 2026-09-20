@@ -31,8 +31,24 @@ impl ViewModeSwitcher {
         for mode in modes {
             let is_active = props.current_mode == mode;
             let on_select = props.on_select_mode.clone();
+            let on_select_key = props.on_select_mode.clone();
+            let element_id = match mode {
+                PackageViewMode::Cards => "view_mode_cards",
+                PackageViewMode::Table => "view_mode_table",
+            };
+            let focus_border = theme.border_focus;
             container = container.child(
                 div()
+                    .id(element_id)
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
+                    .on_key_down(move |event, window, cx| {
+                        let key = event.keystroke.key.as_str();
+                        if key == "enter" || key == "space" {
+                            on_select_key(mode, window, cx);
+                        }
+                    })
                     .flex()
                     .items_center()
                     .gap(px(4.0))

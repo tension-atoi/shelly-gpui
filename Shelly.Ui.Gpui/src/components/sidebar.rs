@@ -21,6 +21,27 @@ pub struct SidebarProps<'a> {
 
 pub struct Sidebar;
 
+struct DestinationTooltip {
+    label: &'static str,
+    theme: Theme,
+}
+
+impl Render for DestinationTooltip {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .bg(self.theme.bg_surface)
+            .text_color(self.theme.text_primary)
+            .border_1()
+            .border_color(self.theme.border)
+            .rounded_md()
+            .px(px(8.0))
+            .py(px(4.0))
+            .text_xs()
+            .shadow_md()
+            .child(self.label)
+    }
+}
+
 impl Sidebar {
     fn render_nav_item(
         dest: NavDestination,
@@ -34,7 +55,28 @@ impl Sidebar {
         let icon = dest.icon();
         let label = dest.label();
 
+        let element_id = match dest {
+            NavDestination::Browse => "nav_dest_browse",
+            NavDestination::Installed => "nav_dest_installed",
+            NavDestination::Updates => "nav_dest_updates",
+            NavDestination::News => "nav_dest_news",
+            NavDestination::Settings => "nav_dest_settings",
+        };
+
+        let focus_border = theme.border_focus;
+        let on_select_key = on_select.clone();
+
         let base = div()
+            .id(element_id)
+            .focusable()
+            .tab_stop(true)
+            .focus(move |s| s.border_1().border_color(focus_border))
+            .on_key_down(move |event, window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    on_select_key(dest, window, cx);
+                }
+            })
             .flex()
             .items_center()
             .gap(px(10.0))
@@ -79,6 +121,11 @@ impl Sidebar {
             if badge_count > 0 {
                 item = item.child(StatusPill::badge_count(badge_count, theme));
             }
+        } else {
+            let t = *theme;
+            item = item.tooltip(move |_window, cx| {
+                cx.new(|_cx| DestinationTooltip { label, theme: t }).into()
+            });
         }
 
         item.on_mouse_down(MouseButton::Left, move |_e, window, cx| {
@@ -120,13 +167,27 @@ impl Sidebar {
 
         let collapse_toggle = {
             let on_toggle = props.on_toggle_collapse.clone();
+            let on_toggle_key = props.on_toggle_collapse.clone();
+            let focus_border = theme.border_focus;
             let hover_bg = theme.bg_surface_hover;
             let icon = if is_collapsed {
                 AppIcon::Expand
             } else {
                 AppIcon::Collapse
             };
+            let toggle_label = if is_collapsed { "Expand" } else { "Collapse" };
+            let t = *theme;
             div()
+                .id("sidebar_collapse_toggle")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(focus_border))
+                .on_key_down(move |event, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "enter" || key == "space" {
+                        on_toggle_key(window, cx);
+                    }
+                })
                 .flex()
                 .items_center()
                 .justify_center()
@@ -146,6 +207,15 @@ impl Sidebar {
                         .text_color(theme.text_muted),
                 )
                 .when(!is_collapsed, |el| el.child("Collapse"))
+                .when(is_collapsed, |el| {
+                    el.tooltip(move |_window, cx| {
+                        cx.new(|_cx| DestinationTooltip {
+                            label: toggle_label,
+                            theme: t,
+                        })
+                        .into()
+                    })
+                })
                 .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
                     on_toggle(window, cx);
                 })

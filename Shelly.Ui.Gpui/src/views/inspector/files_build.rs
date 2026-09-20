@@ -323,11 +323,20 @@ impl FilesBuildView {
                     .border_color(theme.border)
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
                             .font_weight(FontWeight::BOLD)
                             .text_sm()
                             .text_color(theme.text_primary)
                             .mb_1()
-                            .child("ℹ️ Detailed File Tree Listing"),
+                            .child(
+                                svg()
+                                    .path(AppIcon::Info.path())
+                                    .size_3_5()
+                                    .text_color(theme.accent),
+                            )
+                            .child("Detailed File Tree Listing"),
                     )
                     .child(
                         div()

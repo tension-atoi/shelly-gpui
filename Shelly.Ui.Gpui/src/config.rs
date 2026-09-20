@@ -3,7 +3,15 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-/// Paramètres généraux Shelly partagés (~/.config/shelly/settings.json)
+/// Paramètres frontend Shelly (~/.config/shelly/settings.json)
+///
+/// NOTE D'AUTORITÉ ARCHITECTURALE :
+/// `~/.config/shelly/settings.json` est le fichier de configuration propre au frontend GPUI.
+/// Le backend CLI natif en Zig lit quant à lui `~/.config/shelly/config.json` (via `runtime/xdg.zig`).
+/// Les champs `shelly_icons_enabled`, `shelly_search_enabled` et `no_confirm` sont des champs
+/// de compatibilité conservés pour la fidélité du schéma Serde avec les versions antérieures,
+/// tandis que le frontend GPUI applique ses options de mutation (`--ui-mode`, `--no-confirm`,
+/// `--cascade`, `--remove-config`) via les arguments passés au binaire CLI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ShellySettings {

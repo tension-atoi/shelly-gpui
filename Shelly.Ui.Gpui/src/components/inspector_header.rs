@@ -7,7 +7,6 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use std::rc::Rc;
 
-pub type MouseClickHandler = Rc<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>;
 pub type TabSelectHandler = Rc<dyn Fn(InspectorTab, &mut Window, &mut App) + 'static>;
 pub type WindowActionHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 
@@ -19,8 +18,8 @@ pub struct InspectorHeaderProps<'a> {
     pub is_busy: bool,
     pub copy_feedback: bool,
     pub on_select_tab: TabSelectHandler,
-    pub on_install: Option<MouseClickHandler>,
-    pub on_remove: Option<MouseClickHandler>,
+    pub on_install: Option<WindowActionHandler>,
+    pub on_remove: Option<WindowActionHandler>,
     pub on_copy_install_cmd: Option<WindowActionHandler>,
 }
 
@@ -35,8 +34,25 @@ impl InspectorHeader {
     ) -> impl IntoElement {
         let is_active = tab == active_tab;
         let hover_text = theme.text_primary;
+        let element_id = match tab {
+            InspectorTab::Overview => "inspector_tab_overview",
+            InspectorTab::Dependencies => "inspector_tab_dependencies",
+            InspectorTab::FilesBuild => "inspector_tab_files_build",
+        };
+        let focus_border = theme.border_focus;
+        let on_select_key = on_select.clone();
 
         div()
+            .id(element_id)
+            .focusable()
+            .tab_stop(true)
+            .focus(move |s| s.border_1().border_color(focus_border))
+            .on_key_down(move |event, window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    on_select_key(tab, window, cx);
+                }
+            })
             .flex()
             .items_center()
             .gap(px(6.0))
@@ -150,7 +166,13 @@ impl InspectorHeader {
 
         if caps.can_remove {
             let danger_hover = theme.danger_hover;
-            let remove_btn = div()
+            let focus_border = theme.border_focus;
+            let on_remove_key = props.on_remove.clone();
+            let mut remove_btn = div()
+                .id("inspector_remove_btn")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(focus_border))
                 .px_4()
                 .py_1p5()
                 .rounded_md()
@@ -170,19 +192,30 @@ impl InspectorHeader {
                     "Uninstall"
                 });
 
-            let remove_btn = if !is_busy {
+            if !is_busy {
                 if let Some(on_remove) = props.on_remove.clone() {
-                    remove_btn.on_mouse_down(MouseButton::Left, move |e, w, cx| on_remove(e, w, cx))
-                } else {
-                    remove_btn
+                    remove_btn = remove_btn
+                        .on_key_down(move |event, window, cx| {
+                            let key = event.keystroke.key.as_str();
+                            if key == "enter" || key == "space" {
+                                if let Some(ref cb) = on_remove_key {
+                                    cb(window, cx);
+                                }
+                            }
+                        })
+                        .on_mouse_down(MouseButton::Left, move |_e, w, cx| on_remove(w, cx));
                 }
-            } else {
-                remove_btn
-            };
+            }
             actions_row = actions_row.child(remove_btn);
         } else if caps.can_install {
             let accent_hover = theme.accent_hover;
-            let install_btn = div()
+            let focus_border = theme.border_focus;
+            let on_install_key = props.on_install.clone();
+            let mut install_btn = div()
+                .id("inspector_install_btn")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(focus_border))
                 .px_4()
                 .py_1p5()
                 .rounded_md()
@@ -198,23 +231,41 @@ impl InspectorHeader {
                 .when(!is_busy, move |el| el.hover(move |s| s.bg(accent_hover)))
                 .child(if is_busy { "In progress..." } else { "Install" });
 
-            let install_btn = if !is_busy {
+            if !is_busy {
                 if let Some(on_install) = props.on_install.clone() {
-                    install_btn
-                        .on_mouse_down(MouseButton::Left, move |e, w, cx| on_install(e, w, cx))
-                } else {
-                    install_btn
+                    install_btn = install_btn
+                        .on_key_down(move |event, window, cx| {
+                            let key = event.keystroke.key.as_str();
+                            if key == "enter" || key == "space" {
+                                if let Some(ref cb) = on_install_key {
+                                    cb(window, cx);
+                                }
+                            }
+                        })
+                        .on_mouse_down(MouseButton::Left, move |_e, w, cx| on_install(w, cx));
                 }
-            } else {
-                install_btn
-            };
+            }
             actions_row = actions_row.child(install_btn);
         }
 
         // Copy install command button
         if canonical_install_command(pkg).is_some() {
             let on_copy = props.on_copy_install_cmd.clone();
+            let on_copy_key = props.on_copy_install_cmd.clone();
+            let focus_border = theme.border_focus;
             let copy_btn = div()
+                .id("inspector_copy_cmd_btn")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(focus_border))
+                .on_key_down(move |event, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "enter" || key == "space" {
+                        if let Some(ref cb) = on_copy_key {
+                            cb(window, cx);
+                        }
+                    }
+                })
                 .flex()
                 .items_center()
                 .gap(px(4.0))

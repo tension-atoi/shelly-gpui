@@ -194,6 +194,33 @@ impl ShellyClient {
         ProcessRunner::spawn_streaming_operation(self.binary_path.clone(), args, tx);
     }
 
+    /// Construit les arguments de suppression selon le backend (standard ou flatpak)
+    pub fn build_remove_args(
+        name: &str,
+        is_flatpak: bool,
+        cascade: bool,
+        remove_configs: bool,
+    ) -> Vec<String> {
+        let mut args = vec!["remove".to_string()];
+        if is_flatpak {
+            args.push("flatpak".to_string());
+        } else {
+            args.push("standard".to_string());
+        }
+        args.push(name.to_string());
+        // --cascade n'est supporté que par standard (ALPM/pacman)
+        if !is_flatpak && cascade {
+            args.push("--cascade".to_string());
+        }
+        // --remove-config est supporté par standard et flatpak
+        if remove_configs {
+            args.push("--remove-config".to_string());
+        }
+        args.push("--ui-mode".to_string());
+        args.push("--no-confirm".to_string());
+        args
+    }
+
     /// Lance la suppression d'un paquet en streamant les logs
     pub fn remove_package(
         &self,
@@ -203,22 +230,7 @@ impl ShellyClient {
         remove_configs: bool,
         tx: mpsc::UnboundedSender<LogStreamEvent>,
     ) {
-        let mut args = vec!["remove".to_string()];
-        if is_flatpak {
-            args.push("flatpak".to_string());
-        } else {
-            args.push("standard".to_string());
-        }
-        args.push(name.to_string());
-        if !is_flatpak && cascade {
-            args.push("--cascade".to_string());
-        }
-        if !is_flatpak && remove_configs {
-            args.push("--remove-config".to_string());
-        }
-        args.push("--ui-mode".to_string());
-        args.push("--no-confirm".to_string());
-
+        let args = Self::build_remove_args(name, is_flatpak, cascade, remove_configs);
         ProcessRunner::spawn_streaming_operation(self.binary_path.clone(), args, tx);
     }
 
@@ -246,5 +258,70 @@ impl ShellyClient {
         } else {
             Ok(Vec::new())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::prelude::v1::test;
+
+    #[test]
+    fn test_build_remove_args_standard_cascade_and_remove_configs() {
+        let args = ShellyClient::build_remove_args("ripgrep", false, true, true);
+        assert_eq!(
+            args,
+            vec![
+                "remove",
+                "standard",
+                "ripgrep",
+                "--cascade",
+                "--remove-config",
+                "--ui-mode",
+                "--no-confirm"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_remove_args_standard_no_flags() {
+        let args = ShellyClient::build_remove_args("ripgrep", false, false, false);
+        assert_eq!(
+            args,
+            vec!["remove", "standard", "ripgrep", "--ui-mode", "--no-confirm"]
+        );
+    }
+
+    #[test]
+    fn test_build_remove_args_flatpak_remove_configs_no_cascade() {
+        // Flatpak supports --remove-config but never --cascade
+        let args = ShellyClient::build_remove_args("org.mozilla.firefox", true, true, true);
+        assert_eq!(
+            args,
+            vec![
+                "remove",
+                "flatpak",
+                "org.mozilla.firefox",
+                "--remove-config",
+                "--ui-mode",
+                "--no-confirm"
+            ]
+        );
+        assert!(!args.contains(&"--cascade".to_string()));
+    }
+
+    #[test]
+    fn test_build_remove_args_flatpak_no_flags() {
+        let args = ShellyClient::build_remove_args("org.mozilla.firefox", true, false, false);
+        assert_eq!(
+            args,
+            vec![
+                "remove",
+                "flatpak",
+                "org.mozilla.firefox",
+                "--ui-mode",
+                "--no-confirm"
+            ]
+        );
     }
 }

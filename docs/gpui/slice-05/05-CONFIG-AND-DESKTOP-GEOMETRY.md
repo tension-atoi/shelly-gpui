@@ -11,11 +11,22 @@ The desktop environment maintains strict separation between the GPUI frontend pr
 | **Primary Keys** | `dark_theme`, `window_width`, `compact_view`, `reduce_motion` | `pacman_path`, `aur_helper`, `repos` |
 | **Write Model** | Explicit Save button dispatch in Settings UI | Command line flags or interactive init |
 
-This separation ensures that updates to frontend preferences never mutate, corrupt, or truncate low-level pacman or ALPM flags.
+This separation ensures that updates to frontend preferences never mutate, corrupt, or truncate low-level pacman or ALPM flags. Legacy compatibility fields in `settings.json` (`shelly_icons_enabled`, `shelly_search_enabled`, `no_confirm`) are preserved for schema fidelity, but CLI mutation flags (`--ui-mode`, `--no-confirm`, `--cascade`, `--remove-config`) are passed explicitly via process arguments.
 
 ---
 
-## 2. Hardened Deserialization & Defaults
+## 2. Single Boot Snapshot Architecture
+
+Both configuration files (`settings.json` and `gpui-ui.json`) are loaded exactly once at application startup in `main.rs`:
+```rust
+let shelly_settings = crate::config::ConfigManager::load_shelly_settings();
+let gpui_config = crate::config::ConfigManager::load_gpui_config_sanitized();
+```
+These immutable initial snapshots are passed into `WorkspaceView::with_config(initial_shelly_settings, initial_gpui_config, cx)`. No secondary or redundant disk reads occur during root view construction.
+
+---
+
+## 3. Hardened Deserialization & Defaults
 
 Every field of `GpuiUiConfig` is annotated with `#[serde(default = "...")]` to guarantee that missing or malformed fields fall back deterministically to safe desktop defaults:
 
@@ -53,7 +64,7 @@ If an empty JSON object (`{}`) or a legacy config from Slice-01/02 is read, dese
 
 ---
 
-## 3. Desktop Geometry Sanitization
+## 4. Desktop Geometry Sanitization
 
 To prevent corrupted or unusable windows (e.g., zero-size, off-screen, or negative dimensions created by faulty display managers), `ConfigManager::sanitize_window_size` enforces strict minimum bounds:
 
@@ -80,7 +91,7 @@ pub fn sanitize_window_size(width: f32, height: f32) -> (f32, f32) {
 
 ---
 
-## 4. Discrete Window Bounds Sampling at Save
+## 5. Discrete Window Bounds Sampling at Save
 
 Rather than polling window dimensions continuously or installing invasive window resize event listeners that incur per-frame layout recalculations, geometry is sampled discretely when the user explicitly saves settings:
 
@@ -109,7 +120,7 @@ sequenceDiagram
 
 ---
 
-## 5. Workspace Tab Persistence & Safe Recovery
+## 6. Workspace Tab Persistence & Safe Recovery (`with_initial_tab`)
 
 When saving preferences:
 1. `last_selected_tab` is calculated from `AppSession.last_workspace_destination`:
@@ -118,5 +129,9 @@ When saving preferences:
    - `Updates => 2`
    - `News => 3`
    - `Settings => None` (never persisted)
-2. If the user saves while actively viewing the Settings panel, the application persists their *previous* workspace destination (`last_workspace_destination`), ensuring they are never stranded in the Settings screen upon application relaunch.
-3. Legacy index 4 (Settings in Slice-01) automatically defaults to 0 (`Browse`) via `NavDestination::from_config_index`.
+2. **Startup Initialization (`AppSession::with_initial_tab`)**:
+   At application boot, `WorkspaceView::with_config` initializes session state using `AppSession::with_initial_tab(gpui_config.last_selected_tab)`. This initializes **both** `destination` and `last_workspace_destination` to the restored tab.
+   - If the application starts on `Installed` (1), `last_workspace_destination` is immediately set to `Installed`.
+   - When the user subsequently opens `Settings` and clicks `Save Settings`, `last_selected_tab` truthfully remains `1` (`Installed`) rather than erroneously resetting to `0` (`Browse`).
+3. If the user saves while actively viewing the Settings panel, the application persists their *previous* workspace destination (`last_workspace_destination`), ensuring they are never stranded in the Settings screen upon application relaunch.
+4. Legacy index 4 (Settings in Slice-01) automatically defaults to 0 (`Browse`) via `NavDestination::from_config_index`.

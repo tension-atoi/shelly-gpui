@@ -193,6 +193,7 @@ impl SettingsView {
                     .child("PACKAGE SOURCES"),
             )
             .child(Self::toggle_row(
+                "setting_aur",
                 "Arch User Repository (AUR)",
                 "Enable search and PKGBUILD inspection for community AUR packages",
                 s.aur_enabled,
@@ -200,6 +201,7 @@ impl SettingsView {
                 theme,
             ))
             .child(Self::toggle_row(
+                "setting_flatpak",
                 "Flatpak Packages",
                 "Enable search and inspection for sandboxed applications via Flathub",
                 s.flat_pack_enabled,
@@ -207,6 +209,7 @@ impl SettingsView {
                 theme,
             ))
             .child(Self::toggle_row(
+                "setting_appimage",
                 "AppImage Packages",
                 "Enable discovery and inspection for self-contained AppImage binaries",
                 s.app_image_enabled,
@@ -235,6 +238,7 @@ impl SettingsView {
                     .child("PACKAGE MANAGEMENT"),
             )
             .child(Self::toggle_row(
+                "setting_cascade_delete",
                 "Cascade Dependency Removal (--cascade)",
                 "Recursively remove orphaned dependencies when removing packages",
                 s.package_management_cascade_delete,
@@ -242,6 +246,7 @@ impl SettingsView {
                 theme,
             ))
             .child(Self::toggle_row(
+                "setting_remove_configs",
                 "Remove Configuration Files (--remove-config)",
                 "Purge package configuration and backup files upon package removal",
                 s.package_management_remove_configs,
@@ -270,6 +275,7 @@ impl SettingsView {
                     .child("APPEARANCE & DENSITY"),
             )
             .child(Self::toggle_row(
+                "setting_dark_theme",
                 "Dark Theme",
                 "Use high-contrast dark theme interface (uncheck for light theme)",
                 g.dark_theme,
@@ -277,6 +283,7 @@ impl SettingsView {
                 theme,
             ))
             .child(Self::toggle_row(
+                "setting_compact_view",
                 "Compact View Density",
                 "Reduce card and table row heights and collapse the navigation sidebar",
                 g.compact_view,
@@ -305,6 +312,7 @@ impl SettingsView {
                     .child("MOTION & FEEDBACK"),
             )
             .child(Self::toggle_row(
+                "setting_reduce_motion",
                 "Reduce Motion",
                 "Disable animated transitions and snap sidebar, console, and toasts immediately",
                 g.reduce_motion,
@@ -333,6 +341,7 @@ impl SettingsView {
                     .child("LOGS & OPERATIONS"),
             )
             .child(Self::toggle_row(
+                "setting_log_drawer_auto_open",
                 "Auto-Open Operation Console",
                 "Automatically reveal the log drawer whenever a package mutation starts",
                 g.log_drawer_open,
@@ -349,9 +358,20 @@ impl SettingsView {
 
         if is_dirty {
             if let Some(reset_handler) = on_reset {
+                let reset_key = reset_handler.clone();
+                let focus_border = theme.border_focus;
                 actions_bar = actions_bar.child(
                     div()
                         .id("reset_settings_btn")
+                        .focusable()
+                        .tab_stop(true)
+                        .focus(move |s| s.border_1().border_color(focus_border))
+                        .on_key_down(move |event, window, cx| {
+                            let key = event.keystroke.key.as_str();
+                            if key == "enter" || key == "space" {
+                                reset_key(window, cx);
+                            }
+                        })
                         .px_4()
                         .py_2()
                         .rounded_md()
@@ -370,9 +390,20 @@ impl SettingsView {
                 );
             }
 
+            let on_save_key = on_save.clone();
+            let focus_border = theme.border_focus;
             actions_bar = actions_bar.child(
                 div()
                     .id("save_settings_btn")
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
+                    .on_key_down(move |event, window, cx| {
+                        let key = event.keystroke.key.as_str();
+                        if key == "enter" || key == "space" {
+                            on_save_key(window, cx);
+                        }
+                    })
                     .px_6()
                     .py_2()
                     .rounded_md()
@@ -411,6 +442,7 @@ impl SettingsView {
     }
 
     fn toggle_row(
+        id: &'static str,
         title: &'static str,
         description: &'static str,
         active: bool,
@@ -418,6 +450,8 @@ impl SettingsView {
         theme: &Theme,
     ) -> impl IntoElement {
         let hover_bg = theme.bg_surface_hover;
+        let focus_border = theme.border_focus;
+        let on_toggle_key = on_toggle.clone();
         div()
             .flex()
             .items_center()
@@ -449,6 +483,16 @@ impl SettingsView {
             )
             .child(
                 div()
+                    .id(id)
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
+                    .on_key_down(move |event, window, cx| {
+                        let key = event.keystroke.key.as_str();
+                        if key == "enter" || key == "space" {
+                            on_toggle_key(window, cx);
+                        }
+                    })
                     .px_3()
                     .py_1()
                     .rounded_full()

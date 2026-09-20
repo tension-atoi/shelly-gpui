@@ -106,7 +106,7 @@ impl PackageCard {
                     .overflow_hidden()
                     .text_ellipsis()
                     .child(if pkg.description.is_empty() {
-                        "Aucune description disponible pour ce paquet.".to_string()
+                        "No description available for this package.".to_string()
                     } else {
                         pkg.description.clone()
                     }),

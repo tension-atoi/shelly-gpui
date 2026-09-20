@@ -275,7 +275,7 @@ impl UnifiedPackage {
         Self {
             name: u.name,
             version: u.old_version,
-            description: format!("Mise à jour disponible vers {}", u.new_version),
+            description: format!("Update available to {}", u.new_version),
             source_type: u.package_type.unwrap_or_else(|| "ALPM".to_string()),
             repository_or_remote: u.repository.unwrap_or_else(|| "repos".to_string()),
             is_installed: true,

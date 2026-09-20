@@ -23,8 +23,10 @@ fn main() {
     // Initialise et entre dans le contexte du runtime Tokio pour les tâches et processus async
     let _rt_guard = backend::process::runtime().enter();
 
-    let config = crate::config::ConfigManager::load_gpui_config_sanitized();
-    let initial_config = config.clone();
+    let shelly_settings = crate::config::ConfigManager::load_shelly_settings();
+    let gpui_config = crate::config::ConfigManager::load_gpui_config_sanitized();
+    let initial_shelly_settings = shelly_settings.clone();
+    let initial_gpui_config = gpui_config.clone();
 
     Application::new()
         .with_assets(crate::icons::AppIcons::new())
@@ -32,7 +34,7 @@ fn main() {
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds {
                     origin: Point::default(),
-                    size: size(px(config.window_width), px(config.window_height)),
+                    size: size(px(gpui_config.window_width), px(gpui_config.window_height)),
                 })),
                 window_min_size: Some(size(
                     px(crate::config::MIN_WINDOW_WIDTH),
@@ -48,7 +50,9 @@ fn main() {
             };
 
             let _ = cx.open_window(options, move |_, cx| {
-                cx.new(|cx| WorkspaceView::with_config(initial_config, cx))
+                cx.new(|cx| {
+                    WorkspaceView::with_config(initial_shelly_settings, initial_gpui_config, cx)
+                })
             });
         });
 }

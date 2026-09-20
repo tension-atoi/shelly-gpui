@@ -81,7 +81,18 @@ impl NewsView {
                 .border_color(theme.border);
 
             if let Some(url) = item.url.clone() {
+                let url_key = url.clone();
+                let focus_border = theme.border_focus;
                 card = card
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
+                    .on_key_down(move |event, _window, cx| {
+                        let key = event.keystroke.key.as_str();
+                        if key == "enter" || key == "space" {
+                            cx.open_url(&url_key);
+                        }
+                    })
                     .cursor_pointer()
                     .hover(|s| s.border_color(theme.accent))
                     .on_mouse_down(MouseButton::Left, move |_ev, _window, cx| {

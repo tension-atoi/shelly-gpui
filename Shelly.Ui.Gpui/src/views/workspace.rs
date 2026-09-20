@@ -46,8 +46,11 @@ pub struct WorkspaceView {
 }
 
 impl WorkspaceView {
-    pub fn with_config(gpui_config: GpuiUiConfig, cx: &mut Context<Self>) -> Self {
-        let shelly_settings = ConfigManager::load_shelly_settings();
+    pub fn with_config(
+        shelly_settings: ShellySettings,
+        gpui_config: GpuiUiConfig,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let theme = if gpui_config.dark_theme {
             Theme::dark()
         } else {
@@ -56,11 +59,10 @@ impl WorkspaceView {
 
         let client = ShellyClient::new(None);
         let session = cx.new(|_cx| {
-            let mut s = AppSession::new();
+            let mut s = AppSession::with_initial_tab(gpui_config.last_selected_tab);
             if gpui_config.compact_view {
                 s.sidebar_collapsed = true;
             }
-            s.destination = NavDestination::from_config_index(gpui_config.last_selected_tab);
             s
         });
         let store = cx.new(|_cx| PackageStore::new(client));
@@ -188,11 +190,11 @@ impl WorkspaceView {
                 let reduce = this.gpui_config.reduce_motion;
                 let (kind, title, msg, action) = match status {
                     crate::state::OperationStatus::Success(m) => {
-                        (ToastKind::Success, "Opération réussie", m.clone(), None)
+                        (ToastKind::Success, "Operation successful", m.clone(), None)
                     }
                     crate::state::OperationStatus::Error(m) => (
                         ToastKind::Error,
-                        "Échec de l'opération",
+                        "Operation failed",
                         m.clone(),
                         Some(ToastAction::OpenLogs),
                     ),
@@ -259,7 +261,7 @@ impl WorkspaceView {
             ws.set_on_upgrade_all(Rc::new(move |_window, cx| {
                 entity_upg.update(cx, |view, cx| {
                     view.run_package_mutation(
-                        "Mise à jour complète du système",
+                        "Full system upgrade",
                         MutationAction::UpgradeSystem,
                         "system".to_string(),
                         PackageKey::new(PackageSourceKind::Alpm, "system-upgrade", None),
@@ -462,8 +464,8 @@ impl WorkspaceView {
                         view.toast_center.update(cx, |tc, cx| {
                             tc.post(
                                 ToastKind::Warning,
-                                "PKGBUILD indisponible",
-                                format!("Impossible de charger le PKGBUILD pour {}", name_clone),
+                                "PKGBUILD unavailable",
+                                format!("Failed to load PKGBUILD for {}", name_clone),
                                 None,
                                 reduce,
                                 cx,
@@ -894,15 +896,25 @@ impl WorkspaceView {
     pub fn on_key_down(
         &mut self,
         event: &KeyDownEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let key = event.keystroke.key.as_str();
+
+        if key == "tab" {
+            if event.keystroke.modifiers.shift {
+                window.focus_prev();
+            } else {
+                window.focus_next();
+            }
+            return;
+        }
+
         let packages = self.current_display_packages(cx);
         if packages.is_empty() {
             return;
         }
 
-        let key = event.keystroke.key.as_str();
         let selected_key = self.session.read(cx).selected_package_key.clone();
 
         let current_idx = selected_key

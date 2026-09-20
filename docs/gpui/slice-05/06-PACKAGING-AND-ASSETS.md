@@ -76,23 +76,47 @@ Because `load()` references static byte arrays compiled into the binary text seg
 
 ## 3. Strict Arch Linux Packaging (`PKGBUILD-gpui`)
 
-The package build recipe (`PKGBUILD-gpui`) enforces strict quality gates:
+The package build recipe (`PKGBUILD-gpui`) enforces strict quality gates across all build phases:
 
-### Cleaned `check()` Phase
+### Locked & Non-Concealing Build Phases
 ```sh
+prepare() {
+    cd "${srcdir}/${pkgname}/Shelly.Ui.Gpui"
+    cargo fetch --locked
+}
+
+build() {
+    cd "${srcdir}/${pkgname}"
+
+    # 1. Compile Shelly CLI backend (Zig)
+    echo ">>> Compiling Shelly CLI backend (Zig)..."
+    cd Shelly.Cli.Zig
+    zig build -Doptimize=ReleaseSafe
+    cd ..
+
+    # 2. Compile Shelly GPUI frontend (Rust)
+    echo ">>> Compiling Shelly GPUI frontend (Rust)..."
+    cd Shelly.Ui.Gpui
+    export CARGO_TARGET_DIR="target"
+    SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
+        cargo build --release --locked
+}
+
 check() {
     cd "${srcdir}/${pkgname}/Shelly.Ui.Gpui"
     export CARGO_TARGET_DIR="target"
-    cargo test --release
+    SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
+        cargo test --release --locked
 }
 ```
 
 ### Packaging Hardening Steps
-1. **Zero Error Concealment**: Removed all `|| true` and `2>/dev/null` directives from the test step. Any test regression halts the package build immediately with a non-zero exit code.
-2. **Release Compilation**: Tests are executed under `--release` profile, verifying optimization-level invariants and strict `#![deny(dead_code)]` compliance.
+1. **Zero Error Concealment**: Removed all `|| true`, `2>/dev/null`, and fallback build commands. Every cargo invocation (`fetch`, `build`, `test`) enforces `--locked`.
+2. **Deterministic Release Verification**: Tests run in `check()` under `--release --locked` with `SHELLY_BIN` explicitly bound, verifying optimized runtime invariants and strict `#![deny(dead_code)]` compliance.
 3. **Deterministic Staging**:
    - `/usr/lib/shelly/shelly`: Native Zig CLI binary.
    - `/usr/lib/shelly/shelly-gpui-bin`: Native Rust GPUI binary.
    - `/usr/bin/shelly-gpui`: Wrapper script injecting `SHELLY_BIN=/usr/lib/shelly/shelly`.
    - `/usr/share/applications/com.shellyorg.shelly-gpui.desktop`: XDG desktop entry.
    - `/usr/share/icons/hicolor/scalable/apps/shelly-gpui.svg`: System application icon.
+   - `/usr/share/polkit-1/actions/com.shellyorg.shelly-gpui.policy`: Strictly installed Polkit authentication action without error suppression.

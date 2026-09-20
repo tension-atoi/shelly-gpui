@@ -510,9 +510,9 @@ impl Render for PackageWorkstationView {
                         .text_sm()
                         .text_color(theme.text_muted)
                         .child(if is_searching {
-                            "Recherche en cours..."
+                            "Searching..."
                         } else {
-                            "Aucun paquet correspondant."
+                            "No matching packages found."
                         }),
                 )
                 .into_any_element()
@@ -707,24 +707,18 @@ impl Render for PackageWorkstationView {
                         on_mutation_cb.as_ref().map(|cb| {
                             let p_c = p.clone();
                             let cb_c = cb.clone();
-                            Rc::new(
-                                move |_e: &MouseDownEvent, window: &mut Window, cx: &mut App| {
-                                    cb_c(&p_c, true, window, cx);
-                                },
-                            )
-                                as Rc<dyn Fn(&MouseDownEvent, &mut Window, &mut App)>
+                            Rc::new(move |window: &mut Window, cx: &mut App| {
+                                cb_c(&p_c, true, window, cx);
+                            }) as Rc<dyn Fn(&mut Window, &mut App)>
                         })
                     }),
                     on_remove: selected_pkg_clone.as_ref().and_then(|p| {
                         on_mutation_cb_rm.as_ref().map(|cb| {
                             let p_c = p.clone();
                             let cb_c = cb.clone();
-                            Rc::new(
-                                move |_e: &MouseDownEvent, window: &mut Window, cx: &mut App| {
-                                    cb_c(&p_c, false, window, cx);
-                                },
-                            )
-                                as Rc<dyn Fn(&MouseDownEvent, &mut Window, &mut App)>
+                            Rc::new(move |window: &mut Window, cx: &mut App| {
+                                cb_c(&p_c, false, window, cx);
+                            }) as Rc<dyn Fn(&mut Window, &mut App)>
                         })
                     }),
                     on_copy_install_cmd: selected_pkg_clone.as_ref().and_then(|p| {

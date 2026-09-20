@@ -39,15 +39,47 @@ stateDiagram-v2
 
 ---
 
-## 3. Focus Rings & Visual Feedback
+## 3. Focus Rings, Tab Stop Architecture & Keyboard Activation
 
-To provide immediate accessibility and clear spatial orientation:
-1. **Focus Ring Color**: Interactive elements display a crisp 1px outline or ring using `theme.border_focus` (Electric Cyan `#38bdf8` in dark mode, Deep Azure `#0284c7` in light mode).
-2. **Tracked Root Surface**: The root `div().id("workspace_root")` tracks `self.search_focus` to capture window-level keystrokes without requiring continuous manual clicking.
-3. **Primary Action Focus**:
-   - `Save Settings` button renders an explicit focus state when targeted via Tab.
-   - Segmented view mode buttons (`Cards`, `Table`) highlight active and focused states cleanly.
-   - Filter pills (`All`, `Official`, `AUR`, `Flatpak`, `AppImage`) provide visual feedback on hover and focus.
+To provide accessibility and clear spatial orientation without manufacturing transient `FocusHandle`s during render:
+1. **GPUI 0.2.2 Element State Focus Model**:
+   - Every primary interactive control is assigned a persistent, stable `.id(...)`.
+   - Elements declare `.focusable()` and `.tab_stop(true)`. GPUI automatically manages, caches, and persists the internal `FocusHandle` in the element state across frames.
+   - Elements apply discrete focus styling via `.focus(move |s| s.border_1().border_color(theme.border_focus))`, utilizing Electric Cyan `#38bdf8` in dark mode and Deep Azure `#0284c7` in light mode.
+2. **Window Tab Cycle**:
+   - `WorkspaceView::on_key_down` intercepts `"tab"`:
+     - `Tab`: dispatches `window.focus_next()`.
+     - `Shift-Tab` (`event.keystroke.modifiers.shift`): dispatches `window.focus_prev()`.
+3. **Primary Interactive Controls Registered as Tab Stops**:
+   - **Sidebar Destination Buttons** (`nav_dest_browse`, `nav_dest_installed`, `nav_dest_updates`, `nav_dest_news`, `nav_dest_settings`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` switches destination.
+     - Collapsed Tooltip: renders `DestinationTooltip` via `.tooltip(...)` when sidebar is collapsed.
+   - **Sidebar Collapse Toggle** (`sidebar_collapse_toggle`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` toggles sidebar expanded/collapsed state.
+     - Tooltip: displays "Expand" / "Collapse" on hover.
+   - **View Mode Switcher** (`view_mode_cards`, `view_mode_table`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` toggles between Cards and Table density modes.
+   - **Settings Toggle Rows** (`setting_aur`, `setting_flatpak`, `setting_appimage`, `setting_cascade_delete`, `setting_remove_configs`, `setting_dark_theme`, `setting_compact_view`, `setting_reduce_motion`, `setting_log_drawer_auto_open`):
+     - Focus ring on toggle pills with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` toggles the draft preference setting.
+   - **Settings Action Buttons** (`reset_settings_btn`, `save_settings_btn`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` executes Reset or Save.
+   - **News Announcement Cards** (`news_card`):
+     - Focus ring with `border_focus` on URL-backed announcements.
+     - Keyboard activation: `Enter` or `Space` invokes `cx.open_url(&url)`.
+   - **Inspector Tabs** (`inspector_tab_overview`, `inspector_tab_dependencies`, `inspector_tab_files_build`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` activates the tab.
+   - **Inspector Action Buttons** (`inspector_remove_btn`, `inspector_install_btn`, `inspector_copy_cmd_btn`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` triggers package mutation or copies install command to clipboard.
+4. **Package List Non-Tab Stop Guarantee**:
+   - Virtual list items (cards and rows) do **not** register as tab stops.
+   - They remain navigable strictly via Up/Down arrow keys and click selection, preventing keyboard trap in large lists.
 
 ---
 
