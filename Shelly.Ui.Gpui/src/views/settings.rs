@@ -140,6 +140,7 @@ impl SettingsView {
         // ici on expose la sauvegarde de façon conditionnelle pour que le compilateur
         // voit l'utilisation de ConfigManager::save_shelly_settings.
         let _ = ConfigManager::save_shelly_settings(s);
+        let _ = ConfigManager::save_gpui_config(g);
 
         root = root.child(save_btn);
         root

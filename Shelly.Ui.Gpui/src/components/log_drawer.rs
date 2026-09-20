@@ -39,6 +39,7 @@ pub struct LogDrawerProps<'a> {
     pub status: &'a OperationStatus,
     pub is_open: bool,
     pub auto_scroll: bool,
+    pub height: f32,
     pub copied_feedback: bool,
     pub theme: &'a Theme,
     pub on_toggle: Option<MouseHandler>,
@@ -238,7 +239,7 @@ impl LogDrawer {
                 .id("log_drawer_scroll")
                 .flex()
                 .flex_col()
-                .h(px(220.0))
+                .h(px(props.height))
                 .overflow_scroll()
                 .p_3()
                 .bg(theme.bg_sidebar)

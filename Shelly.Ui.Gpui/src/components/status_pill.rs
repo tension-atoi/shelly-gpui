@@ -4,18 +4,6 @@ use gpui::*;
 pub struct StatusPill;
 
 impl StatusPill {
-    /// Badge numérique pour les compteurs d'onglets (ex: nombre de mises à jour)
-    pub fn badge_count(count: usize, theme: &Theme) -> impl IntoElement {
-        div()
-            .px_1p5()
-            .py_0p5()
-            .rounded_full()
-            .bg(theme.warning)
-            .text_xs()
-            .font_weight(FontWeight::BOLD)
-            .text_color(theme.bg_app)
-            .child(count.to_string())
-    }
 
     pub fn source_badge(source: &str, theme: &Theme) -> impl IntoElement {
         let (bg, text) = match source.to_uppercase().as_str() {
