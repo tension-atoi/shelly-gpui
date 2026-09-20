@@ -1,10 +1,19 @@
 use crate::backend::client::ShellyClient;
-use crate::backend::models::{AlpmPackage, ArchNewsItem, UnifiedPackage};
+use crate::backend::models::{ArchNewsItem, UnifiedPackage};
 use crate::backend::process::LogStreamEvent;
-use crate::components::log_drawer::{LogDrawer, LogDrawerProps, LogEntry, OperationStatus};
+use crate::components::diagnostics_hud::{DiagnosticsHud, DiagnosticsHudProps};
+use crate::components::filter_pills::{FilterPills, FilterPillsProps};
+use crate::components::log_drawer::{LogDrawer, LogDrawerProps};
+use crate::components::nav_rail::{NavRail, NavRailProps};
 use crate::components::package_card::{PackageCard, PackageCardProps};
-use crate::components::status_pill::StatusPill;
+use crate::components::package_table::{
+    PackageTable, PackageTableProps, SortColumn, SortDirection,
+};
 use crate::config::{ConfigManager, GpuiUiConfig, ShellySettings};
+use crate::models::{
+    CatalogEvent, CatalogModel, ConsoleEvent, ConsoleModel, LayoutEvent, LayoutModel, NavRoute,
+    PackageViewMode,
+};
 use crate::theme::Theme;
 use crate::views::details::{PackageDetailsProps, PackageDetailsView};
 use crate::views::news::{NewsView, NewsViewProps};
@@ -12,51 +21,30 @@ use crate::views::settings::{SettingsView, SettingsViewProps};
 use gpui::prelude::FluentBuilder;
 use gpui::{uniform_list, ScrollStrategy, UniformListScrollHandle};
 use gpui::*;
-use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Instant;
 use tokio::sync::mpsc;
-
-pub const TAB_ALPM: usize = 0;
-pub const TAB_AUR: usize = 1;
-pub const TAB_FLATPAK: usize = 2;
-pub const TAB_APPIMAGE: usize = 3;
-pub const TAB_UPDATES: usize = 4;
-pub const TAB_NEWS: usize = 5;
-pub const TAB_SETTINGS: usize = 6;
 
 pub struct WorkspaceView {
     pub client: ShellyClient,
     pub shelly_settings: ShellySettings,
     pub gpui_config: GpuiUiConfig,
     pub theme: Theme,
-    pub active_tab: usize,
-    pub search_query: String,
-    /// FocusHandle qui rend la barre de recherche réceptive aux touches clavier
+    pub catalog: Entity<CatalogModel>,
+    pub console: Entity<ConsoleModel>,
+    pub layout: Entity<LayoutModel>,
     pub search_focus: FocusHandle,
-    /// Compteur de génération pour le debounce : chaque frappe l'incrémente ;
-    /// la tâche async ne lance la recherche que si la génération correspond encore.
     pub search_generation: u64,
-    pub packages: Vec<UnifiedPackage>,
-    pub selected_index: Option<usize>,
-    /// Détails complets ALPM chargés via `get_package_details` pour enrichir le volet droit
-    pub selected_alpm_details: Option<AlpmPackage>,
     pub news: Vec<ArchNewsItem>,
-    pub is_searching: bool,
     pub is_loading_news: bool,
-    pub operation_logs: Vec<LogEntry>,
-    pub operation_status: OperationStatus,
-    pub log_drawer_open: bool,
-    pub auto_scroll_logs: bool,
-    pub logs_copied_feedback: bool,
-    pub updates_count: usize,
-    /// Largeur en pixels du volet de gauche (liste des paquets), ajustable à la souris
-    pub list_pane_width: f32,
-    /// Indicateur actif pendant le glisser-déposer de redimensionnement
+    pub file_list: Vec<String>,
     pub is_resizing_pane: bool,
-    /// Handle de défilement pour la liste virtualisée
     pub scroll_handle: UniformListScrollHandle,
-    /// Cache en mémoire pour éviter les requêtes subprocess redondantes lors de l'inspection des paquets
-    pub package_detail_cache: HashMap<String, AlpmPackage>,
+    pub table_scroll_handle: UniformListScrollHandle,
+    pub sort_column: SortColumn,
+    pub sort_direction: SortDirection,
+    pub last_render: Option<Instant>,
+    pub logs_copied_feedback: bool,
 }
 
 impl WorkspaceView {
@@ -69,34 +57,173 @@ impl WorkspaceView {
             Theme::light()
         };
 
-        let active_tab = gpui_config.last_selected_tab;
-        let log_drawer_open = gpui_config.log_drawer_open;
+        let catalog = cx.new(|_cx| CatalogModel::new());
+        let console = cx.new(|_cx| ConsoleModel::new());
+        let layout = cx.new(|_cx| LayoutModel::new());
+
+        // Abonnements typés aux événements des modèles découplés
+        cx.subscribe(&catalog, |this, _emitter, event, cx| match event {
+            CatalogEvent::SearchStarted { query } => {
+                log::debug!("Événement catalogue: Recherche démarrée: '{}'", query);
+                this.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
+                cx.notify();
+            }
+            CatalogEvent::SearchResultsUpdated {
+                total,
+                official,
+                aur,
+                flatpak,
+            } => {
+                log::debug!(
+                    "Événement catalogue: Résultats MAJ (total: {}, officiel: {}, AUR: {}, Flatpak: {})",
+                    total,
+                    official,
+                    aur,
+                    flatpak
+                );
+                this.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
+                cx.notify();
+            }
+            CatalogEvent::PackageSelected(pkg_opt) => {
+                if let Some(pkg) = pkg_opt {
+                    let name = pkg.name.clone();
+                    let is_installed = pkg.is_installed;
+                    if pkg.source_type == "ALPM" {
+                        let cached = this.catalog.read(cx).detail_cache.get(&name).cloned();
+                        if cached.is_none() {
+                            let client = this.client.clone();
+                            let name_clone = name.clone();
+                            cx.spawn(async move |this, cx| {
+                                if let Ok(Some(details)) = client.get_package_details(&name_clone).await {
+                                    let _ = this.update(cx, |view, cx| {
+                                        view.catalog.update(cx, |cat, cx| {
+                                            cat.detail_cache.insert(name_clone, details);
+                                            cx.notify();
+                                        });
+                                    });
+                                }
+                            })
+                            .detach();
+                        }
+                    }
+                    if is_installed {
+                        let client = this.client.clone();
+                        cx.spawn(async move |this, cx| {
+                            let files = client.list_package_files(&name).await;
+                            let _ = this.update(cx, |view, cx| {
+                                view.file_list = files;
+                                cx.notify();
+                            });
+                        })
+                        .detach();
+                    } else {
+                        this.file_list.clear();
+                    }
+                } else {
+                    this.file_list.clear();
+                }
+                cx.notify();
+            }
+            CatalogEvent::SourceFilterChanged(filter) => {
+                log::debug!("Événement catalogue: Filtre de source: {:?}", filter);
+                this.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
+                cx.notify();
+            }
+            CatalogEvent::UpdatesLoaded(count) => {
+                log::debug!("Événement catalogue: Mises à jour chargées: {}", count);
+                cx.notify();
+            }
+            CatalogEvent::CacheInvalidated => {
+                log::debug!("Événement catalogue: Cache invalidé");
+                cx.notify();
+            }
+        })
+        .detach();
+
+        cx.subscribe(&console, |_this, _emitter, event, cx| match event {
+            ConsoleEvent::LogAppended(entry) => {
+                let _ = &entry.text;
+                cx.notify();
+            }
+            ConsoleEvent::OperationStarted(title) => {
+                log::info!("Événement console: Démarrage: {}", title);
+                cx.notify();
+            }
+            ConsoleEvent::OperationFinished { success, message } => {
+                log::info!(
+                    "Événement console: Terminé (succès: {}): {}",
+                    success,
+                    message
+                );
+                cx.notify();
+            }
+            ConsoleEvent::Toggled(is_open) => {
+                log::debug!("Événement console: Tiroir ouvert = {}", is_open);
+                cx.notify();
+            }
+            ConsoleEvent::LogsCleared => {
+                log::debug!("Événement console: Logs effacés");
+                cx.notify();
+            }
+            ConsoleEvent::AutoScrollToggled(enabled) => {
+                log::debug!("Événement console: Autoscroll = {}", enabled);
+                cx.notify();
+            }
+        })
+        .detach();
+
+        cx.subscribe(&layout, |_this, _emitter, event, cx| match event {
+            LayoutEvent::RouteChanged(route) => {
+                log::debug!("Événement disposition: Route = {:?}", route);
+                cx.notify();
+            }
+            LayoutEvent::SidebarToggled(collapsed) => {
+                log::debug!("Événement disposition: Sidebar repliée = {}", collapsed);
+                cx.notify();
+            }
+            LayoutEvent::ViewModeChanged(mode) => {
+                log::debug!("Événement disposition: Mode affichage = {:?}", mode);
+                cx.notify();
+            }
+            LayoutEvent::InspectorTabChanged(tab) => {
+                log::debug!("Événement disposition: Onglet inspecteur = {:?}", tab);
+                cx.notify();
+            }
+            LayoutEvent::PaneResized(width) => {
+                log::trace!("Événement disposition: Largeur panneau = {}", width);
+                cx.notify();
+            }
+            LayoutEvent::DiagnosticsHudToggled(shown) => {
+                log::debug!("Événement disposition: HUD diagnostics = {}", shown);
+                cx.notify();
+            }
+            LayoutEvent::MetricsUpdated { fps, frame_time_ms } => {
+                log::trace!("Événement disposition: Métriques: FPS={:.1}, frame={:.1}ms", fps, frame_time_ms);
+                cx.notify();
+            }
+        })
+        .detach();
 
         let mut view = Self {
             client: ShellyClient::default(),
             shelly_settings,
             gpui_config,
             theme,
-            active_tab,
-            search_query: String::new(),
+            catalog,
+            console,
+            layout,
             search_focus: cx.focus_handle(),
             search_generation: 0,
-            packages: Vec::new(),
-            selected_index: None,
-            selected_alpm_details: None,
             news: Vec::new(),
-            is_searching: false,
             is_loading_news: false,
-            operation_logs: Vec::new(),
-            operation_status: OperationStatus::Idle,
-            log_drawer_open,
-            auto_scroll_logs: true,
-            logs_copied_feedback: false,
-            updates_count: 0,
-            list_pane_width: 440.0,
+            file_list: Vec::new(),
             is_resizing_pane: false,
             scroll_handle: UniformListScrollHandle::new(),
-            package_detail_cache: HashMap::new(),
+            table_scroll_handle: UniformListScrollHandle::new(),
+            sort_column: SortColumn::Name,
+            sort_direction: SortDirection::Ascending,
+            last_render: None,
+            logs_copied_feedback: false,
         };
 
         view.load_initial_data(cx);
@@ -105,241 +232,107 @@ impl WorkspaceView {
 
     pub fn load_initial_data(&mut self, cx: &mut Context<Self>) {
         let client = self.client.clone();
+
         cx.spawn(async move |this, cx| {
             if let Ok(updates) = client.list_updates().await {
-                let count = updates.len();
                 let _ = this.update(cx, |view, cx| {
-                    view.updates_count = count;
-                    cx.notify();
+                    view.catalog.update(cx, |cat, cx| {
+                        cat.set_updates(updates, cx);
+                    });
                 });
             }
 
             if let Ok(installed) = client.search_installed("").await {
-                let unified: Vec<UnifiedPackage> = installed
-                    .into_iter()
-                    .take(60)
-                    .map(|p| UnifiedPackage::from_alpm(p, true))
-                    .collect();
-
                 let _ = this.update(cx, |view, cx| {
-                    view.packages = unified;
-                    if !view.packages.is_empty() {
-                        view.selected_index = Some(0);
-                    }
-                    cx.notify();
+                    view.catalog.update(cx, |cat, cx| {
+                        cat.set_search_results(installed, Vec::new(), Vec::new(), cx);
+                    });
                 });
             }
         })
         .detach();
     }
 
-    pub fn switch_tab(&mut self, tab: usize, cx: &mut Context<Self>) {
-        self.active_tab = tab;
-        self.selected_index = None;
-        self.selected_alpm_details = None;
-        self.gpui_config.last_selected_tab = tab;
-        let _ = ConfigManager::save_gpui_config(&self.gpui_config);
+    pub fn switch_route(&mut self, route: NavRoute, cx: &mut Context<Self>) {
+        self.layout.update(cx, |l, cx| {
+            l.set_route(route, cx);
+        });
 
-        match tab {
-            TAB_ALPM => self.perform_search(self.search_query.clone(), cx),
-            TAB_AUR => self.search_aur_tab(self.search_query.clone(), cx),
-            TAB_FLATPAK => self.search_flatpak_tab(self.search_query.clone(), cx),
-            TAB_APPIMAGE => self.load_appimages(cx),
-            TAB_UPDATES => self.load_updates(cx),
-            TAB_NEWS => self.load_news(cx),
-            TAB_SETTINGS => cx.notify(),
-            _ => cx.notify(),
-        }
-    }
-
-    /// Sélectionne un paquet et lance le chargement de ses détails ALPM complets en arrière-plan
-    pub fn select_package(&mut self, idx: usize, cx: &mut Context<Self>) {
-        self.selected_index = Some(idx);
-        self.selected_alpm_details = None;
-        cx.notify();
-
-        if let Some(pkg) = self.packages.get(idx) {
-            if pkg.source_type == "ALPM" {
-                let name = pkg.name.clone();
-
-                // 1. Vérifier d'abord le cache de présentation en mémoire
-                if let Some(cached) = self.package_detail_cache.get(&name) {
-                    self.selected_alpm_details = Some(cached.clone());
-                    cx.notify();
-                    return;
-                }
-
-                let client = self.client.clone();
-                cx.spawn(async move |this, cx| {
-                    if let Ok(Some(details)) = client.get_package_details(&name).await {
-                        let _ = this.update(cx, |view, cx| {
-                            view.package_detail_cache.insert(name.clone(), details.clone());
-                            if view.selected_index == Some(idx) {
-                                view.selected_alpm_details = Some(details);
-                                cx.notify();
-                            }
-                        });
-                    }
-                })
-                .detach();
+        match route {
+            NavRoute::Search => {
+                let q = self.catalog.read(cx).search_query.clone();
+                self.perform_search(q, cx);
             }
+            NavRoute::Updates => self.load_updates(cx),
+            NavRoute::Installed => self.load_installed(cx),
+            NavRoute::Settings => self.load_news(cx),
         }
     }
 
     pub fn perform_search(&mut self, query: String, cx: &mut Context<Self>) {
-        self.search_query = query.clone();
-        self.is_searching = true;
-        self.selected_alpm_details = None;
-        cx.notify();
+        self.catalog.update(cx, |cat, cx| {
+            cat.set_search_query(query.clone(), cx);
+        });
 
         let client = self.client.clone();
+        let q = query.clone();
+
         cx.spawn(async move |this, cx| {
-            let pkgs = if query.trim().is_empty() {
-                client.search_installed("").await.unwrap_or_default()
+            if q.trim().is_empty() {
+                if let Ok(installed) = client.search_installed("").await {
+                    let _ = this.update(cx, |view, cx| {
+                        view.catalog.update(cx, |cat, cx| {
+                            cat.set_search_results(installed, Vec::new(), Vec::new(), cx);
+                        });
+                    });
+                }
             } else {
-                client.search_standard(&query).await.unwrap_or_default()
-            };
-
-            let unified: Vec<UnifiedPackage> = pkgs
-                .into_iter()
-                .map(|p| {
-                    let is_installed = p.install_date.is_some()
-                        || p.install_reason.as_deref() != Some("Not Installed");
-                    UnifiedPackage::from_alpm(p, is_installed)
-                })
-                .collect();
-
-            let _ = this.update(cx, |view, cx| {
-                view.packages = unified;
-                view.is_searching = false;
-                if !view.packages.is_empty() {
-                    view.selected_index = Some(0);
-                }
-                cx.notify();
-            });
+                let (off_res, aur_res, fp_res) = client.search_all(&q).await;
+                let off = off_res.unwrap_or_default();
+                let aur = aur_res.unwrap_or_default();
+                let fp = fp_res.unwrap_or_default();
+                let _ = this.update(cx, |view, cx| {
+                    view.catalog.update(cx, |cat, cx| {
+                        cat.set_search_results(off, aur, fp, cx);
+                    });
+                });
+            }
         })
         .detach();
     }
 
-    pub fn search_aur_tab(&mut self, query: String, cx: &mut Context<Self>) {
-        self.search_query = query.clone();
-        self.is_searching = true;
-        self.selected_alpm_details = None;
-        cx.notify();
-
+    pub fn load_installed(&mut self, cx: &mut Context<Self>) {
         let client = self.client.clone();
         cx.spawn(async move |this, cx| {
-            let q = if query.trim().is_empty() { "git" } else { &query };
-            let results = client.search_aur(q).await.unwrap_or_default();
-            let unified: Vec<UnifiedPackage> = results
-                .into_iter()
-                .map(|p| UnifiedPackage::from_aur(p, false))
-                .collect();
-
-            let _ = this.update(cx, |view, cx| {
-                view.packages = unified;
-                view.is_searching = false;
-                if !view.packages.is_empty() {
-                    view.selected_index = Some(0);
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub fn search_flatpak_tab(&mut self, query: String, cx: &mut Context<Self>) {
-        self.search_query = query.clone();
-        self.is_searching = true;
-        self.selected_alpm_details = None;
-        cx.notify();
-
-        let client = self.client.clone();
-        cx.spawn(async move |this, cx| {
-            let q = if query.trim().is_empty() { "browser" } else { &query };
-            let hits = client.search_flatpak(q).await.unwrap_or_default();
-            let unified: Vec<UnifiedPackage> = hits
-                .into_iter()
-                .map(|h| UnifiedPackage::from_flatpak(h, false))
-                .collect();
-
-            let _ = this.update(cx, |view, cx| {
-                view.packages = unified;
-                view.is_searching = false;
-                if !view.packages.is_empty() {
-                    view.selected_index = Some(0);
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    /// Charge la liste des AppImages gérées par Shelly via le CLI (`shelly list appimage -j`)
-    pub fn load_appimages(&mut self, cx: &mut Context<Self>) {
-        self.is_searching = true;
-        self.selected_alpm_details = None;
-        cx.notify();
-
-        let client = self.client.clone();
-        cx.spawn(async move |this, cx| {
-            let appimages = client.list_appimages().await.unwrap_or_default();
-            let unified: Vec<UnifiedPackage> = appimages
-                .into_iter()
-                .map(UnifiedPackage::from_appimage)
-                .collect();
-
-            let _ = this.update(cx, |view, cx| {
-                view.packages = unified;
-                view.is_searching = false;
-                if !view.packages.is_empty() {
-                    view.selected_index = Some(0);
-                }
-                cx.notify();
-            });
+            if let Ok(installed) = client.search_installed("").await {
+                let _ = this.update(cx, |view, cx| {
+                    view.catalog.update(cx, |cat, cx| {
+                        cat.set_search_results(installed, Vec::new(), Vec::new(), cx);
+                    });
+                });
+            }
         })
         .detach();
     }
 
     pub fn load_updates(&mut self, cx: &mut Context<Self>) {
-        self.is_searching = true;
-        self.selected_alpm_details = None;
-        cx.notify();
-
         let client = self.client.clone();
         cx.spawn(async move |this, cx| {
-            let updates = client.list_updates().await.unwrap_or_default();
-            let count = updates.len();
-
-            let unified: Vec<UnifiedPackage> = updates
-                .into_iter()
-                .map(|u| UnifiedPackage {
-                    name: u.name,
-                    version: u.old_version,
-                    description: format!("Mise à jour disponible vers {}", u.new_version),
-                    source_type: u.package_type.unwrap_or_else(|| "ALPM".to_string()),
-                    repository_or_remote: u.repository.unwrap_or_else(|| "repos".to_string()),
-                    is_installed: true,
-                    has_update: true,
-                    new_version: Some(u.new_version),
-                    inner: crate::backend::models::UnifiedPackageSource::Standard(Default::default()),
-                })
-                .collect();
-
-            let _ = this.update(cx, |view, cx| {
-                view.packages = unified;
-                view.updates_count = count;
-                view.is_searching = false;
-                if !view.packages.is_empty() {
-                    view.selected_index = Some(0);
-                }
-                cx.notify();
-            });
+            if let Ok(updates) = client.list_updates().await {
+                let _ = this.update(cx, |view, cx| {
+                    view.catalog.update(cx, |cat, cx| {
+                        cat.set_updates(updates, cx);
+                    });
+                });
+            }
         })
         .detach();
     }
 
     pub fn load_news(&mut self, cx: &mut Context<Self>) {
+        if !self.news.is_empty() {
+            return;
+        }
         self.is_loading_news = true;
         cx.notify();
 
@@ -355,46 +348,59 @@ impl WorkspaceView {
         .detach();
     }
 
-    pub fn toggle_log_drawer(&mut self, cx: &mut Context<Self>) {
-        self.log_drawer_open = !self.log_drawer_open;
-        self.gpui_config.log_drawer_open = self.log_drawer_open;
-        let _ = ConfigManager::save_gpui_config(&self.gpui_config);
+    pub fn select_package_item(&mut self, pkg: UnifiedPackage, cx: &mut Context<Self>) {
+        self.catalog.update(cx, |cat, cx| {
+            cat.select_package(Some(pkg), cx);
+        });
+    }
+
+    pub fn change_sort(&mut self, col: SortColumn, cx: &mut Context<Self>) {
+        if self.sort_column == col {
+            self.sort_direction = match self.sort_direction {
+                SortDirection::Ascending => SortDirection::Descending,
+                SortDirection::Descending => SortDirection::Ascending,
+            };
+        } else {
+            self.sort_column = col;
+            self.sort_direction = SortDirection::Ascending;
+        }
         cx.notify();
     }
 
-    pub fn copy_logs_to_clipboard(&mut self, cx: &mut Context<Self>) {
-        let text = self
-            .operation_logs
-            .iter()
-            .map(|l| l.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
-        self.logs_copied_feedback = true;
-        cx.notify();
-
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(2000))
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                view.logs_copied_feedback = false;
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub fn clear_logs(&mut self, cx: &mut Context<Self>) {
-        self.operation_logs.clear();
-        cx.notify();
+    pub fn get_sorted_items(&self, cx: &App) -> Vec<UnifiedPackage> {
+        let mut items = self.catalog.read(cx).filtered_items();
+        let dir = self.sort_direction;
+        match self.sort_column {
+            SortColumn::Name => {
+                items.sort_by(|a, b| {
+                    let cmp = a.name.to_lowercase().cmp(&b.name.to_lowercase());
+                    if dir == SortDirection::Ascending { cmp } else { cmp.reverse() }
+                });
+            }
+            SortColumn::Version => {
+                items.sort_by(|a, b| {
+                    let cmp = a.version.cmp(&b.version);
+                    if dir == SortDirection::Ascending { cmp } else { cmp.reverse() }
+                });
+            }
+            SortColumn::Source => {
+                items.sort_by(|a, b| {
+                    let cmp = a.source_type.cmp(&b.source_type);
+                    if dir == SortDirection::Ascending { cmp } else { cmp.reverse() }
+                });
+            }
+            SortColumn::Status => {
+                items.sort_by(|a, b| {
+                    let cmp = a.is_installed.cmp(&b.is_installed);
+                    if dir == SortDirection::Ascending { cmp } else { cmp.reverse() }
+                });
+            }
+        }
+        items
     }
 
     pub fn install_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(index) = self.selected_index else {
-            return;
-        };
-        let Some(pkg) = self.packages.get(index) else {
+        let Some(pkg) = self.catalog.read(cx).selected_package.clone() else {
             return;
         };
 
@@ -402,61 +408,42 @@ impl WorkspaceView {
         let is_aur = pkg.source_type == "AUR";
         let is_flatpak = pkg.source_type == "Flatpak";
 
-        self.operation_logs.clear();
-        self.operation_logs
-            .push(LogEntry::stdout(format!(">>> Lancement de l'installation de {}...", name)));
-        self.operation_status =
-            OperationStatus::Running(format!("Installation de {}", name));
-        self.log_drawer_open = true;
-        cx.notify();
+        self.console.update(cx, |c, cx| {
+            c.clear_logs(cx);
+            c.start_operation(format!("Installation de {}", name), cx);
+            c.append_stdout(format!(">>> Démarrage de l'installation de {}...", name), cx);
+        });
 
         let (tx, mut rx) = mpsc::unbounded_channel::<LogStreamEvent>();
         self.client.install_package(&name, is_aur, is_flatpak, tx);
+        let console_model = self.console.clone();
 
         cx.spawn(async move |this, cx| {
             while let Some(event) = rx.recv().await {
                 match event {
                     LogStreamEvent::Line(line) => {
-                        let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(LogEntry::stdout(line));
-                            cx.notify();
-                        });
+                        let _ = console_model.update(cx, |c, cx| c.append_stdout(line, cx));
                     }
                     LogStreamEvent::ErrorLine(err) => {
-                        let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(LogEntry::stderr(err));
-                            cx.notify();
-                        });
+                        let _ = console_model.update(cx, |c, cx| c.append_stderr(err, cx));
                     }
                     LogStreamEvent::Finished(success, code) => {
                         let _ = this.update(cx, |view, cx| {
-                            if success {
-                                view.operation_status = OperationStatus::Success(
-                                    format!("{} installé avec succès", name),
-                                );
-                                view.operation_logs
-                                    .push(LogEntry::stdout(">>> Opération terminée avec succès."));
-                                view.refresh_after_operation(cx);
-                            } else {
-                                view.log_drawer_open = true;
-                                if code == Some(126) || code == Some(127) {
-                                    view.operation_status = OperationStatus::Error(
-                                        "Authentification Polkit annulée".to_string(),
-                                    );
-                                    view.operation_logs.push(LogEntry::stderr(
-                                        ">>> Opération annulée : invite d'authentification Polkit fermée ou refusée."
-                                    ));
+                            view.console.update(cx, |c, cx| {
+                                if success {
+                                    c.finish_operation(true, format!("{} installé avec succès", name), cx);
+                                    c.append_stdout(">>> Opération terminée avec succès.", cx);
+                                } else if code == Some(126) || code == Some(127) {
+                                    c.finish_operation(false, "Authentification Polkit annulée", cx);
+                                    c.append_stderr(">>> Opération annulée : invite d'authentification fermée ou refusée.", cx);
                                 } else {
-                                    let last_err = view.operation_logs.iter().rev().find(|l| l.is_stderr).map(|l| l.text.clone());
-                                    let err_desc = last_err.unwrap_or_else(|| format!("Échec (code {:?})", code));
-                                    view.operation_status = OperationStatus::Error(err_desc);
-                                    view.operation_logs.push(LogEntry::stderr(format!(
-                                        ">>> Échec de l'opération (code {:?})",
-                                        code
-                                    )));
+                                    c.finish_operation(false, format!("Échec de l'installation (code {:?})", code), cx);
+                                    c.append_stderr(format!(">>> Erreur critique (code {:?})", code), cx);
                                 }
+                            });
+                            if success {
+                                view.refresh_after_operation(cx);
                             }
-                            cx.notify();
                         });
                         break;
                     }
@@ -467,70 +454,49 @@ impl WorkspaceView {
     }
 
     pub fn remove_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(index) = self.selected_index else {
-            return;
-        };
-        let Some(pkg) = self.packages.get(index) else {
+        let Some(pkg) = self.catalog.read(cx).selected_package.clone() else {
             return;
         };
 
         let name = pkg.name.clone();
         let is_flatpak = pkg.source_type == "Flatpak";
 
-        self.operation_logs.clear();
-        self.operation_logs
-            .push(LogEntry::stdout(format!(">>> Suppression du paquet {}...", name)));
-        self.operation_status =
-            OperationStatus::Running(format!("Suppression de {}", name));
-        self.log_drawer_open = true;
-        cx.notify();
+        self.console.update(cx, |c, cx| {
+            c.clear_logs(cx);
+            c.start_operation(format!("Suppression de {}", name), cx);
+            c.append_stdout(format!(">>> Suppression du paquet {}...", name), cx);
+        });
 
         let (tx, mut rx) = mpsc::unbounded_channel::<LogStreamEvent>();
         self.client.remove_package(&name, is_flatpak, tx);
+        let console_model = self.console.clone();
 
         cx.spawn(async move |this, cx| {
             while let Some(event) = rx.recv().await {
                 match event {
                     LogStreamEvent::Line(line) => {
-                        let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(LogEntry::stdout(line));
-                            cx.notify();
-                        });
+                        let _ = console_model.update(cx, |c, cx| c.append_stdout(line, cx));
                     }
                     LogStreamEvent::ErrorLine(err) => {
-                        let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(LogEntry::stderr(err));
-                            cx.notify();
-                        });
+                        let _ = console_model.update(cx, |c, cx| c.append_stderr(err, cx));
                     }
                     LogStreamEvent::Finished(success, code) => {
                         let _ = this.update(cx, |view, cx| {
-                            if success {
-                                view.operation_status =
-                                    OperationStatus::Success(format!("{} désinstallé", name));
-                                view.operation_logs
-                                    .push(LogEntry::stdout(">>> Désinstallation terminée avec succès."));
-                                view.refresh_after_operation(cx);
-                            } else {
-                                view.log_drawer_open = true;
-                                if code == Some(126) || code == Some(127) {
-                                    view.operation_status = OperationStatus::Error(
-                                        "Authentification Polkit annulée".to_string(),
-                                    );
-                                    view.operation_logs.push(LogEntry::stderr(
-                                        ">>> Opération annulée : invite d'authentification Polkit fermée ou refusée."
-                                    ));
+                            view.console.update(cx, |c, cx| {
+                                if success {
+                                    c.finish_operation(true, format!("{} désinstallé", name), cx);
+                                    c.append_stdout(">>> Désinstallation terminée avec succès.", cx);
+                                } else if code == Some(126) || code == Some(127) {
+                                    c.finish_operation(false, "Authentification Polkit annulée", cx);
+                                    c.append_stderr(">>> Opération annulée : invite d'authentification refusée.", cx);
                                 } else {
-                                    let last_err = view.operation_logs.iter().rev().find(|l| l.is_stderr).map(|l| l.text.clone());
-                                    let err_desc = last_err.unwrap_or_else(|| format!("Échec (code {:?})", code));
-                                    view.operation_status = OperationStatus::Error(err_desc);
-                                    view.operation_logs.push(LogEntry::stderr(format!(
-                                        ">>> Échec de la suppression (code {:?})",
-                                        code
-                                    )));
+                                    c.finish_operation(false, format!("Échec (code {:?})", code), cx);
+                                    c.append_stderr(format!(">>> Erreur (code {:?})", code), cx);
                                 }
+                            });
+                            if success {
+                                view.refresh_after_operation(cx);
                             }
-                            cx.notify();
                         });
                         break;
                     }
@@ -541,60 +507,41 @@ impl WorkspaceView {
     }
 
     pub fn upgrade_all(&mut self, cx: &mut Context<Self>) {
-        self.operation_logs.clear();
-        self.operation_logs
-            .push(LogEntry::stdout(">>> Démarrage de la mise à niveau globale du système...".to_string()));
-        self.operation_status = OperationStatus::Running("Mise à niveau globale".to_string());
-        self.log_drawer_open = true;
-        cx.notify();
+        self.console.update(cx, |c, cx| {
+            c.clear_logs(cx);
+            c.start_operation("Mise à niveau globale", cx);
+            c.append_stdout(">>> Démarrage de la mise à niveau globale du système...", cx);
+        });
 
         let (tx, mut rx) = mpsc::unbounded_channel::<LogStreamEvent>();
         self.client.upgrade_system(tx);
+        let console_model = self.console.clone();
 
         cx.spawn(async move |this, cx| {
             while let Some(event) = rx.recv().await {
                 match event {
                     LogStreamEvent::Line(line) => {
-                        let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(LogEntry::stdout(line));
-                            cx.notify();
-                        });
+                        let _ = console_model.update(cx, |c, cx| c.append_stdout(line, cx));
                     }
                     LogStreamEvent::ErrorLine(err) => {
-                        let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(LogEntry::stderr(err));
-                            cx.notify();
-                        });
+                        let _ = console_model.update(cx, |c, cx| c.append_stderr(err, cx));
                     }
                     LogStreamEvent::Finished(success, code) => {
                         let _ = this.update(cx, |view, cx| {
-                            if success {
-                                view.operation_status =
-                                    OperationStatus::Success("Système à jour".to_string());
-                                view.operation_logs
-                                    .push(LogEntry::stdout(">>> Mise à niveau terminée avec succès."));
-                                view.updates_count = 0;
-                                view.refresh_after_operation(cx);
-                            } else {
-                                view.log_drawer_open = true;
-                                if code == Some(126) || code == Some(127) {
-                                    view.operation_status = OperationStatus::Error(
-                                        "Authentification Polkit annulée".to_string(),
-                                    );
-                                    view.operation_logs.push(LogEntry::stderr(
-                                        ">>> Opération annulée : invite d'authentification Polkit fermée ou refusée."
-                                    ));
+                            view.console.update(cx, |c, cx| {
+                                if success {
+                                    c.finish_operation(true, "Système à jour", cx);
+                                    c.append_stdout(">>> Mise à niveau terminée avec succès.", cx);
+                                } else if code == Some(126) || code == Some(127) {
+                                    c.finish_operation(false, "Authentification Polkit annulée", cx);
                                 } else {
-                                    let last_err = view.operation_logs.iter().rev().find(|l| l.is_stderr).map(|l| l.text.clone());
-                                    let err_desc = last_err.unwrap_or_else(|| format!("Erreur (code {:?})", code));
-                                    view.operation_status = OperationStatus::Error(err_desc);
-                                    view.operation_logs.push(LogEntry::stderr(format!(
-                                        ">>> Erreur lors de la mise à niveau (code {:?})",
-                                        code
-                                    )));
+                                    c.finish_operation(false, format!("Erreur (code {:?})", code), cx);
                                 }
+                            });
+                            if success {
+                                view.catalog.update(cx, |cat, cx| cat.set_updates(Vec::new(), cx));
+                                view.refresh_after_operation(cx);
                             }
-                            cx.notify();
                         });
                         break;
                     }
@@ -604,42 +551,75 @@ impl WorkspaceView {
         .detach();
     }
 
-    /// Rafraîchit les paquets et le compteur de mises à jour après une opération réussie
     pub fn refresh_after_operation(&mut self, cx: &mut Context<Self>) {
-        self.package_detail_cache.clear();
-        let client = self.client.clone();
-        cx.spawn(async move |this, cx| {
-            if let Ok(updates) = client.list_updates().await {
-                let count = updates.len();
+        self.catalog.update(cx, |cat, cx| cat.invalidate_cache(cx));
+        self.load_initial_data(cx);
+    }
+
+    pub fn copy_logs_to_clipboard(&mut self, cx: &mut Context<Self>) {
+        let full_text = self
+            .console
+            .read(cx)
+            .logs
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if !full_text.is_empty() {
+            cx.write_to_clipboard(ClipboardItem::new_string(full_text));
+            self.logs_copied_feedback = true;
+            cx.notify();
+
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(2))
+                    .await;
                 let _ = this.update(cx, |view, cx| {
-                    view.updates_count = count;
+                    view.logs_copied_feedback = false;
                     cx.notify();
                 });
-            }
-        })
-        .detach();
-
-        match self.active_tab {
-            TAB_ALPM => self.perform_search(self.search_query.clone(), cx),
-            TAB_AUR => self.search_aur_tab(self.search_query.clone(), cx),
-            TAB_FLATPAK => self.search_flatpak_tab(self.search_query.clone(), cx),
-            TAB_APPIMAGE => self.load_appimages(cx),
-            TAB_UPDATES => self.load_updates(cx),
-            TAB_NEWS => self.load_news(cx),
-            _ => {}
+            })
+            .detach();
         }
     }
 
-    /// Traite une frappe clavier dans la barre de recherche.
-    ///
-    /// - Caractère imprimable (len == 1, sans Ctrl/Alt/Platform) → ajouté à la requête
-    /// - `backspace` → supprime le dernier caractère Unicode
-    /// - `escape`    → vide la requête et relâche le focus
-    /// - `enter`     → recherche immédiate, bypass debounce
-    ///
-    /// Debounce 300 ms via compteur de génération : la tâche async ne
-    /// déclenche la recherche que si `search_generation` n'a pas changé.
-    pub fn handle_search_key(
+    pub fn clear_logs(&mut self, cx: &mut Context<Self>) {
+        self.console.update(cx, |c, cx| c.clear_logs(cx));
+    }
+
+    pub fn toggle_auto_scroll(&mut self, cx: &mut Context<Self>) {
+        self.console.update(cx, |c, cx| c.toggle_auto_scroll(cx));
+    }
+
+    pub fn on_splitter_pointer_down(&mut self, _event: &MouseDownEvent, cx: &mut Context<Self>) {
+        self.is_resizing_pane = true;
+        cx.notify();
+    }
+
+    pub fn on_splitter_pointer_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.is_resizing_pane {
+            let offset_x = event.position.x;
+            let sidebar_w = if self.layout.read(cx).is_sidebar_collapsed {
+                56.0
+            } else {
+                200.0
+            };
+            let new_w = (f32::from(offset_x) - sidebar_w).clamp(240.0, 800.0);
+            self.layout.update(cx, |l, cx| {
+                l.set_list_pane_width(new_w, cx);
+            });
+        }
+    }
+
+    pub fn on_splitter_pointer_up(&mut self, _event: &MouseUpEvent, cx: &mut Context<Self>) {
+        if self.is_resizing_pane {
+            self.is_resizing_pane = false;
+            cx.notify();
+        }
+    }
+
+    pub fn on_key_down(
         &mut self,
         event: &KeyDownEvent,
         window: &mut Window,
@@ -648,544 +628,619 @@ impl WorkspaceView {
         let key = event.keystroke.key.as_str();
         let modifiers = &event.keystroke.modifiers;
 
-        // Navigation clavier instantanée (Flèches Haut/Bas pour inspecter les paquets)
-        if key == "down" || key == "arrowdown" {
-            if let Some(idx) = self.selected_index {
-                if idx + 1 < self.packages.len() {
-                    let next = idx + 1;
-                    self.select_package(next, cx);
-                    self.scroll_handle.scroll_to_item(next, ScrollStrategy::Top);
-                }
-            } else if !self.packages.is_empty() {
-                self.select_package(0, cx);
-                self.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
-            }
-            return;
-        }
-        if key == "up" || key == "arrowup" {
-            if let Some(idx) = self.selected_index {
-                if idx > 0 {
-                    let prev = idx - 1;
-                    self.select_package(prev, cx);
-                    self.scroll_handle.scroll_to_item(prev, ScrollStrategy::Top);
-                }
-            } else if !self.packages.is_empty() {
-                self.select_package(0, cx);
-                self.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
-            }
+        // Hotkey : Ctrl+Shift+D pour activer / désactiver le HUD de performances
+        if modifiers.control && modifiers.shift && (key == "D" || key == "d") {
+            self.layout.update(cx, |l, cx| l.toggle_diagnostics_hud(cx));
             return;
         }
 
-        // Ignorer les combinaisons système (Ctrl, Alt, Platform/Super)
         if modifiers.control || modifiers.alt || modifiers.platform {
             return;
         }
 
+        let items = self.get_sorted_items(cx);
+        let current_sel = self.catalog.read(cx).selected_package.clone();
+        let current_idx = current_sel.and_then(|sel| items.iter().position(|p| p.name == sel.name));
+
         match key {
+            "down" => {
+                let next_idx = match current_idx {
+                    Some(idx) if idx + 1 < items.len() => idx + 1,
+                    None if !items.is_empty() => 0,
+                    _ => return,
+                };
+                if let Some(pkg) = items.get(next_idx) {
+                    self.select_package_item(pkg.clone(), cx);
+                    self.scroll_handle
+                        .scroll_to_item(next_idx, ScrollStrategy::Top);
+                }
+                return;
+            }
+            "up" => {
+                let prev_idx = match current_idx {
+                    Some(idx) if idx > 0 => idx - 1,
+                    _ => return,
+                };
+                if let Some(pkg) = items.get(prev_idx) {
+                    self.select_package_item(pkg.clone(), cx);
+                    self.scroll_handle
+                        .scroll_to_item(prev_idx, ScrollStrategy::Top);
+                }
+                return;
+            }
             "backspace" => {
-                // Supprime le dernier graphème Unicode
-                let mut chars = self.search_query.chars();
+                let q = self.catalog.read(cx).search_query.clone();
+                let mut chars = q.chars();
                 chars.next_back();
-                self.search_query = chars.as_str().to_string();
+                let new_q = chars.as_str().to_string();
+                self.catalog.update(cx, |cat, cx| cat.set_search_query(new_q.clone(), cx));
             }
             "escape" => {
-                self.search_query.clear();
+                self.catalog.update(cx, |cat, cx| cat.set_search_query(String::new(), cx));
                 window.blur();
                 cx.notify();
                 return;
             }
             "enter" => {
-                // Recherche immédiate — bypass debounce
-                let query = self.search_query.clone();
-                let tab = self.active_tab;
+                let q = self.catalog.read(cx).search_query.clone();
                 self.search_generation = self.search_generation.wrapping_add(1);
                 cx.notify();
-                self.fire_search(query, tab, cx);
+                self.perform_search(q, cx);
                 return;
             }
             k if k.len() == 1 => {
-                self.search_query.push_str(k);
+                let mut q = self.catalog.read(cx).search_query.clone();
+                q.push_str(k);
+                self.catalog.update(cx, |cat, cx| cat.set_search_query(q, cx));
             }
             _ => return,
         }
 
         cx.notify();
 
-        // ── Debounce 50 ms (Ultra-réactif / Buttery-smooth) ───────────────────
+        // Debounce 50 ms pour recherche ultra-réactive
         self.search_generation = self.search_generation.wrapping_add(1);
         let generation = self.search_generation;
-        let query = self.search_query.clone();
-        let tab = self.active_tab;
+        let query = self.catalog.read(cx).search_query.clone();
 
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(std::time::Duration::from_millis(50)).await;
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(50))
+                .await;
 
             let _ = this.update(cx, |view, cx| {
                 if view.search_generation == generation {
-                    view.fire_search(query, tab, cx);
+                    view.perform_search(query, cx);
                 }
             });
         })
         .detach();
-    }
-
-    /// Déclenche la recherche pour l'onglet actif (ALPM / AUR / Flatpak uniquement).
-    /// AppImages, Updates, News et Settings n'ont pas de recherche textuelle live.
-    fn fire_search(&mut self, query: String, tab: usize, cx: &mut Context<Self>) {
-        match tab {
-            TAB_ALPM => self.perform_search(query, cx),
-            TAB_AUR => self.search_aur_tab(query, cx),
-            TAB_FLATPAK => self.search_flatpak_tab(query, cx),
-            _ => {}
-        }
     }
 }
 
 impl Render for WorkspaceView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
-        let active_tab = self.active_tab;
-        let updates_count = self.updates_count;
-        let is_busy = matches!(self.operation_status, OperationStatus::Running(_));
+        let route = self.layout.read(cx).active_route;
+        let is_sidebar_collapsed = self.layout.read(cx).is_sidebar_collapsed;
+        let view_mode = self.layout.read(cx).package_view_mode;
+        let active_inspector_tab = self.layout.read(cx).active_inspector_tab;
+        let list_pane_w = self.layout.read(cx).list_pane_width;
+        let show_hud = self.layout.read(cx).show_diagnostics_hud;
 
-        let selected_pkg = self.selected_index.and_then(|idx| self.packages.get(idx));
+        let (logs, op_status, log_open, auto_scroll, console_height) = {
+            let c = self.console.read(cx);
+            (c.logs.clone(), c.status.clone(), c.is_open, c.auto_scroll, c.height)
+        };
+        let is_busy = matches!(op_status, crate::components::log_drawer::OperationStatus::Running(_));
 
-        // ── Barre de navigation ──────────────────────────────────────────────
-        let header = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_4()
-            .py_2p5()
-            .bg(theme.bg_sidebar)
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .child(
-                        div()
-                            .text_base()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.accent)
-                            .child("⚡ Shelly GPUI"),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(Self::tab_button(
-                                "Dépôts ALPM",
-                                active_tab == TAB_ALPM,
-                                &theme,
-                                cx.listener(|this, _, _, cx| this.switch_tab(TAB_ALPM, cx)),
-                            ))
-                            .child(Self::tab_button(
-                                "AUR",
-                                active_tab == TAB_AUR,
-                                &theme,
-                                cx.listener(|this, _, _, cx| this.switch_tab(TAB_AUR, cx)),
-                            ))
-                            .child(Self::tab_button(
-                                "Flatpaks",
-                                active_tab == TAB_FLATPAK,
-                                &theme,
-                                cx.listener(|this, _, _, cx| this.switch_tab(TAB_FLATPAK, cx)),
-                            ))
-                            .child(Self::tab_button(
-                                "AppImages",
-                                active_tab == TAB_APPIMAGE,
-                                &theme,
-                                cx.listener(|this, _, _, cx| this.switch_tab(TAB_APPIMAGE, cx)),
-                            ))
-                            .child(Self::tab_button_with_badge(
-                                "Mises à jour",
-                                active_tab == TAB_UPDATES,
-                                updates_count,
-                                &theme,
-                                cx.listener(|this, _, _, cx| this.switch_tab(TAB_UPDATES, cx)),
-                            ))
-                            .child(Self::tab_button(
-                                "Actualités",
-                                active_tab == TAB_NEWS,
-                                &theme,
-                                cx.listener(|this, _, _, cx| this.switch_tab(TAB_NEWS, cx)),
-                            ))
-                            .child(Self::tab_button(
-                                "Paramètres",
-                                active_tab == TAB_SETTINGS,
-                                &theme,
-                                cx.listener(|this, _, _, cx| this.switch_tab(TAB_SETTINGS, cx)),
-                            )),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            // Grisé si une opération est en cours
-                            .bg(if is_busy { theme.border } else { theme.accent })
-                            .hover(|s| s.bg(if is_busy { theme.border } else { theme.accent_hover }))
-                            .text_xs()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.bg_app)
-                            .cursor_pointer()
-                            .child(if updates_count > 0 {
-                                format!("Tout mettre à jour ({})", updates_count)
-                            } else {
-                                "Tout mettre à jour".to_string()
-                            })
-                            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                                if !matches!(this.operation_status, OperationStatus::Running(_)) {
-                                    this.upgrade_all(cx);
-                                }
-                            })),
-                    ),
-            );
+        let (search_query, selected_pkg, alpm_details, (total_cnt, off_cnt, aur_cnt, fp_cnt), active_source_filter, updates_count) = {
+            let cat = self.catalog.read(cx);
+            let sel = cat.selected_package.clone();
+            let details = sel.as_ref().and_then(|p| cat.detail_cache.get(&p.name).cloned());
+            (cat.search_query.clone(), sel, details, cat.counts(), cat.source_filter, cat.updates.len())
+        };
 
-        // ── Corps central ────────────────────────────────────────────────────
-        let content = if active_tab == TAB_NEWS {
-            div().size_full().child(NewsView::render(NewsViewProps {
-                news: &self.news,
-                theme: &theme,
-                is_loading: self.is_loading_news,
-            }))
-        } else if active_tab == TAB_SETTINGS {
-            div().size_full().child(SettingsView::render(SettingsViewProps {
-                shelly_settings: &self.shelly_settings,
-                gpui_config: &self.gpui_config,
-                theme: &theme,
-            }))
+        let items = self.get_sorted_items(cx);
+        let active_rows = items.len();
+
+        // Calcul des métriques pour le Performance HUD
+        let now = Instant::now();
+        let frame_time_ms = if let Some(last) = self.last_render {
+            now.duration_since(last).as_secs_f32() * 1000.0
         } else {
-            // Split view : liste à gauche, détails à droite
-            let mut list_pane = div()
-                .flex()
-                .flex_col()
-                .w(px(self.list_pane_width))
-                .h_full()
-                .bg(theme.bg_app);
+            16.6
+        };
+        self.last_render = Some(now);
+        let fps = if frame_time_ms > 0.0 {
+            (1000.0 / frame_time_ms).clamp(1.0, 240.0)
+        } else {
+            60.0
+        };
+        self.layout.update(cx, |l, cx| {
+            l.update_metrics(fps, frame_time_ms, active_rows, cx);
+        });
+        let memory_mb = DiagnosticsHud::read_rss_memory_mb();
 
-            // ── Barre de recherche interactive ──────────────────────────────
-            // Clique → focus → touches → debounce 300 ms → recherche live
-            let search_focus = self.search_focus.clone();
-            let is_search_focused = self.search_focus.is_focused(window);
-            let search_query = self.search_query.clone();
-            let is_searching = self.is_searching;
+        let entity = cx.entity().clone();
 
-            // Bordure colorée si la barre est active
-            let border_color = if is_search_focused {
-                theme.border_focus
-            } else {
-                theme.border
-            };
+        // ── 1. Volet de navigation vertical (NavRail) ────────────────────────
+        let entity_nav = entity.clone();
+        let entity_side = entity.clone();
+        let entity_hud = entity.clone();
 
-            // Texte affiché : requête en cours, ou placeholder si vide
-            let display_text = if search_query.is_empty() {
-                if is_search_focused {
-                    "⌨  Tapez votre recherche...".to_string()
-                } else {
-                    "Rechercher  (cliquez ou tapez)".to_string()
-                }
-            } else if is_search_focused {
-                // Curseur visuel en fin de saisie
-                format!("{}▌", search_query)
-            } else {
-                search_query.clone()
-            };
+        let nav_rail = NavRail::render(NavRailProps {
+            active_route: route,
+            is_collapsed: is_sidebar_collapsed,
+            update_count: updates_count,
+            theme: &theme,
+            hud_active: show_hud,
+            on_select_route: Rc::new(move |r, _window, cx| {
+                entity_nav.update(cx, |view, cx| {
+                    view.switch_route(r, cx);
+                });
+            }),
+            on_toggle_sidebar: Rc::new(move |_ev, _window, cx| {
+                entity_side.update(cx, |view, cx| {
+                    view.layout.update(cx, |l, cx| l.toggle_sidebar(cx));
+                });
+            }),
+            on_toggle_hud: Rc::new(move |_ev, _window, cx| {
+                entity_hud.update(cx, |view, cx| {
+                    view.layout.update(cx, |l, cx| l.toggle_diagnostics_hud(cx));
+                });
+            }),
+        });
 
-            let text_color = if search_query.is_empty() {
-                theme.text_muted
-            } else {
-                theme.text_primary
-            };
+        // ── 2. Contenu principal selon la route ──────────────────────────────
+        let main_content = match route {
+            NavRoute::Search | NavRoute::Installed => {
+                // ── Barre de recherche & Filtres multi-sources ──────────────
+                let search_field = {
+                    let has_text = !search_query.is_empty();
+                    let is_focused = self.search_focus.is_focused(window);
+                    let border_col = if is_focused {
+                        theme.border_focus
+                    } else {
+                        theme.border
+                    };
 
-            let search_bar = div()
-                .id("search_bar")
-                .track_focus(&search_focus)
-                .flex()
-                .items_center()
-                .justify_between()
-                .p_3()
-                .border_b_1()
-                .border_color(border_color)
-                .bg(if is_search_focused { theme.bg_surface_active } else { theme.bg_surface })
-                // Clic → focus clavier
-                .on_mouse_down(MouseButton::Left, {
-                    let sf = search_focus.clone();
-                    move |_, window, _cx| {
-                        window.focus(&sf);
-                    }
-                })
-                // Capture des touches clavier
-                .on_key_down(cx.listener(|this, event, window, cx| {
-                    this.handle_search_key(event, window, cx);
-                }))
-                .child(
+                    let entity_focus = entity.clone();
+                    let entity_clear = entity.clone();
+
                     div()
-                        .flex_grow()
-                        .text_xs()
-                        .text_color(text_color)
-                        .child(display_text),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(if is_search_focused { theme.accent } else { theme.text_muted })
-                        .child(if is_searching {
-                            "Recherche..."
-                        } else if is_search_focused {
-                            "Esc pour annuler"
-                        } else {
-                            "Clic pour saisir"
+                        .flex_1()
+                        .max_w(px(520.0))
+                        .h(px(36.0))
+                        .flex()
+                        .items_center()
+                        .px_3()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(border_col)
+                        .bg(theme.bg_surface)
+                        .cursor_text()
+                        .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                            entity_focus.update(cx, |view, _cx| {
+                                window.focus(&view.search_focus);
+                            });
+                        })
+                        .child(
+                            div()
+                                .text_color(if is_focused {
+                                    theme.accent
+                                } else {
+                                    theme.text_muted
+                                })
+                                .mr_2()
+                                .child("🔍"),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_sm()
+                                .text_color(if has_text {
+                                    theme.text_primary
+                                } else {
+                                    theme.text_muted
+                                })
+                                .child(if has_text {
+                                    search_query.clone()
+                                } else {
+                                    "Rechercher un paquet (dépôts, AUR, Flatpak)...".to_string()
+                                }),
+                        )
+                        .when(has_text, |d| {
+                            d.child(
+                                div()
+                                    .cursor_pointer()
+                                    .text_color(theme.text_muted)
+                                    .hover(move |s| s.text_color(theme.text_primary))
+                                    .child("✕")
+                                    .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
+                                        entity_clear.update(cx, |view, cx| {
+                                            view.catalog.update(cx, |cat, cx| {
+                                                cat.set_search_query(String::new(), cx)
+                                            });
+                                            view.perform_search(String::new(), cx);
+                                        });
+                                    }),
+                            )
+                        })
+                };
+
+                // Filter Pills multi-sources
+                let entity_filter = entity.clone();
+                let filter_pills = FilterPills::render(FilterPillsProps {
+                    active_filter: active_source_filter,
+                    total_count: total_cnt,
+                    official_count: off_cnt,
+                    aur_count: aur_cnt,
+                    flatpak_count: fp_cnt,
+                    theme: &theme,
+                    on_select_filter: Rc::new(move |f, _w, cx| {
+                        entity_filter.update(cx, |view, cx| {
+                            view.catalog.update(cx, |cat, cx| cat.set_source_filter(f, cx));
+                        });
+                    }),
+                });
+
+                // Bouton bascule de présentation (Cartes vs Tableau)
+                let entity_vm = entity.clone();
+                let view_mode_btn = div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.bg_surface)
+                    .text_xs()
+                    .cursor_pointer()
+                    .text_color(theme.text_secondary)
+                    .hover(move |s| s.bg(theme.bg_surface_hover).text_color(theme.text_primary))
+                    .child(if view_mode == PackageViewMode::Table {
+                        "☷ Mode Cartes"
+                    } else {
+                        "☰ Mode Tableau"
+                    })
+                    .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
+                        entity_vm.update(cx, |view, cx| {
+                            let next_mode = if view.layout.read(cx).package_view_mode == PackageViewMode::Table {
+                                PackageViewMode::Cards
+                            } else {
+                                PackageViewMode::Table
+                            };
+                            view.layout.update(cx, |l, cx| l.set_view_mode(next_mode, cx));
+                        });
+                    });
+
+                let toolbar = div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_4()
+                    .py_2p5()
+                    .bg(theme.bg_app)
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(div().flex().items_center().gap_4().child(search_field).child(filter_pills))
+                    .child(view_mode_btn);
+
+                // ── Volet gauche (Liste de paquets) ──────────────────────────
+                let entity_sel_table = entity.clone();
+                let entity_sort = entity.clone();
+
+                let list_content: AnyElement = if view_mode == PackageViewMode::Table {
+                    PackageTable::render(PackageTableProps {
+                        packages: &items,
+                        selected_package: selected_pkg.as_ref(),
+                        theme: &theme,
+                        scroll_handle: self.table_scroll_handle.clone(),
+                        sort_column: self.sort_column,
+                        sort_direction: self.sort_direction,
+                        on_select_package: Rc::new(move |pkg, _w, cx| {
+                            let p = pkg.clone();
+                            entity_sel_table.update(cx, |view, cx| {
+                                view.select_package_item(p, cx);
+                            });
                         }),
-                );
-
-            list_pane = list_pane.child(search_bar);
-
-            let scroll_list = if self.is_searching {
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .h(px(100.0))
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child("Recherche des paquets en cours...")
+                        on_change_sort: Rc::new(move |col, _w, cx| {
+                            entity_sort.update(cx, |view, cx| {
+                                view.change_sort(col, cx);
+                            });
+                        }),
+                    })
                     .into_any_element()
-            } else if self.packages.is_empty() {
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .h(px(100.0))
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child("Aucun paquet correspondant trouvé.")
-                    .into_any_element()
-            } else {
-                let entity = cx.entity().clone();
-                let selected_index = self.selected_index;
-                let package_count = self.packages.len();
-                let scroll_handle = self.scroll_handle.clone();
+                } else {
+                    let scroll_handle = self.scroll_handle.clone();
+                    let package_count = items.len();
+                    let card_items = items.clone();
+                    let card_sel = selected_pkg.clone();
+                    let card_entity = entity.clone();
 
-                uniform_list(
-                    "packages_uniform_list",
-                    package_count,
-                    cx.processor(move |this, range: std::ops::Range<usize>, _window, _cx| {
-                        let theme = this.theme;
-                        let mut items = Vec::with_capacity(range.end - range.start);
+                    uniform_list("package_cards_list", package_count, move |range, _window, _cx| {
+                        let mut elements = Vec::with_capacity(range.end - range.start);
                         for idx in range {
-                            if let Some(pkg) = this.packages.get(idx) {
-                                let is_selected = selected_index == Some(idx);
-                                let card_entity = entity.clone();
-                                let item = div()
-                                    .id(idx)
+                            if let Some(pkg) = card_items.get(idx) {
+                                let is_sel = card_sel.as_ref().map(|s| s.name == pkg.name).unwrap_or(false);
+                                let pkg_clone = pkg.clone();
+                                let ent = card_entity.clone();
+
+                                let el = div()
                                     .h(px(78.0))
                                     .px_2()
                                     .pb_1p5()
                                     .child(PackageCard::render(PackageCardProps {
                                         package: pkg,
-                                        is_selected,
+                                        is_selected: is_sel,
                                         theme: &theme,
                                     }))
-                                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                        card_entity.update(cx, |view, cx| {
-                                            view.select_package(idx, cx);
+                                    .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
+                                        let p = pkg_clone.clone();
+                                        ent.update(cx, |view, cx| {
+                                            view.select_package_item(p, cx);
                                         });
                                     });
-                                items.push(item);
+                                elements.push(el);
                             }
                         }
-                        items
-                    }),
-                )
-                .size_full()
-                .track_scroll(scroll_handle)
-                .into_any_element()
-            };
+                        elements
+                    })
+                    .size_full()
+                    .track_scroll(scroll_handle)
+                    .into_any_element()
+                };
 
-            list_pane = list_pane.child(
-                div()
-                    .id("packages_scroll_container")
-                    .flex_grow()
+                let left_pane = div()
+                    .w(px(list_pane_w))
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .overflow_hidden()
+                    .bg(theme.bg_surface)
+                    .child(list_content);
+
+                // ── Barre de redimensionnement (Splitter) ────────────────────
+                let is_resizing = self.is_resizing_pane;
+                let entity_splitter = entity.clone();
+                let splitter = div()
+                    .w(px(6.0))
+                    .h_full()
+                    .bg(if is_resizing {
+                        theme.accent
+                    } else {
+                        theme.border
+                    })
+                    .cursor_col_resize()
+                    .hover(move |s| s.bg(theme.accent_hover))
+                    .on_mouse_down(MouseButton::Left, move |e, _w, cx| {
+                        entity_splitter.update(cx, |view, cx| {
+                            view.on_splitter_pointer_down(e, cx);
+                        });
+                    });
+
+                // ── Volet droit (Inspector avec onglets) ──────────────────────
+                let entity_inst = entity.clone();
+                let entity_rem = entity.clone();
+                let entity_tab = entity.clone();
+                let entity_nav_dep = entity.clone();
+
+                let right_pane = div()
+                    .flex_1()
                     .h_full()
                     .overflow_hidden()
-                    .child(scroll_list),
-            );
+                    .bg(theme.bg_app)
+                    .child(PackageDetailsView::render(PackageDetailsProps {
+                        package: selected_pkg.as_ref(),
+                        alpm_details: alpm_details.as_ref(),
+                        theme: &theme,
+                        is_busy,
+                        active_tab: active_inspector_tab,
+                        file_list: &self.file_list,
+                        on_install: Some(Rc::new(move |_e, _w, cx| {
+                            entity_inst.update(cx, |view, cx| view.install_selected(cx));
+                        })),
+                        on_remove: Some(Rc::new(move |_e, _w, cx| {
+                            entity_rem.update(cx, |view, cx| view.remove_selected(cx));
+                        })),
+                        on_change_tab: Some(Rc::new(move |t, _w, cx| {
+                            entity_tab.update(cx, |view, cx| {
+                                view.layout.update(cx, |l, cx| l.set_inspector_tab(t, cx));
+                            });
+                        })),
+                        on_navigate_dep: Some(Rc::new(move |dep_name, _w, cx| {
+                            entity_nav_dep.update(cx, |view, cx| {
+                                view.perform_search(dep_name, cx);
+                            });
+                        })),
+                    }));
 
-            let details_pane = div()
-                .flex_grow()
-                .h_full()
-                .child(PackageDetailsView::render(PackageDetailsProps {
-                    package: selected_pkg,
-                    alpm_details: self.selected_alpm_details.as_ref(),
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .h_full()
+                    .overflow_hidden()
+                    .child(toolbar)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_1()
+                            .h_full()
+                            .overflow_hidden()
+                            .child(left_pane)
+                            .child(splitter)
+                            .child(right_pane),
+                    )
+            }
+            NavRoute::Updates => {
+                let entity_up = entity.clone();
+                let updates_list = self.catalog.read(cx).updates.clone();
+
+                let content = div()
+                    .id("updates_scroll_view")
+                    .flex()
+                    .flex_col()
+                    .size_full()
+                    .p_6()
+                    .overflow_scroll()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .mb_6()
+                            .child(
+                                div()
+                                    .text_xl()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme.text_primary)
+                                    .child(format!("Mises à jour système ({})", updates_list.len())),
+                            )
+                            .when(!updates_list.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .px_4()
+                                        .py_2()
+                                        .rounded_md()
+                                        .bg(theme.accent)
+                                        .text_sm()
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(theme.bg_app)
+                                        .cursor_pointer()
+                                        .hover(move |s| s.bg(theme.accent_hover))
+                                        .child("Tout mettre à jour")
+                                        .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
+                                            entity_up.update(cx, |view, cx| view.upgrade_all(cx));
+                                        }),
+                                )
+                            }),
+                    );
+
+                div().flex_1().h_full().child(content)
+            }
+            NavRoute::Settings => {
+                let settings = SettingsView::render(SettingsViewProps {
+                    shelly_settings: &self.shelly_settings,
+                    gpui_config: &self.gpui_config,
                     theme: &theme,
-                    is_busy,
-                    on_install: Some(Rc::new(cx.listener(|this, _, _, cx| {
-                        this.install_selected(cx);
-                    }))),
-                    on_remove: Some(Rc::new(cx.listener(|this, _, _, cx| {
-                        this.remove_selected(cx);
-                    }))),
-                }));
+                });
 
-            let is_resizing = self.is_resizing_pane;
-            let splitter = div()
-                .id("pane_splitter")
-                .w(px(6.0))
-                .h_full()
-                .bg(if is_resizing { theme.accent } else { theme.border })
-                .cursor_col_resize()
-                .hover(|s| s.bg(theme.accent_hover))
-                .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                    this.is_resizing_pane = true;
-                    cx.notify();
-                }));
+                let news = NewsView::render(NewsViewProps {
+                    news: &self.news,
+                    is_loading: self.is_loading_news,
+                    theme: &theme,
+                });
 
-            div()
-                .flex()
-                .size_full()
-                .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                    if this.is_resizing_pane {
-                        this.is_resizing_pane = false;
-                        cx.notify();
-                    }
-                }))
-                .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                    if this.is_resizing_pane {
-                        let new_w: f32 = (event.position.x / px(1.0)).clamp(300.0, 750.0);
-                        if (new_w - this.list_pane_width).abs() >= 1.0 {
-                            this.list_pane_width = new_w;
-                            cx.notify();
-                        }
-                    }
-                }))
-                .child(list_pane)
-                .child(splitter)
-                .child(details_pane)
+                div()
+                    .flex_1()
+                    .h_full()
+                    .flex()
+                    .overflow_hidden()
+                    .child(div().id("settings_pane").w_1_2().h_full().overflow_scroll().child(settings))
+                    .child(div().id("news_pane").w_1_2().h_full().overflow_scroll().child(news))
+            }
         };
 
-        // ── Tiroir de logs ───────────────────────────────────────────────────
-        let log_drawer = div().child(LogDrawer::render(LogDrawerProps {
-            logs: &self.operation_logs,
-            status: &self.operation_status,
-            is_open: self.log_drawer_open,
-            auto_scroll: self.auto_scroll_logs,
-            copied_feedback: self.logs_copied_feedback,
+        // ── 3. Tiroir de logs / console d'opérations ─────────────────────────
+        let entity_log_toggle = entity.clone();
+        let entity_log_copy = entity.clone();
+        let entity_log_clear = entity.clone();
+        let entity_log_auto = entity.clone();
+        let copied_feedback = self.logs_copied_feedback;
+
+        let log_drawer = LogDrawer::render(LogDrawerProps {
+            logs: &logs,
+            status: &op_status,
+            is_open: log_open,
+            auto_scroll: auto_scroll,
+            height: console_height,
+            copied_feedback,
             theme: &theme,
-            on_toggle: Some(Rc::new(cx.listener(|this, _, _, cx| {
-                this.toggle_log_drawer(cx);
-            }))),
-            on_copy: Some(Rc::new(cx.listener(|this, _, _window, cx| {
-                this.copy_logs_to_clipboard(cx);
-            }))),
-            on_clear: Some(Rc::new(cx.listener(|this, _, _, cx| {
-                this.clear_logs(cx);
-            }))),
-            on_toggle_autoscroll: Some(Rc::new(cx.listener(|this, _, _, cx| {
-                this.auto_scroll_logs = !this.auto_scroll_logs;
-                cx.notify();
-            }))),
-        }));
+            on_toggle: Some(Rc::new(move |_e, _w, cx| {
+                entity_log_toggle.update(cx, |view, cx| {
+                    view.console.update(cx, |c, cx| c.toggle_drawer(cx));
+                });
+            })),
+            on_copy: Some(Rc::new(move |_e, _w, cx| {
+                entity_log_copy.update(cx, |view, cx| view.copy_logs_to_clipboard(cx));
+            })),
+            on_clear: Some(Rc::new(move |_e, _w, cx| {
+                entity_log_clear.update(cx, |view, cx| view.clear_logs(cx));
+            })),
+            on_toggle_autoscroll: Some(Rc::new(move |_e, _w, cx| {
+                entity_log_auto.update(cx, |view, cx| view.toggle_auto_scroll(cx));
+            })),
+        });
+
+        // ── 4. HUD de diagnostic de performance flottant ──────────────────────
+        let entity_hud_close = entity.clone();
+        let diagnostics_hud = if show_hud {
+            let layout_read = self.layout.read(cx);
+            Some(
+                div()
+                    .absolute()
+                    .bottom(px(40.0))
+                    .right(px(24.0))
+                    .child(DiagnosticsHud::render(DiagnosticsHudProps {
+                        fps: layout_read.fps,
+                        frame_time_ms: layout_read.frame_time_ms,
+                        active_rows: layout_read.active_rows,
+                        memory_mb,
+                        theme: &theme,
+                        on_close: Some(Rc::new(move |_e, _w, cx| {
+                            entity_hud_close.update(cx, |view, cx| {
+                                view.layout.update(cx, |l, cx| l.toggle_diagnostics_hud(cx));
+                            });
+                        })),
+                    })),
+            )
+        } else {
+            None
+        };
+
+        // ── 5. Assemblage final de la fenêtre ────────────────────────────────
+        let entity_move = entity.clone();
+        let entity_up = entity.clone();
+        let entity_key = entity.clone();
 
         div()
-            .flex()
-            .flex_col()
+            .id("workspace_root")
             .size_full()
-            .bg(theme.bg_app)
-            .child(header)
-            .child(div().flex_grow().overflow_hidden().child(content))
-            .child(log_drawer)
-    }
-}
-
-impl WorkspaceView {
-    /// Bouton d'onglet simple avec état hover utilisant bg_surface_hover
-    fn tab_button<F>(
-        label: &'static str,
-        is_active: bool,
-        theme: &Theme,
-        on_click: F,
-    ) -> impl IntoElement
-    where
-        F: Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
-    {
-        div()
-            .px_3()
-            .py_1()
-            .rounded_md()
-            .bg(if is_active {
-                theme.bg_surface_active
-            } else {
-                theme.bg_sidebar
-            })
-            .when(!is_active, |el| el.hover(|s| s.bg(theme.bg_surface_hover)))
-            .text_xs()
-            .font_weight(if is_active {
-                FontWeight::BOLD
-            } else {
-                FontWeight::NORMAL
-            })
-            .text_color(if is_active {
-                theme.text_primary
-            } else {
-                theme.text_muted
-            })
-            .cursor_pointer()
-            .child(label)
-            .on_mouse_down(MouseButton::Left, on_click)
-    }
-
-    /// Bouton d'onglet avec badge numérique — utilise StatusPill::badge_count pour le compteur
-    fn tab_button_with_badge<F>(
-        label: &'static str,
-        is_active: bool,
-        badge_count: usize,
-        theme: &Theme,
-        on_click: F,
-    ) -> impl IntoElement
-    where
-        F: Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
-    {
-        div()
             .flex()
-            .items_center()
-            .gap_1p5()
-            .px_3()
-            .py_1()
-            .rounded_md()
-            .bg(if is_active {
-                theme.bg_surface_active
-            } else {
-                theme.bg_sidebar
+            .flex_row()
+            .bg(theme.bg_app)
+            .text_color(theme.text_primary)
+            .track_focus(&self.search_focus)
+            .on_key_down(move |event, window, cx| {
+                entity_key.update(cx, |view, cx| {
+                    view.on_key_down(event, window, cx);
+                });
             })
-            .when(!is_active, |el| el.hover(|s| s.bg(theme.bg_surface_hover)))
-            .text_xs()
-            .font_weight(if is_active {
-                FontWeight::BOLD
-            } else {
-                FontWeight::NORMAL
+            .on_mouse_move(move |event, _window, cx| {
+                entity_move.update(cx, |view, cx| {
+                    view.on_splitter_pointer_move(event, cx);
+                });
             })
-            .text_color(if is_active {
-                theme.text_primary
-            } else {
-                theme.text_muted
+            .on_mouse_up(MouseButton::Left, move |event, _window, cx| {
+                entity_up.update(cx, |view, cx| {
+                    view.on_splitter_pointer_up(event, cx);
+                });
             })
-            .cursor_pointer()
-            .child(label)
-            .when(badge_count > 0, |el| {
-                el.child(StatusPill::badge_count(badge_count, theme))
-            })
-            .on_mouse_down(MouseButton::Left, on_click)
+            .child(nav_rail)
+            .child(
+                div()
+                    .flex_1()
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .overflow_hidden()
+                    .child(div().flex_1().h_full().overflow_hidden().child(main_content))
+                    .child(log_drawer),
+            )
+            .children(diagnostics_hud)
     }
 }
