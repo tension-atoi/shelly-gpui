@@ -5,7 +5,7 @@
 This matrix maps every commitment defined in `02-WORK-CONTRACT.md`, `03-MOTION-ARCHITECTURE.md`, `04-FEEDBACK-MODEL.md`, and `05-PERFORMANCE-EVIDENCE.md` to concrete source code locations, unit test telemetry, architectural invariants, and empirical runtime Wayland framebuffer evidence.
 
 **Baseline HEAD**: `9d2d1c76f729a6bf57f53339c13074a6d4247783`  
-**Closure Git HEAD**: Recorded upon slice closure commit  
+**Closure Git HEAD**: `fe0b2adfb17dccc93b997a351290d176fc9c151f`  
 
 ### Evidence Classes & Epistemic Boundaries
 - **`TEST VERIFIED`**: Proved via automated unit test execution in `cargo test` (including interpolation progress, clamping, and timer lifecycles).

@@ -6,7 +6,7 @@
 **Repository**: `tension-atoi/shelly-gpui`  
 **Branch**: `main`  
 **Baseline HEAD**: `9d2d1c76f729a6bf57f53339c13074a6d4247783`  
-**Closure Git HEAD**: Recorded upon slice closure commit  
+**Closure Git HEAD**: `fe0b2adfb17dccc93b997a351290d176fc9c151f`  
 **Status**: **ACCEPTED & CLOSED**  
 **Evidence Standard**: Multi-tier (Compile-Time Hard Enforcement + Unit Test Telemetry + Continuous Frame Ownership Isolation + Native Wayland Compositor Framebuffer Captures)
 
