@@ -81,3 +81,33 @@ impl Theme {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use core::prelude::v1::test;
+    use super::*;
+
+    #[test]
+    fn test_theme_dark_and_light_parity_and_contrast() {
+        let dark = Theme::dark();
+        let light = Theme::light();
+
+        // Ensure surface is distinct from app background in both themes
+        assert_ne!(dark.bg_app, dark.bg_surface);
+        assert_ne!(light.bg_app, light.bg_surface);
+
+        // Ensure primary text differs from background in both themes
+        assert_ne!(dark.text_primary, dark.bg_app);
+        assert_ne!(light.text_primary, light.bg_app);
+
+        // Ensure border focus differs from base border
+        assert_ne!(dark.border, dark.border_focus);
+        assert_ne!(light.border, light.border_focus);
+
+        // Ensure default is dark theme
+        let def = Theme::default();
+        assert_eq!(def.bg_app, dark.bg_app);
+        assert_eq!(def.accent, dark.accent);
+    }
+}
+
