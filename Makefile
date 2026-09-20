@@ -14,7 +14,11 @@ REPO_ROOT   := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 ZIG_SRC     := $(REPO_ROOT)Shelly.Cli.Zig
 ZIG_BIN     := $(ZIG_SRC)/zig-out/bin/shelly
 RUST_SRC    := $(REPO_ROOT)Shelly.Ui.Gpui
-RUST_BIN    := $(RUST_SRC)/target/release/shelly-gpui
+TARGET_DIR  := $(shell cd $(RUST_SRC) && cargo metadata --format-version 1 --no-deps 2>/dev/null | grep -o '"target_directory":"[^"]*"' | cut -d'"' -f4)
+ifeq ($(TARGET_DIR),)
+  TARGET_DIR := $(RUST_SRC)/target
+endif
+RUST_BIN    := $(TARGET_DIR)/release/shelly-gpui
 PKGBUILD    := $(REPO_ROOT)PKGBUILD-gpui
 
 # Préfère le CLI Zig local ; tombe en arrière sur le CLI système si absent

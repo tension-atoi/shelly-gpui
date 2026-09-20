@@ -82,23 +82,22 @@ check() {
 package() {
     cd "${srcdir}/${pkgname}"
 
+    # Trouver l'emplacement du binaire compilé (respecte CARGO_TARGET_DIR si défini)
+    local _target_bin
+    _target_bin=$(find "Shelly.Ui.Gpui/target" "${CARGO_TARGET_DIR:-/nonexistent}" -name "shelly-gpui" -type f -perm -111 2>/dev/null | head -n1)
+    if [ -z "${_target_bin}" ] || [ ! -f "${_target_bin}" ]; then
+        _target_bin="Shelly.Ui.Gpui/target/release/shelly-gpui"
+    fi
+
     # ── Binaires ──────────────────────────────────────────────────────────────
     install -Dm755 "Shelly.Cli.Zig/zig-out/bin/shelly" \
         "${pkgdir}/usr/lib/shelly/shelly"
 
-    install -Dm755 "Shelly.Ui.Gpui/target/release/shelly-gpui" \
-        "${pkgdir}/usr/bin/shelly-gpui"
-
-    # Wrapper léger qui garantit que le frontend trouve le CLI bundlé
-    install -dm755 "${pkgdir}/usr/bin"
-    cat > "${pkgdir}/usr/bin/shelly-gpui" << 'EOF'
-#!/bin/sh
-exec /usr/lib/shelly/shelly-gpui-bin "$@"
-EOF
-    # Corrige : installe le vrai binaire sous un nom interne
-    install -Dm755 "Shelly.Ui.Gpui/target/release/shelly-gpui" \
+    install -Dm755 "${_target_bin}" \
         "${pkgdir}/usr/lib/shelly/shelly-gpui-bin"
-    # Le wrapper /usr/bin/shelly-gpui positionne SHELLY_BIN et lance l'exe
+
+    # Wrapper /usr/bin/shelly-gpui qui positionne SHELLY_BIN et lance le binaire
+    install -dm755 "${pkgdir}/usr/bin"
     cat > "${pkgdir}/usr/bin/shelly-gpui" << 'EOF'
 #!/bin/sh
 SHELLY_BIN=/usr/lib/shelly/shelly exec /usr/lib/shelly/shelly-gpui-bin "$@"

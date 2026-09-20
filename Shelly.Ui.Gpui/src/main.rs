@@ -11,6 +11,9 @@ fn main() {
     env_logger::init();
     log::info!("Démarrage de Shelly GPUI...");
 
+    // Initialise et entre dans le contexte du runtime Tokio pour les tâches et processus async
+    let _rt_guard = backend::process::runtime().enter();
+
     Application::new().run(|cx: &mut App| {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds {

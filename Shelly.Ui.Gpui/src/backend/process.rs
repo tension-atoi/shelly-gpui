@@ -1,8 +1,21 @@
 use anyhow::{Context, Result};
 use std::process::Stdio;
+use std::sync::OnceLock;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
+
+static TOKIO_RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+pub fn runtime() -> &'static tokio::runtime::Runtime {
+    TOKIO_RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("shelly-tokio-worker")
+            .build()
+            .expect("Échec de l'initialisation du runtime Tokio")
+    })
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LogStreamEvent {
@@ -14,25 +27,39 @@ pub enum LogStreamEvent {
 pub struct ProcessRunner;
 
 impl ProcessRunner {
-    /// Exécute une commande de lecture et retourne la chaîne JSON complète
+    /// Exécute une commande de lecture et retourne la chaîne JSON complète via le runtime Tokio
     pub async fn run_json_command(binary_path: &str, args: &[&str]) -> Result<String> {
-        let mut cmd = Command::new(binary_path);
-        cmd.args(args);
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
+        let bin = binary_path.to_string();
+        let owned_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        let (tx, rx) = tokio::sync::oneshot::channel();
 
-        let output = cmd.output().await.with_context(|| {
-            format!("Échec de l'exécution de {} avec les arguments {:?}", binary_path, args)
-        })?;
+        runtime().spawn(async move {
+            let mut cmd = Command::new(&bin);
+            cmd.args(&owned_args);
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
 
-        if !output.status.success() {
-            let err_str = String::from_utf8_lossy(&output.stderr);
-            log::warn!("La commande a retourné une erreur (code {:?}): {}", output.status.code(), err_str);
-        }
+            let output_res = cmd.output().await.with_context(|| {
+                format!("Échec de l'exécution de {} avec les arguments {:?}", bin, owned_args)
+            });
 
-        let stdout = String::from_utf8(output.stdout)
-            .context("Sortie stdout non-UTF8 lors de l'exécution de la commande")?;
-        Ok(stdout)
+            let res = match output_res {
+                Ok(output) => {
+                    if !output.status.success() {
+                        let err_str = String::from_utf8_lossy(&output.stderr);
+                        log::warn!("La commande a retourné une erreur (code {:?}): {}", output.status.code(), err_str);
+                    }
+                    String::from_utf8(output.stdout)
+                        .context("Sortie stdout non-UTF8 lors de l'exécution de la commande")
+                }
+                Err(e) => Err(e),
+            };
+
+            let _ = tx.send(res);
+        });
+
+        rx.await
+            .map_err(|_| anyhow::anyhow!("Tâche annulée avant de renvoyer un résultat"))?
     }
 
     /// Exécute une opération de mutation (install, remove, upgrade) en streamant chaque ligne
@@ -41,7 +68,7 @@ impl ProcessRunner {
         args: Vec<String>,
         tx: mpsc::UnboundedSender<LogStreamEvent>,
     ) {
-        tokio::spawn(async move {
+        runtime().spawn(async move {
             let mut cmd = Command::new(&binary_path);
             cmd.args(&args);
             cmd.stdout(Stdio::piped());

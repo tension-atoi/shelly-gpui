@@ -605,7 +605,7 @@ impl WorkspaceView {
         let tab = self.active_tab;
 
         cx.spawn(async move |this, cx| {
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            cx.background_executor().timer(std::time::Duration::from_millis(300)).await;
 
             let _ = this.update(cx, |view, cx| {
                 if view.search_generation == generation {
