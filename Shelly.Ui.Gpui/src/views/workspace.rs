@@ -554,13 +554,14 @@ impl WorkspaceView {
         let trimmed = query.trim().to_string();
 
         if trimmed.is_empty() {
-            self.session.update(cx, |s, cx| {
-                s.search_query = String::new();
+            let next_gen = self.session.update(cx, |s, cx| {
+                s.search_query.clear();
                 s.set_searching(false, cx);
                 s.select_package(None, cx);
+                s.next_search_generation()
             });
             self.store.update(cx, |st, cx| {
-                st.set_active_results(Vec::new(), usize::MAX, cx);
+                st.set_active_results(Vec::new(), next_gen, cx);
             });
             return;
         }
@@ -605,45 +606,64 @@ impl WorkspaceView {
         cx.spawn(async move |this, cx| {
             let results: Vec<UnifiedPackage> = match filter {
                 SourceFilter::All => {
+                    let (alpm_res, aur_res, flatpak_res, appimage_res) = tokio::join!(
+                        client.search_standard(&query_clone),
+                        async {
+                            if aur_enabled {
+                                client.search_aur(&query_clone).await.ok()
+                            } else {
+                                None
+                            }
+                        },
+                        async {
+                            if flatpak_enabled {
+                                client.search_flatpak(&query_clone).await.ok()
+                            } else {
+                                None
+                            }
+                        },
+                        async {
+                            if appimage_enabled {
+                                client.list_appimages().await.ok()
+                            } else {
+                                None
+                            }
+                        }
+                    );
+
                     let mut combined = Vec::new();
 
-                    if let Ok(pkgs) = client.search_standard(&query_clone).await {
+                    if let Ok(pkgs) = alpm_res {
                         for p in pkgs {
                             combined.push(UnifiedPackage::from_alpm(p, false));
                         }
                     }
-                    if aur_enabled {
-                        if let Ok(pkgs) = client.search_aur(&query_clone).await {
-                            for p in pkgs {
-                                combined.push(UnifiedPackage::from_aur(p, false));
-                            }
+                    if let Some(pkgs) = aur_res {
+                        for p in pkgs {
+                            combined.push(UnifiedPackage::from_aur(p, false));
                         }
                     }
-                    if flatpak_enabled {
-                        if let Ok(pkgs) = client.search_flatpak(&query_clone).await {
-                            for p in pkgs {
-                                combined.push(UnifiedPackage::from_flatpak(p, false));
-                            }
+                    if let Some(pkgs) = flatpak_res {
+                        for p in pkgs {
+                            combined.push(UnifiedPackage::from_flatpak(p, false));
                         }
                     }
-                    if appimage_enabled {
-                        if let Ok(appimages) = client.list_appimages().await {
-                            let q_lower = query_clone.to_lowercase();
-                            for ai in appimages {
-                                let matches = ai.name.to_lowercase().contains(&q_lower)
-                                    || ai
-                                        .desktop_name
-                                        .as_ref()
-                                        .map(|d| d.to_lowercase().contains(&q_lower))
-                                        .unwrap_or(false)
-                                    || ai
-                                        .description
-                                        .as_ref()
-                                        .map(|d| d.to_lowercase().contains(&q_lower))
-                                        .unwrap_or(false);
-                                if matches {
-                                    combined.push(UnifiedPackage::from_appimage(ai));
-                                }
+                    if let Some(appimages) = appimage_res {
+                        let q_lower = query_clone.to_lowercase();
+                        for ai in appimages {
+                            let matches = ai.name.to_lowercase().contains(&q_lower)
+                                || ai
+                                    .desktop_name
+                                    .as_ref()
+                                    .map(|d| d.to_lowercase().contains(&q_lower))
+                                    .unwrap_or(false)
+                                || ai
+                                    .description
+                                    .as_ref()
+                                    .map(|d| d.to_lowercase().contains(&q_lower))
+                                    .unwrap_or(false);
+                            if matches {
+                                combined.push(UnifiedPackage::from_appimage(ai));
                             }
                         }
                     }

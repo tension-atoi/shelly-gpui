@@ -307,4 +307,79 @@ mod tests {
         store.pkgbuild_cache.remove(&key.name);
         assert!(store.get_cached_pkgbuild(pkg_name).is_none());
     }
+
+    #[test]
+    fn test_search_generation_discard_stale_and_accept_fresh() {
+        use crate::backend::models::AppImageItem;
+        let client = ShellyClient::new(None);
+        let mut store = PackageStore::new(client);
+        assert_eq!(store.in_flight_generation, 0);
+
+        // Generation 1 results arrived
+        let item1 = UnifiedPackage::from_appimage(AppImageItem {
+            name: "App1".into(),
+            desktop_name: None,
+            version: Some("1.0".into()),
+            icon_name: None,
+            description: None,
+            size_on_disk: None,
+            update_url: None,
+            repo_owner: None,
+            repo_name: None,
+            path: None,
+        });
+        if 1 >= store.in_flight_generation {
+            store.in_flight_generation = 1;
+            store.active_results = std::sync::Arc::from(vec![item1.clone()]);
+        }
+        assert_eq!(store.active_results.len(), 1);
+        assert_eq!(store.in_flight_generation, 1);
+
+        // User clears search: generation monotonically increments to 2
+        let clear_gen = 2;
+        if clear_gen >= store.in_flight_generation {
+            store.in_flight_generation = clear_gen;
+            store.active_results = std::sync::Arc::from([]);
+        }
+        assert_eq!(store.active_results.len(), 0);
+        assert_eq!(store.in_flight_generation, 2);
+
+        // Stale async query from generation 1 arrives late -> discarded!
+        if 1 >= store.in_flight_generation {
+            store.in_flight_generation = 1;
+            store.active_results = std::sync::Arc::from(vec![item1.clone()]);
+        }
+        assert_eq!(
+            store.active_results.len(),
+            0,
+            "Stale gen 1 must be discarded"
+        );
+        assert_eq!(store.in_flight_generation, 2);
+
+        // Subsequent query generation 3 arrives -> accepted!
+        let item2 = UnifiedPackage::from_appimage(AppImageItem {
+            name: "App2".into(),
+            desktop_name: None,
+            version: Some("2.0".into()),
+            icon_name: None,
+            description: None,
+            size_on_disk: None,
+            update_url: None,
+            repo_owner: None,
+            repo_name: None,
+            path: None,
+        });
+        let fresh_gen = 3;
+        if fresh_gen >= store.in_flight_generation {
+            store.in_flight_generation = fresh_gen;
+            store.active_results = std::sync::Arc::from(vec![item2]);
+        }
+        assert_eq!(
+            store.active_results.len(),
+            1,
+            "Fresh gen 3 must be accepted"
+        );
+        assert_eq!(store.active_results[0].name, "App2");
+        assert_eq!(store.in_flight_generation, 3);
+    }
 }

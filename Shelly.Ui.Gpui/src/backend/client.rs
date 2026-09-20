@@ -75,14 +75,21 @@ impl ShellyClient {
             ProcessRunner::run_json_command(&self.binary_path, &["search", "aur", query, "-j"])
                 .await?;
 
-        if raw.trim().starts_with('[') {
-            serde_json::from_str::<Vec<AurPackage>>(&raw)
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
+        }
+        if trimmed.starts_with('[') {
+            serde_json::from_str::<Vec<AurPackage>>(trimmed)
                 .context("Désérialisation de la liste des paquets AUR")
-        } else if raw.trim().starts_with('{') {
-            let single: AurPackage = serde_json::from_str(&raw)?;
+        } else if trimmed.starts_with('{') {
+            let single: AurPackage = serde_json::from_str(trimmed)?;
             Ok(vec![single])
         } else {
-            Ok(Vec::new())
+            anyhow::bail!(
+                "Réponse AUR invalide (attendu JSON array ou object): {}",
+                trimmed
+            )
         }
     }
 
@@ -108,11 +115,14 @@ impl ShellyClient {
             ProcessRunner::run_json_command(&self.binary_path, &["search", "flatpak", query, "-j"])
                 .await?;
 
-        if let Ok(res) = serde_json::from_str::<FlatpakSearchResult>(&raw) {
-            Ok(res.hits)
-        } else {
-            Ok(Vec::new())
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
         }
+
+        let res: FlatpakSearchResult = serde_json::from_str(trimmed)
+            .context("Désérialisation des résultats de recherche Flatpak")?;
+        Ok(res.hits)
     }
 
     /// Liste des mises à jour disponibles pour tous les backends
@@ -121,34 +131,35 @@ impl ShellyClient {
             ProcessRunner::run_json_command(&self.binary_path, &["list-updates", "all", "-j"])
                 .await?;
 
-        if raw.trim().starts_with('[') {
-            serde_json::from_str::<Vec<PackageUpdateItem>>(&raw)
-                .context("Désérialisation de la liste des mises à jour")
-        } else {
-            Ok(Vec::new())
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
         }
+
+        serde_json::from_str::<Vec<PackageUpdateItem>>(trimmed)
+            .context("Désérialisation de la liste des mises à jour")
     }
 
     /// Récupère les actualités Arch Linux
     pub async fn list_news(&self) -> Result<Vec<ArchNewsItem>> {
         let raw = ProcessRunner::run_json_command(&self.binary_path, &["news", "-j"]).await?;
-        if raw.trim().starts_with('[') {
-            serde_json::from_str::<Vec<ArchNewsItem>>(&raw)
-                .context("Désérialisation des actualités Arch Linux")
-        } else {
-            Ok(Vec::new())
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
         }
+        serde_json::from_str::<Vec<ArchNewsItem>>(trimmed)
+            .context("Désérialisation des actualités Arch Linux")
     }
 
     /// Liste les AppImages gérées localement par Shelly
     pub async fn list_appimages(&self) -> Result<Vec<AppImageItem>> {
         let raw =
             ProcessRunner::run_json_command(&self.binary_path, &["list", "appimage", "-j"]).await?;
-        if raw.trim().starts_with('[') {
-            serde_json::from_str::<Vec<AppImageItem>>(&raw).context("Désérialisation des AppImages")
-        } else {
-            Ok(Vec::new())
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
         }
+        serde_json::from_str::<Vec<AppImageItem>>(trimmed).context("Désérialisation des AppImages")
     }
 
     /// Récupère la fiche détaillée d'un paquet ALPM
