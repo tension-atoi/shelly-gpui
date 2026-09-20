@@ -1,6 +1,7 @@
 use crate::backend::models::{AlpmPackage, UnifiedPackage, UnifiedPackageSource};
 use crate::components::status_pill::StatusPill;
 use crate::theme::Theme;
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 
 use std::rc::Rc;
@@ -90,6 +91,7 @@ impl PackageDetailsView {
             .mb_6();
 
         if pkg.is_installed {
+            let danger_hover = theme.danger_hover;
             let btn = div()
                 .px_4()
                 .py_2()
@@ -99,6 +101,9 @@ impl PackageDetailsView {
                 .font_weight(FontWeight::BOLD)
                 .text_color(if props.is_busy { theme.text_muted } else { theme.bg_app })
                 .cursor_pointer()
+                .when(!props.is_busy, move |el| {
+                    el.hover(move |s| s.bg(danger_hover))
+                })
                 .child(if props.is_busy { "En cours..." } else { "Désinstaller" });
 
             let btn = if !props.is_busy {
@@ -112,6 +117,7 @@ impl PackageDetailsView {
             };
             action_bar = action_bar.child(btn);
         } else {
+            let accent_hover = theme.accent_hover;
             let btn = div()
                 .px_4()
                 .py_2()
@@ -121,6 +127,9 @@ impl PackageDetailsView {
                 .font_weight(FontWeight::BOLD)
                 .text_color(if props.is_busy { theme.text_muted } else { theme.bg_app })
                 .cursor_pointer()
+                .when(!props.is_busy, move |el| {
+                    el.hover(move |s| s.bg(accent_hover))
+                })
                 .child(if props.is_busy { "En cours..." } else { "Installer" });
 
             let btn = if !props.is_busy {
@@ -136,6 +145,7 @@ impl PackageDetailsView {
         }
 
         if pkg.has_update {
+            let warning_hover = theme.warning_hover;
             let btn = div()
                 .px_4()
                 .py_2()
@@ -145,6 +155,9 @@ impl PackageDetailsView {
                 .font_weight(FontWeight::BOLD)
                 .text_color(if props.is_busy { theme.text_muted } else { theme.bg_app })
                 .cursor_pointer()
+                .when(!props.is_busy, move |el| {
+                    el.hover(move |s| s.bg(warning_hover))
+                })
                 .child(if props.is_busy { "En cours..." } else { "Mettre à jour" });
 
             let btn = if !props.is_busy {
@@ -334,11 +347,22 @@ impl PackageDetailsView {
     fn meta_row(label: &'static str, val: &str, theme: &Theme) -> impl IntoElement {
         div()
             .flex()
-            .items_center()
+            .items_baseline()
             .justify_between()
+            .gap_4()
             .text_xs()
-            .child(div().text_color(theme.text_muted).child(label))
-            .child(div().text_color(theme.text_primary).font_weight(FontWeight::MEDIUM).child(val.to_string()))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .text_color(theme.text_muted)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .text_color(theme.text_primary)
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(val.to_string()),
+            )
     }
 
     fn chip_section(title: &str, items: &[String], theme: &Theme, chip_text_color: Rgba) -> impl IntoElement {
@@ -355,6 +379,9 @@ impl PackageDetailsView {
                     .child(title.to_string()),
             );
 
+        let hover_bg = theme.bg_surface_hover;
+        let border_focus = theme.border_focus;
+
         let mut chips = div().flex().flex_wrap().gap_2();
         for item in items.iter().take(30) {
             chips = chips.child(
@@ -367,6 +394,7 @@ impl PackageDetailsView {
                     .border_color(theme.border)
                     .text_xs()
                     .text_color(chip_text_color)
+                    .hover(move |s| s.bg(hover_bg).border_color(border_focus))
                     .child(item.clone()),
             );
         }

@@ -32,7 +32,7 @@ export SHELLY_BIN
 
 # ─── Cibles principales ───────────────────────────────────────────────────────
 
-.PHONY: run build check zig clean package install help
+.PHONY: run build check test zig clean package install help
 
 ## Lance l'application en mode développement (cargo run)
 run: zig
@@ -49,6 +49,10 @@ build: zig
 ## Vérifie le code Rust sans lier (rapide)
 check:
 	cd $(RUST_SRC) && cargo check
+
+## Lance la suite de tests unitaires Rust
+test:
+	cd $(RUST_SRC) && cargo test
 
 ## Compile le backend CLI Zig
 zig:

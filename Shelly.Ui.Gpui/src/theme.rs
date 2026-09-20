@@ -16,7 +16,9 @@ pub struct Theme {
     pub accent_hover: Rgba,
     pub success: Rgba,
     pub warning: Rgba,
+    pub warning_hover: Rgba,
     pub danger: Rgba,
+    pub danger_hover: Rgba,
     pub badge_alpm: Rgba,
     pub badge_aur: Rgba,
     pub badge_flatpak: Rgba,
@@ -32,49 +34,53 @@ impl Default for Theme {
 impl Theme {
     pub fn dark() -> Self {
         Self {
-            bg_app: rgb(0x181825),
-            bg_sidebar: rgb(0x11111b),
-            bg_surface: rgb(0x1e1e2e),
-            bg_surface_hover: rgb(0x28283d),
-            bg_surface_active: rgb(0x313244),
-            border: rgb(0x313244),
-            border_focus: rgb(0x89b4fa),
-            text_primary: rgb(0xcdd6f4),
-            text_secondary: rgb(0xa6adc8),
-            text_muted: rgb(0x6c7086),
-            accent: rgb(0x89b4fa),
-            accent_hover: rgb(0xb4befe),
-            success: rgb(0xa6e3a1),
-            warning: rgb(0xf9e2af),
-            danger: rgb(0xf38ba8),
-            badge_alpm: rgb(0x89b4fa),
-            badge_aur: rgb(0xcba6f7),
-            badge_flatpak: rgb(0x74c7ec),
-            badge_appimage: rgb(0xfab387),
+            bg_app: rgb(0x0f0f14),            // Ultra-deep charcoal base
+            bg_sidebar: rgb(0x0a0a0e),        // Dark contrast header/nav
+            bg_surface: rgb(0x181822),        // Layered elevated card surface
+            bg_surface_hover: rgb(0x232332),  // Immediate reactive hover state
+            bg_surface_active: rgb(0x2c2d40), // Active item surface
+            border: rgb(0x262638),            // Subtle 1px boundary frame
+            border_focus: rgb(0x38bdf8),      // Electric cyan focus glow
+            text_primary: rgb(0xf1f5f9),      // Crisp high-contrast slate-50
+            text_secondary: rgb(0x94a3b8),    // Balanced legible secondary text
+            text_muted: rgb(0x64748b),        // Subtle hints and captions
+            accent: rgb(0x38bdf8),            // Electric cyan
+            accent_hover: rgb(0x7dd3fc),      // Luminous cyan highlight
+            success: rgb(0x10b981),           // Vibrant emerald
+            warning: rgb(0xf59e0b),           // Bright amber
+            warning_hover: rgb(0xfbbf24),     // Luminous amber highlight
+            danger: rgb(0xf43f5e),            // Vivid ruby rose
+            danger_hover: rgb(0xfb7185),      // Luminous ruby highlight
+            badge_alpm: rgb(0x38bdf8),        // Electric Cyan (Official ALPM)
+            badge_aur: rgb(0xa855f7),         // Vivid Violet (AUR)
+            badge_flatpak: rgb(0x06b6d4),     // Cyan (Flatpak)
+            badge_appimage: rgb(0xf97316),    // Warm Orange (AppImage)
         }
     }
 
     pub fn light() -> Self {
         Self {
-            bg_app: rgb(0xeff1f5),
-            bg_sidebar: rgb(0xe6e9ef),
+            bg_app: rgb(0xf8fafc),
+            bg_sidebar: rgb(0xf1f5f9),
             bg_surface: rgb(0xffffff),
-            bg_surface_hover: rgb(0xdce0e8),
-            bg_surface_active: rgb(0xccd0da),
-            border: rgb(0xbcc0cc),
-            border_focus: rgb(0x1e66f5),
-            text_primary: rgb(0x4c4f69),
-            text_secondary: rgb(0x5c5f77),
-            text_muted: rgb(0x8c8fa1),
-            accent: rgb(0x1e66f5),
-            accent_hover: rgb(0x04a5e5),
-            success: rgb(0x40a02b),
-            warning: rgb(0xdf8e1d),
-            danger: rgb(0xd20f39),
-            badge_alpm: rgb(0x1e66f5),
-            badge_aur: rgb(0x8839ef),
-            badge_flatpak: rgb(0x04a5e5),
-            badge_appimage: rgb(0xfe640b),
+            bg_surface_hover: rgb(0xe2e8f0),
+            bg_surface_active: rgb(0xcbd5e1),
+            border: rgb(0xe2e8f0),
+            border_focus: rgb(0x0284c7),
+            text_primary: rgb(0x0f172a),
+            text_secondary: rgb(0x475569),
+            text_muted: rgb(0x94a3b8),
+            accent: rgb(0x0284c7),
+            accent_hover: rgb(0x0369a1),
+            success: rgb(0x059669),
+            warning: rgb(0xd97706),
+            warning_hover: rgb(0xb45309),
+            danger: rgb(0xe11d48),
+            danger_hover: rgb(0xbe123c),
+            badge_alpm: rgb(0x0284c7),
+            badge_aur: rgb(0x7c3aed),
+            badge_flatpak: rgb(0x0891b2),
+            badge_appimage: rgb(0xea580c),
         }
     }
 }

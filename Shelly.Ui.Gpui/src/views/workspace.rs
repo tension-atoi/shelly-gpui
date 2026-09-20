@@ -45,6 +45,10 @@ pub struct WorkspaceView {
     pub operation_status: OperationStatus,
     pub log_drawer_open: bool,
     pub updates_count: usize,
+    /// Largeur en pixels du volet de gauche (liste des paquets), ajustable à la souris
+    pub list_pane_width: f32,
+    /// Indicateur actif pendant le glisser-déposer de redimensionnement
+    pub is_resizing_pane: bool,
 }
 
 impl WorkspaceView {
@@ -79,6 +83,8 @@ impl WorkspaceView {
             operation_status: OperationStatus::Idle,
             log_drawer_open,
             updates_count: 0,
+            list_pane_width: 440.0,
+            is_resizing_pane: false,
         };
 
         view.load_initial_data(cx);
@@ -563,6 +569,28 @@ impl WorkspaceView {
         let key = event.keystroke.key.as_str();
         let modifiers = &event.keystroke.modifiers;
 
+        // Navigation clavier instantanée (Flèches Haut/Bas pour inspecter les paquets)
+        if key == "down" || key == "arrowdown" {
+            if let Some(idx) = self.selected_index {
+                if idx + 1 < self.packages.len() {
+                    self.select_package(idx + 1, cx);
+                }
+            } else if !self.packages.is_empty() {
+                self.select_package(0, cx);
+            }
+            return;
+        }
+        if key == "up" || key == "arrowup" {
+            if let Some(idx) = self.selected_index {
+                if idx > 0 {
+                    self.select_package(idx - 1, cx);
+                }
+            } else if !self.packages.is_empty() {
+                self.select_package(0, cx);
+            }
+            return;
+        }
+
         // Ignorer les combinaisons système (Ctrl, Alt, Platform/Super)
         if modifiers.control || modifiers.alt || modifiers.platform {
             return;
@@ -598,14 +626,14 @@ impl WorkspaceView {
 
         cx.notify();
 
-        // ── Debounce 300 ms ──────────────────────────────────────────────────
+        // ── Debounce 50 ms (Ultra-réactif / Buttery-smooth) ───────────────────
         self.search_generation = self.search_generation.wrapping_add(1);
         let generation = self.search_generation;
         let query = self.search_query.clone();
         let tab = self.active_tab;
 
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(std::time::Duration::from_millis(300)).await;
+            cx.background_executor().timer(std::time::Duration::from_millis(50)).await;
 
             let _ = this.update(cx, |view, cx| {
                 if view.search_generation == generation {
@@ -757,10 +785,8 @@ impl Render for WorkspaceView {
             let mut list_pane = div()
                 .flex()
                 .flex_col()
-                .w(px(420.0))
+                .w(px(self.list_pane_width))
                 .h_full()
-                .border_r_1()
-                .border_color(theme.border)
                 .bg(theme.bg_app);
 
             // ── Barre de recherche interactive ──────────────────────────────
@@ -906,10 +932,37 @@ impl Render for WorkspaceView {
                     }))),
                 }));
 
+            let is_resizing = self.is_resizing_pane;
+            let splitter = div()
+                .id("pane_splitter")
+                .w(px(6.0))
+                .h_full()
+                .bg(if is_resizing { theme.accent } else { theme.border })
+                .cursor_col_resize()
+                .hover(|s| s.bg(theme.accent_hover))
+                .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    this.is_resizing_pane = true;
+                    cx.notify();
+                }));
+
             div()
                 .flex()
                 .size_full()
+                .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                    if this.is_resizing_pane {
+                        this.is_resizing_pane = false;
+                        cx.notify();
+                    }
+                }))
+                .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                    if this.is_resizing_pane {
+                        let new_w: f32 = event.position.x / px(1.0);
+                        this.list_pane_width = new_w.clamp(300.0, 750.0);
+                        cx.notify();
+                    }
+                }))
                 .child(list_pane)
+                .child(splitter)
                 .child(details_pane)
         };
 
