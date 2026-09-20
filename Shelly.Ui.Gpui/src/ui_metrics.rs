@@ -2,10 +2,10 @@ pub struct UiMetrics;
 
 impl UiMetrics {
     // ── Package Card Dimensions ──────────────────────────────────────────────
-    pub const CARD_WRAPPER_NORMAL: f32 = 80.0;
-    pub const CARD_HEIGHT_NORMAL: f32 = 72.0;
-    pub const CARD_WRAPPER_COMPACT: f32 = 66.0;
-    pub const CARD_HEIGHT_COMPACT: f32 = 58.0;
+    pub const CARD_WRAPPER_NORMAL: f32 = 88.0;
+    pub const CARD_HEIGHT_NORMAL: f32 = 80.0;
+    pub const CARD_WRAPPER_COMPACT: f32 = 70.0;
+    pub const CARD_HEIGHT_COMPACT: f32 = 62.0;
 
     // ── Package Table Dimensions ─────────────────────────────────────────────
     pub const ROW_HEIGHT_HEADER: f32 = 32.0;

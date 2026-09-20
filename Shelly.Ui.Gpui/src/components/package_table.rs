@@ -71,24 +71,24 @@ impl PackageTable {
             )
             .child(
                 div()
-                    .w(px(90.0))
+                    .w(px(85.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("SOURCE"),
             )
             .child(
                 div()
-                    .w(px(75.0))
+                    .w(px(80.0))
                     .flex()
                     .justify_end()
-                    .pr_1()
+                    .pr_3()
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("SIZE"),
             )
             .child(
                 div()
-                    .w(px(85.0))
+                    .w(px(80.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("STATUS"),
@@ -179,7 +179,7 @@ impl PackageTable {
             // Column 3: Source Badge
             .child(
                 div()
-                    .w(px(90.0))
+                    .w(px(85.0))
                     .flex()
                     .items_center()
                     .child(StatusPill::source_badge(&pkg.source_type, theme)),
@@ -187,10 +187,10 @@ impl PackageTable {
             // Column 4: Size (aligné à droite pour comparaison visuelle stricte)
             .child(
                 div()
-                    .w(px(75.0))
+                    .w(px(80.0))
                     .flex()
                     .justify_end()
-                    .pr_1()
+                    .pr_3()
                     .overflow_hidden()
                     .text_ellipsis()
                     .text_xs()
@@ -200,7 +200,7 @@ impl PackageTable {
             // Column 5: Status
             .child(
                 div()
-                    .w(px(85.0))
+                    .w(px(80.0))
                     .flex()
                     .items_center()
                     .child(StatusPill::state_pill(
