@@ -1,3 +1,4 @@
+use crate::icons::AppIcon;
 use crate::theme::Theme;
 use gpui::*;
 use std::rc::Rc;
@@ -66,7 +67,7 @@ impl LogDrawer {
                 .bg(theme.border)
                 .text_xs()
                 .text_color(theme.text_muted)
-                .child("Prêt"),
+                .child("Ready"),
             OperationStatus::Running(op) => div()
                 .px_2()
                 .py_0p5()
@@ -75,7 +76,7 @@ impl LogDrawer {
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.bg_app)
-                .child(format!("En cours : {}", op)),
+                .child(format!("Running: {}", op)),
             OperationStatus::Success(msg) => div()
                 .px_2()
                 .py_0p5()
@@ -84,7 +85,7 @@ impl LogDrawer {
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.bg_app)
-                .child(format!("Succès : {}", msg)),
+                .child(format!("Success: {}", msg)),
             OperationStatus::Error(err) => div()
                 .px_2()
                 .py_0p5()
@@ -93,7 +94,7 @@ impl LogDrawer {
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.bg_app)
-                .child(format!("Erreur : {}", err)),
+                .child(format!("Error: {}", err)),
         };
 
         // Bouton Copier les logs
@@ -102,6 +103,9 @@ impl LogDrawer {
             let hover_bg = theme.bg_surface_hover;
             let border_focus = theme.border_focus;
             let mut btn = div()
+                .flex()
+                .items_center()
+                .gap_1p5()
                 .px_2()
                 .py_1()
                 .rounded_sm()
@@ -121,10 +125,24 @@ impl LogDrawer {
                 })
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg).border_color(border_focus))
+                .child(
+                    svg()
+                        .path(if copied_feedback {
+                            AppIcon::Check.path()
+                        } else {
+                            AppIcon::Copy.path()
+                        })
+                        .size_3()
+                        .text_color(if copied_feedback {
+                            theme.bg_app
+                        } else {
+                            theme.text_primary
+                        }),
+                )
                 .child(if copied_feedback {
-                    "✓ Copié !"
+                    "Copied!"
                 } else {
-                    "📋 Copier les logs"
+                    "Copy logs"
                 });
 
             if let Some(handler) = on_copy {
@@ -139,6 +157,9 @@ impl LogDrawer {
             let hover_bg = theme.bg_surface_hover;
             let border_focus = theme.border_focus;
             let mut btn = div()
+                .flex()
+                .items_center()
+                .gap_1p5()
                 .px_2()
                 .py_1()
                 .rounded_sm()
@@ -150,7 +171,13 @@ impl LogDrawer {
                 .text_color(theme.text_secondary)
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg).border_color(border_focus))
-                .child("🗑 Effacer");
+                .child(
+                    svg()
+                        .path(AppIcon::Trash.path())
+                        .size_3()
+                        .text_color(theme.text_secondary),
+                )
+                .child("Clear");
 
             if let Some(handler) = on_clear {
                 btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));
@@ -188,9 +215,9 @@ impl LogDrawer {
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg).border_color(border_focus))
                 .child(if auto_scroll {
-                    "⤓ Auto-scroll : ACTIF"
+                    "Auto-scroll: ON"
                 } else {
-                    "⤓ Auto-scroll : PAUSE"
+                    "Auto-scroll: PAUSE"
                 });
 
             if let Some(handler) = on_toggle_autoscroll {
@@ -214,10 +241,20 @@ impl LogDrawer {
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(theme.text_secondary)
                 .hover(|s| s.text_color(theme.accent))
+                .child(
+                    svg()
+                        .path(if is_open {
+                            AppIcon::Collapse.path()
+                        } else {
+                            AppIcon::Expand.path()
+                        })
+                        .size_3()
+                        .text_color(theme.text_secondary),
+                )
                 .child(if is_open {
-                    "▲ Masquer"
+                    "Hide"
                 } else {
-                    "▼ Afficher"
+                    "Show"
                 });
 
             if let Some(handler) = on_toggle {
@@ -246,7 +283,7 @@ impl LogDrawer {
                             .text_xs()
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
-                            .child("⚡ TERMINAL & FLUX D'EXÉCUTION SHELLY"),
+                            .child("SHELLY OPERATION LOG"),
                     )
                     .child(status_badge),
             )
@@ -285,7 +322,7 @@ impl LogDrawer {
                 log_content = log_content.child(
                     div()
                         .text_color(theme.text_muted)
-                        .child("Aucun log d'opération en cours. Les sorties stdout/stderr de Shelly s'afficheront ici."),
+                        .child("No operation logs yet. Shelly stdout and stderr execution output will appear here."),
                 );
             } else {
                 for (idx, entry) in props.logs.iter().enumerate() {

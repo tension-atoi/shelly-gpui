@@ -1,3 +1,5 @@
+use crate::components::view_mode_switcher::{ViewModeSwitcher, ViewModeSwitcherProps};
+use crate::icons::AppIcon;
 use crate::state::{PackageViewMode, SourceFilter};
 use crate::theme::Theme;
 use gpui::*;
@@ -21,44 +23,48 @@ pub struct UnifiedSearch;
 impl UnifiedSearch {
     fn render_pill(
         filter: SourceFilter,
-        label: &'static str,
         active_filter: SourceFilter,
-        badge_color: Option<Rgba>,
+        accent_color: Option<Rgba>,
         theme: &Theme,
         on_select: SourceFilterHandler,
     ) -> impl IntoElement {
-        let is_active = active_filter == filter;
-        let base = div()
-            .flex()
-            .items_center()
-            .gap(px(6.0))
-            .px(px(10.0))
-            .py(px(4.0))
-            .rounded_full()
-            .cursor_pointer()
-            .text_size(px(12.0));
+        let is_active = filter == active_filter;
+        let label = filter.label();
 
-        let styled_pill = if is_active {
-            base.bg(theme.bg_surface_active)
-                .text_color(theme.accent)
-                .border_1()
-                .border_color(theme.border_focus)
-                .font_weight(FontWeight::SEMIBOLD)
+        let base = div()
+            .px(px(8.0))
+            .py(px(3.0))
+            .rounded_md()
+            .cursor_pointer()
+            .text_xs()
+            .font_weight(if is_active {
+                FontWeight::BOLD
+            } else {
+                FontWeight::NORMAL
+            });
+
+        let pill = if is_active {
+            if let Some(accent) = accent_color {
+                base.bg(accent)
+                    .text_color(theme.bg_app)
+                    .border_1()
+                    .border_color(accent)
+            } else {
+                base.bg(theme.accent)
+                    .text_color(theme.bg_app)
+                    .border_1()
+                    .border_color(theme.accent)
+            }
         } else {
             let hover_bg = theme.bg_surface_hover;
-            let hover_text = theme.text_primary;
             base.bg(theme.bg_surface)
                 .text_color(theme.text_secondary)
                 .border_1()
                 .border_color(theme.border)
-                .hover(move |s| s.bg(hover_bg).text_color(hover_text))
+                .hover(move |s| s.bg(hover_bg).text_color(theme.text_primary))
         };
 
-        let badge_bg = badge_color.unwrap_or(theme.text_muted);
-
-        styled_pill
-            .child(div().w(px(6.0)).h(px(6.0)).rounded_full().bg(badge_bg))
-            .child(label)
+        pill.child(label)
             .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                 on_select(filter, window, cx);
             })
@@ -69,84 +75,11 @@ impl UnifiedSearch {
         let active = props.active_filter;
         let on_select = props.on_select_filter.clone();
 
-        let is_cards = props.view_mode == PackageViewMode::Cards;
-        let is_table = props.view_mode == PackageViewMode::Table;
-        let on_cards = props.on_select_view_mode.clone();
-        let on_table = props.on_select_view_mode.clone();
-
-        let view_switcher = div()
-            .flex()
-            .items_center()
-            .bg(theme.bg_app)
-            .border_1()
-            .border_color(theme.border)
-            .rounded_md()
-            .p(px(2.0))
-            .gap(px(2.0))
-            .child(
-                div()
-                    .px(px(6.0))
-                    .py(px(2.0))
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .text_xs()
-                    .font_weight(if is_cards {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .bg(if is_cards {
-                        theme.bg_surface_active
-                    } else {
-                        theme.bg_app
-                    })
-                    .text_color(if is_cards {
-                        theme.accent
-                    } else {
-                        theme.text_muted
-                    })
-                    .hover(move |s| s.text_color(theme.text_primary))
-                    .child(format!(
-                        "{} {}",
-                        PackageViewMode::Cards.icon(),
-                        PackageViewMode::Cards.label()
-                    ))
-                    .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                        on_cards(PackageViewMode::Cards, window, cx);
-                    }),
-            )
-            .child(
-                div()
-                    .px(px(6.0))
-                    .py(px(2.0))
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .text_xs()
-                    .font_weight(if is_table {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .bg(if is_table {
-                        theme.bg_surface_active
-                    } else {
-                        theme.bg_app
-                    })
-                    .text_color(if is_table {
-                        theme.accent
-                    } else {
-                        theme.text_muted
-                    })
-                    .hover(move |s| s.text_color(theme.text_primary))
-                    .child(format!(
-                        "{} {}",
-                        PackageViewMode::Table.icon(),
-                        PackageViewMode::Table.label()
-                    ))
-                    .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                        on_table(PackageViewMode::Table, window, cx);
-                    }),
-            );
+        let view_switcher = ViewModeSwitcher::render(ViewModeSwitcherProps {
+            current_mode: props.view_mode,
+            theme,
+            on_select_mode: props.on_select_view_mode.clone(),
+        });
 
         div()
             .flex()
@@ -164,7 +97,6 @@ impl UnifiedSearch {
                     .gap(px(6.0))
                     .child(Self::render_pill(
                         SourceFilter::All,
-                        SourceFilter::All.label(),
                         active,
                         None,
                         theme,
@@ -172,7 +104,6 @@ impl UnifiedSearch {
                     ))
                     .child(Self::render_pill(
                         SourceFilter::Alpm,
-                        SourceFilter::Alpm.label(),
                         active,
                         Some(theme.badge_alpm),
                         theme,
@@ -180,7 +111,6 @@ impl UnifiedSearch {
                     ))
                     .child(Self::render_pill(
                         SourceFilter::Aur,
-                        SourceFilter::Aur.label(),
                         active,
                         Some(theme.badge_aur),
                         theme,
@@ -188,7 +118,6 @@ impl UnifiedSearch {
                     ))
                     .child(Self::render_pill(
                         SourceFilter::Flatpak,
-                        SourceFilter::Flatpak.label(),
                         active,
                         Some(theme.badge_flatpak),
                         theme,
@@ -196,7 +125,6 @@ impl UnifiedSearch {
                     ))
                     .child(Self::render_pill(
                         SourceFilter::AppImage,
-                        SourceFilter::AppImage.label(),
                         active,
                         Some(theme.badge_appimage),
                         theme,
@@ -212,7 +140,7 @@ impl UnifiedSearch {
                         div()
                             .text_xs()
                             .text_color(theme.accent)
-                            .child("⚡ Searching...")
+                            .child("Searching...")
                     } else if props.total_count > 0 {
                         div()
                             .text_xs()
@@ -236,10 +164,11 @@ impl UnifiedSearch {
             .p_8()
             .text_center()
             .child(
-                div()
-                    .text_3xl()
-                    .mb_3()
-                    .child("🔍"),
+                svg()
+                    .path(AppIcon::Search.path())
+                    .size_8()
+                    .text_color(theme.accent)
+                    .mb_3(),
             )
             .child(
                 div()

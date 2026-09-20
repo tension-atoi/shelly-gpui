@@ -1,3 +1,4 @@
+use crate::icons::AppIcon;
 use crate::state::{Toast, ToastAction, ToastKind, ToastLifecycle};
 use crate::theme::Theme;
 use gpui::*;
@@ -63,11 +64,10 @@ impl ToastOverlay {
                         .items_center()
                         .gap_2()
                         .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(border_color)
-                                .child(toast.kind.icon()),
+                            svg()
+                                .path(toast.kind.icon().path())
+                                .size_3_5()
+                                .text_color(border_color),
                         )
                         .child(
                             div()
@@ -83,7 +83,12 @@ impl ToastOverlay {
                         .text_xs()
                         .text_color(theme.text_muted)
                         .hover(move |s| s.text_color(theme.text_primary))
-                        .child("✕")
+                        .child(
+                            svg()
+                                .path(AppIcon::Close.path())
+                                .size_3()
+                                .text_color(theme.text_muted),
+                        )
                         .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
                             on_dismiss(toast_id, window, cx);
                         }),

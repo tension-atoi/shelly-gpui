@@ -19,10 +19,10 @@ impl SemanticValue {
         let text_color = theme.text_primary;
 
         let icon = match &target {
-            SemanticTarget::ExternalUrl(_) => "🌐 ",
-            SemanticTarget::FilePath(_) => "📁 ",
-            SemanticTarget::Package(_) => "📦 ",
-            SemanticTarget::CopyText(_) => "📋 ",
+            SemanticTarget::ExternalUrl(_) => crate::icons::AppIcon::ExternalUrl,
+            SemanticTarget::FilePath(_) => crate::icons::AppIcon::FilePath,
+            SemanticTarget::Package(_) => crate::icons::AppIcon::Installed,
+            SemanticTarget::CopyText(_) => crate::icons::AppIcon::Copy,
         };
 
         let target_click = target;
@@ -36,10 +36,10 @@ impl SemanticValue {
             .text_color(text_color)
             .hover(move |s| s.text_color(hover_color).underline())
             .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child(icon.to_string()),
+                svg()
+                    .path(icon.path())
+                    .size_3()
+                    .text_color(theme.text_muted),
             )
             .child(div().overflow_hidden().text_ellipsis().child(display_text))
             .on_mouse_down(

@@ -1,5 +1,6 @@
 use crate::backend::models::UnifiedPackage;
 use crate::components::status_pill::StatusPill;
+use crate::icons::AppIcon;
 use crate::state::{canonical_install_command, InspectorTab, PackageCapabilities};
 use crate::theme::Theme;
 use gpui::prelude::FluentBuilder;
@@ -62,7 +63,16 @@ impl InspectorHeader {
             .when(!is_active, move |el| {
                 el.hover(move |s| s.text_color(hover_text))
             })
-            .child(div().text_xs().child(tab.icon()))
+            .child(
+                svg()
+                    .path(tab.icon().path())
+                    .size_3_5()
+                    .text_color(if is_active {
+                        theme.accent
+                    } else {
+                        theme.text_secondary
+                    }),
+            )
             .child(tab.label())
             .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                 on_select(tab, window, cx);
@@ -230,10 +240,24 @@ impl InspectorHeader {
                     let h = theme.bg_surface_hover;
                     move |s| s.bg(h)
                 })
+                .child(
+                    svg()
+                        .path(if props.copy_feedback {
+                            AppIcon::Check.path()
+                        } else {
+                            AppIcon::Copy.path()
+                        })
+                        .size_3_5()
+                        .text_color(if props.copy_feedback {
+                            theme.success
+                        } else {
+                            theme.text_secondary
+                        }),
+                )
                 .child(if props.copy_feedback {
-                    "✓ Copied command!"
+                    "Copied command!"
                 } else {
-                    "📋 Copy install command"
+                    "Copy install command"
                 })
                 .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                     if let Some(ref cb) = on_copy {

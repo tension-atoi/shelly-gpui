@@ -72,6 +72,8 @@ pub enum NavDestination {
     Settings,
 }
 
+use crate::icons::AppIcon;
+
 impl NavDestination {
     pub fn label(&self) -> &'static str {
         match self {
@@ -83,13 +85,32 @@ impl NavDestination {
         }
     }
 
-    pub fn icon(&self) -> &'static str {
+    pub fn icon(&self) -> AppIcon {
         match self {
-            NavDestination::Browse => "🔍",
-            NavDestination::Installed => "📦",
-            NavDestination::Updates => "🔄",
-            NavDestination::News => "📰",
-            NavDestination::Settings => "⚙️",
+            NavDestination::Browse => AppIcon::Browse,
+            NavDestination::Installed => AppIcon::Installed,
+            NavDestination::Updates => AppIcon::Updates,
+            NavDestination::News => AppIcon::News,
+            NavDestination::Settings => AppIcon::Settings,
+        }
+    }
+
+    pub fn workspace_config_index(&self) -> Option<usize> {
+        match self {
+            NavDestination::Browse => Some(0),
+            NavDestination::Installed => Some(1),
+            NavDestination::Updates => Some(2),
+            NavDestination::News => Some(3),
+            NavDestination::Settings => None,
+        }
+    }
+
+    pub fn from_config_index(idx: usize) -> Self {
+        match idx {
+            1 => NavDestination::Installed,
+            2 => NavDestination::Updates,
+            3 => NavDestination::News,
+            _ => NavDestination::Browse,
         }
     }
 }
@@ -133,10 +154,10 @@ impl PackageViewMode {
         }
     }
 
-    pub fn icon(&self) -> &'static str {
+    pub fn icon(&self) -> AppIcon {
         match self {
-            PackageViewMode::Cards => "▦",
-            PackageViewMode::Table => "☰",
+            PackageViewMode::Cards => AppIcon::Cards,
+            PackageViewMode::Table => AppIcon::Table,
         }
     }
 }
@@ -159,11 +180,11 @@ impl InspectorTab {
         }
     }
 
-    pub fn icon(&self) -> &'static str {
+    pub fn icon(&self) -> AppIcon {
         match self {
-            InspectorTab::Overview => "📋",
-            InspectorTab::Dependencies => "🔗",
-            InspectorTab::FilesBuild => "🛠️",
+            InspectorTab::Overview => AppIcon::Overview,
+            InspectorTab::Dependencies => AppIcon::Dependencies,
+            InspectorTab::FilesBuild => AppIcon::FilesBuild,
         }
     }
 }
@@ -183,6 +204,7 @@ pub enum SessionEvent {
 /// Entité GPUI gérant l'état de navigation et d'intention de l'utilisateur
 pub struct AppSession {
     pub destination: NavDestination,
+    pub last_workspace_destination: NavDestination,
     pub source_filter: SourceFilter,
     pub search_query: String,
     pub selected_package_key: Option<PackageKey>,
@@ -201,6 +223,7 @@ impl AppSession {
     pub fn new() -> Self {
         Self {
             destination: NavDestination::Browse,
+            last_workspace_destination: NavDestination::Browse,
             source_filter: SourceFilter::All,
             search_query: String::new(),
             selected_package_key: None,
@@ -217,6 +240,9 @@ impl AppSession {
     pub fn set_destination(&mut self, dest: NavDestination, cx: &mut Context<Self>) {
         if self.destination != dest {
             self.destination = dest;
+            if dest != NavDestination::Settings {
+                self.last_workspace_destination = dest;
+            }
             self.destination_epoch = self.destination_epoch.wrapping_add(1);
             cx.emit(SessionEvent::DestinationChanged(dest));
             cx.notify();
@@ -348,15 +374,57 @@ mod tests {
     fn test_view_mode_and_inspector_tab_metadata() {
         assert_eq!(PackageViewMode::Cards.label(), "Cards");
         assert_eq!(PackageViewMode::Table.label(), "Table");
-        assert_eq!(PackageViewMode::Cards.icon(), "▦");
-        assert_eq!(PackageViewMode::Table.icon(), "☰");
+        assert_eq!(PackageViewMode::Cards.icon(), AppIcon::Cards);
+        assert_eq!(PackageViewMode::Table.icon(), AppIcon::Table);
 
         assert_eq!(InspectorTab::Overview.label(), "Overview");
         assert_eq!(InspectorTab::Dependencies.label(), "Dependencies");
         assert_eq!(InspectorTab::FilesBuild.label(), "Files & Build");
-        assert_eq!(InspectorTab::Overview.icon(), "📋");
-        assert_eq!(InspectorTab::Dependencies.icon(), "🔗");
-        assert_eq!(InspectorTab::FilesBuild.icon(), "🛠️");
+        assert_eq!(InspectorTab::Overview.icon(), AppIcon::Overview);
+        assert_eq!(InspectorTab::Dependencies.icon(), AppIcon::Dependencies);
+        assert_eq!(InspectorTab::FilesBuild.icon(), AppIcon::FilesBuild);
+
+        assert_eq!(NavDestination::Browse.icon(), AppIcon::Browse);
+        assert_eq!(NavDestination::Installed.icon(), AppIcon::Installed);
+        assert_eq!(NavDestination::Updates.icon(), AppIcon::Updates);
+        assert_eq!(NavDestination::News.icon(), AppIcon::News);
+        assert_eq!(NavDestination::Settings.icon(), AppIcon::Settings);
+    }
+
+    #[test]
+    fn test_workspace_config_index_round_trip() {
+        assert_eq!(NavDestination::Browse.workspace_config_index(), Some(0));
+        assert_eq!(NavDestination::Installed.workspace_config_index(), Some(1));
+        assert_eq!(NavDestination::Updates.workspace_config_index(), Some(2));
+        assert_eq!(NavDestination::News.workspace_config_index(), Some(3));
+        assert_eq!(NavDestination::Settings.workspace_config_index(), None);
+
+        assert_eq!(NavDestination::from_config_index(0), NavDestination::Browse);
+        assert_eq!(NavDestination::from_config_index(1), NavDestination::Installed);
+        assert_eq!(NavDestination::from_config_index(2), NavDestination::Updates);
+        assert_eq!(NavDestination::from_config_index(3), NavDestination::News);
+        assert_eq!(NavDestination::from_config_index(4), NavDestination::Browse); // legacy settings maps to browse
+        assert_eq!(NavDestination::from_config_index(99), NavDestination::Browse);
+    }
+
+    #[test]
+    fn test_last_workspace_destination_tracks_non_settings() {
+        let mut session = AppSession::new();
+        assert_eq!(session.destination, NavDestination::Browse);
+        assert_eq!(session.last_workspace_destination, NavDestination::Browse);
+
+        // Manually simulate set_destination logic without Context
+        session.destination = NavDestination::Installed;
+        session.last_workspace_destination = NavDestination::Installed;
+
+        // Navigating to Settings does NOT update last_workspace_destination
+        session.destination = NavDestination::Settings;
+        // last_workspace_destination remains Installed
+        assert_eq!(session.last_workspace_destination, NavDestination::Installed);
+        assert_eq!(
+            session.last_workspace_destination.workspace_config_index(),
+            Some(1)
+        );
     }
 
     #[test]

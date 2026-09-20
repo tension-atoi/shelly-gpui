@@ -1,0 +1,171 @@
+use gpui::{AssetSource, Result, SharedString};
+use std::borrow::Cow;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AppIcon {
+    Browse,
+    Search,
+    Installed,
+    Updates,
+    News,
+    Settings,
+    Overview,
+    Dependencies,
+    FilesBuild,
+    Cards,
+    Table,
+    Copy,
+    ExternalUrl,
+    FilePath,
+    Collapse,
+    Expand,
+    Trash,
+    Shelly,
+    Check,
+    Close,
+    Info,
+    Warning,
+}
+
+impl AppIcon {
+    pub const ALL: &'static [AppIcon] = &[
+        AppIcon::Browse,
+        AppIcon::Search,
+        AppIcon::Installed,
+        AppIcon::Updates,
+        AppIcon::News,
+        AppIcon::Settings,
+        AppIcon::Overview,
+        AppIcon::Dependencies,
+        AppIcon::FilesBuild,
+        AppIcon::Cards,
+        AppIcon::Table,
+        AppIcon::Copy,
+        AppIcon::ExternalUrl,
+        AppIcon::FilePath,
+        AppIcon::Collapse,
+        AppIcon::Expand,
+        AppIcon::Trash,
+        AppIcon::Shelly,
+        AppIcon::Check,
+        AppIcon::Close,
+        AppIcon::Info,
+        AppIcon::Warning,
+    ];
+
+    pub fn path(self) -> &'static str {
+        match self {
+            AppIcon::Browse => "icons/browse.svg",
+            AppIcon::Search => "icons/search.svg",
+            AppIcon::Installed => "icons/installed.svg",
+            AppIcon::Updates => "icons/updates.svg",
+            AppIcon::News => "icons/news.svg",
+            AppIcon::Settings => "icons/settings.svg",
+            AppIcon::Overview => "icons/overview.svg",
+            AppIcon::Dependencies => "icons/dependencies.svg",
+            AppIcon::FilesBuild => "icons/files-build.svg",
+            AppIcon::Cards => "icons/cards.svg",
+            AppIcon::Table => "icons/table.svg",
+            AppIcon::Copy => "icons/copy.svg",
+            AppIcon::ExternalUrl => "icons/external-url.svg",
+            AppIcon::FilePath => "icons/file-path.svg",
+            AppIcon::Collapse => "icons/collapse.svg",
+            AppIcon::Expand => "icons/expand.svg",
+            AppIcon::Trash => "icons/trash.svg",
+            AppIcon::Shelly => "icons/shelly.svg",
+            AppIcon::Check => "icons/check.svg",
+            AppIcon::Close => "icons/close.svg",
+            AppIcon::Info => "icons/info.svg",
+            AppIcon::Warning => "icons/warning.svg",
+        }
+    }
+}
+
+pub struct AppIcons;
+
+impl AppIcons {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl AssetSource for AppIcons {
+    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        let bytes: Option<&'static [u8]> = match path {
+            "icons/browse.svg" => Some(include_bytes!("icons/browse.svg")),
+            "icons/search.svg" => Some(include_bytes!("icons/search.svg")),
+            "icons/installed.svg" => Some(include_bytes!("icons/installed.svg")),
+            "icons/updates.svg" => Some(include_bytes!("icons/updates.svg")),
+            "icons/news.svg" => Some(include_bytes!("icons/news.svg")),
+            "icons/settings.svg" => Some(include_bytes!("icons/settings.svg")),
+            "icons/overview.svg" => Some(include_bytes!("icons/overview.svg")),
+            "icons/dependencies.svg" => Some(include_bytes!("icons/dependencies.svg")),
+            "icons/files-build.svg" => Some(include_bytes!("icons/files-build.svg")),
+            "icons/cards.svg" => Some(include_bytes!("icons/cards.svg")),
+            "icons/table.svg" => Some(include_bytes!("icons/table.svg")),
+            "icons/copy.svg" => Some(include_bytes!("icons/copy.svg")),
+            "icons/external-url.svg" => Some(include_bytes!("icons/external-url.svg")),
+            "icons/file-path.svg" => Some(include_bytes!("icons/file-path.svg")),
+            "icons/collapse.svg" => Some(include_bytes!("icons/collapse.svg")),
+            "icons/expand.svg" => Some(include_bytes!("icons/expand.svg")),
+            "icons/trash.svg" => Some(include_bytes!("icons/trash.svg")),
+            "icons/shelly.svg" => Some(include_bytes!("icons/shelly.svg")),
+            "icons/check.svg" => Some(include_bytes!("icons/check.svg")),
+            "icons/close.svg" => Some(include_bytes!("icons/close.svg")),
+            "icons/info.svg" => Some(include_bytes!("icons/info.svg")),
+            "icons/warning.svg" => Some(include_bytes!("icons/warning.svg")),
+            _ => None,
+        };
+        Ok(bytes.map(Cow::Borrowed))
+    }
+
+    fn list(&self, _path: &str) -> Result<Vec<SharedString>> {
+        Ok(AppIcon::ALL
+            .iter()
+            .map(|icon| SharedString::from(icon.path()))
+            .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_all_app_icons_resolve_embedded_svg() {
+        let assets = AppIcons::new();
+        for icon in AppIcon::ALL {
+            let path = icon.path();
+            let loaded = assets.load(path).expect("Failed to load icon");
+            assert!(
+                loaded.is_some(),
+                "Icon {:?} at path '{}' must resolve to Some bytes",
+                icon,
+                path
+            );
+            let bytes = loaded.unwrap();
+            assert!(
+                !bytes.is_empty(),
+                "Icon {:?} at path '{}' must not be empty",
+                icon,
+                path
+            );
+            let is_svg = bytes.starts_with(b"<svg") || bytes.starts_with(b"<?xml");
+            assert!(
+                is_svg,
+                "Icon {:?} at path '{}' must be valid SVG content",
+                icon,
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn test_unknown_icon_returns_none() {
+        let assets = AppIcons::new();
+        let loaded = assets
+            .load("icons/non_existent.svg")
+            .expect("Asset loading should not error");
+        assert!(loaded.is_none());
+    }
+}

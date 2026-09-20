@@ -144,7 +144,7 @@ impl DependenciesView {
                         .font_weight(FontWeight::BOLD)
                         .text_sm()
                         .text_color(theme.text_primary)
-                        .child("📦 Sandboxed Flatpak Runtime"),
+                        .child("Sandboxed Flatpak Runtime"),
                 )
                 .child(
                     div()
@@ -170,7 +170,7 @@ impl DependenciesView {
                         .font_weight(FontWeight::BOLD)
                         .text_sm()
                         .text_color(theme.text_primary)
-                        .child("📦 Self-Contained AppImage"),
+                        .child("Self-Contained AppImage"),
                 )
                 .child(
                     div()

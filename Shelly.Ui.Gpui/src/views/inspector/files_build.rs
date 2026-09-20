@@ -2,6 +2,7 @@ use crate::backend::models::{AlpmPackage, UnifiedPackage, UnifiedPackageSource};
 use crate::components::inspector_header::WindowActionHandler;
 use crate::components::package_table::PackageTable;
 use crate::components::semantic_value::SemanticValue;
+use crate::icons::AppIcon;
 use crate::state::SemanticTarget;
 use crate::theme::Theme;
 use gpui::*;
@@ -76,6 +77,9 @@ impl FilesBuildView {
                     )
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
                             .px_2p5()
                             .py_1()
                             .rounded_md()
@@ -90,7 +94,13 @@ impl FilesBuildView {
                                 let h = theme.bg_surface_hover;
                                 move |s| s.bg(h)
                             })
-                            .child("📋 Copy PKGBUILD")
+                            .child(
+                                svg()
+                                    .path(AppIcon::Copy.path())
+                                    .size_3_5()
+                                    .text_color(theme.text_secondary),
+                            )
+                            .child("Copy PKGBUILD")
                             .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                                 if let Some(ref cb) = on_copy {
                                     cb(window, cx);
@@ -165,7 +175,7 @@ impl FilesBuildView {
                             div()
                                 .text_sm()
                                 .text_color(theme.accent)
-                                .child("⚡ Loading PKGBUILD recipe..."),
+                                .child("Loading PKGBUILD recipe..."),
                         )
                         .into_any_element()
                 } else if let Some(content) = pkgbuild_content {
@@ -380,7 +390,7 @@ impl FilesBuildView {
                             .text_sm()
                             .text_color(theme.text_primary)
                             .mb_1()
-                            .child("📦 Sandboxed Filesystem Hierarchy"),
+                            .child("Sandboxed Filesystem Hierarchy"),
                     )
                     .child(
                         div()

@@ -1,3 +1,4 @@
+use crate::icons::AppIcon;
 use gpui::*;
 use std::time::{Duration, Instant};
 
@@ -14,12 +15,12 @@ pub enum ToastKind {
 }
 
 impl ToastKind {
-    pub fn icon(&self) -> &'static str {
+    pub fn icon(&self) -> AppIcon {
         match self {
-            ToastKind::Info => "ℹ️",
-            ToastKind::Success => "✓",
-            ToastKind::Warning => "⚠️",
-            ToastKind::Error => "✕",
+            ToastKind::Info => AppIcon::Info,
+            ToastKind::Success => AppIcon::Check,
+            ToastKind::Warning => AppIcon::Warning,
+            ToastKind::Error => AppIcon::Close,
         }
     }
 }

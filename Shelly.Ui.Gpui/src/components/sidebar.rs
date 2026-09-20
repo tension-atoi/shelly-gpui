@@ -1,6 +1,8 @@
 use crate::components::status_pill::StatusPill;
+use crate::icons::AppIcon;
 use crate::state::NavDestination;
 use crate::theme::Theme;
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use std::rc::Rc;
 
@@ -57,13 +59,23 @@ impl Sidebar {
                 .hover(move |s| s.bg(hover_bg).text_color(theme.text_primary))
         };
 
+        let icon_color = if is_active {
+            theme.accent
+        } else {
+            theme.text_secondary
+        };
+
         let mut item = styled.child(
             div()
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_base()
-                .child(icon),
+                .child(
+                    svg()
+                        .path(icon.path())
+                        .size_4()
+                        .text_color(icon_color),
+                ),
         );
 
         if !is_collapsed {
@@ -114,10 +126,16 @@ impl Sidebar {
         let collapse_toggle = {
             let on_toggle = props.on_toggle_collapse.clone();
             let hover_bg = theme.bg_surface_hover;
+            let icon = if is_collapsed {
+                AppIcon::Expand
+            } else {
+                AppIcon::Collapse
+            };
             div()
                 .flex()
                 .items_center()
                 .justify_center()
+                .gap(px(6.0))
                 .py(px(8.0))
                 .mx(px(6.0))
                 .rounded_md()
@@ -126,7 +144,13 @@ impl Sidebar {
                 .text_xs()
                 .text_color(theme.text_muted)
                 .hover(move |s| s.bg(hover_bg).text_color(theme.text_primary))
-                .child(if is_collapsed { "▶" } else { "◀ Collapse" })
+                .child(
+                    svg()
+                        .path(icon.path())
+                        .size_3()
+                        .text_color(theme.text_muted),
+                )
+                .when(!is_collapsed, |el| el.child("Collapse"))
                 .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
                     on_toggle(window, cx);
                 })
@@ -148,7 +172,7 @@ impl Sidebar {
                     .flex()
                     .flex_col()
                     .gap(px(4.0))
-                    // Header de la barre latérale
+                    // Header de la barre latérale avec logo Shelly SVG
                     .child(
                         div()
                             .flex()
@@ -159,11 +183,10 @@ impl Sidebar {
                             .border_b_1()
                             .border_color(theme.border)
                             .child(
-                                div()
-                                    .text_base()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(theme.accent)
-                                    .child("⚡"),
+                                svg()
+                                    .path(AppIcon::Shelly.path())
+                                    .size_5()
+                                    .text_color(theme.accent),
                             )
                             .child(if !is_collapsed {
                                 div()

@@ -246,89 +246,22 @@ impl Render for PackageWorkstationView {
             },
         );
 
-        let mode_switcher = div()
-            .flex()
-            .items_center()
-            .bg(theme.bg_app)
-            .border_1()
-            .border_color(theme.border)
-            .rounded_md()
-            .p(px(2.0))
-            .gap(px(2.0))
-            .child({
-                let on_cards = entity_mode.clone();
-                let is_active = view_mode == PackageViewMode::Cards;
-                div()
-                    .px(px(6.0))
-                    .py(px(2.0))
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .text_xs()
-                    .font_weight(if is_active {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .bg(if is_active {
-                        theme.bg_surface_active
-                    } else {
-                        theme.bg_app
-                    })
-                    .text_color(if is_active {
-                        theme.accent
-                    } else {
-                        theme.text_muted
-                    })
-                    .child(format!(
-                        "{} {}",
-                        PackageViewMode::Cards.icon(),
-                        PackageViewMode::Cards.label()
-                    ))
-                    .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
-                        on_cards.update(cx, |view, cx| {
+        let mode_switcher = {
+            let on_mode = entity_mode.clone();
+            crate::components::view_mode_switcher::ViewModeSwitcher::render(
+                crate::components::view_mode_switcher::ViewModeSwitcherProps {
+                    current_mode: view_mode,
+                    theme: &theme,
+                    on_select_mode: Rc::new(move |mode, _w, cx| {
+                        on_mode.update(cx, |view, cx| {
                             view.session.update(cx, |s, cx| {
-                                s.set_view_mode(PackageViewMode::Cards, cx);
+                                s.set_view_mode(mode, cx);
                             });
                         });
-                    })
-            })
-            .child({
-                let on_table = entity_mode.clone();
-                let is_active = view_mode == PackageViewMode::Table;
-                div()
-                    .px(px(6.0))
-                    .py(px(2.0))
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .text_xs()
-                    .font_weight(if is_active {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .bg(if is_active {
-                        theme.bg_surface_active
-                    } else {
-                        theme.bg_app
-                    })
-                    .text_color(if is_active {
-                        theme.accent
-                    } else {
-                        theme.text_muted
-                    })
-                    .child(format!(
-                        "{} {}",
-                        PackageViewMode::Table.icon(),
-                        PackageViewMode::Table.label()
-                    ))
-                    .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
-                        on_table.update(cx, |view, cx| {
-                            view.session.update(cx, |s, cx| {
-                                s.set_view_mode(PackageViewMode::Table, cx);
-                            });
-                        });
-                    })
-            });
+                    }),
+                },
+            )
+        };
 
         let top_bar = match destination {
             crate::state::NavDestination::Browse => {
@@ -342,7 +275,12 @@ impl Render for PackageWorkstationView {
                     .bg(theme.bg_sidebar)
                     .border_b_1()
                     .border_color(theme.border)
-                    .child(div().text_sm().child("🔍"))
+                    .child(
+                        svg()
+                            .path(crate::icons::AppIcon::Search.path())
+                            .size_4()
+                            .text_color(theme.text_muted),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -361,14 +299,14 @@ impl Render for PackageWorkstationView {
                             div()
                                 .text_xs()
                                 .text_color(theme.accent)
-                                .child("⚡ Searching...")
+                                .child("Searching...")
                                 .into_any_element()
                         } else {
                             div()
                                 .id("searching_indicator")
                                 .text_xs()
                                 .text_color(theme.accent)
-                                .child("⚡ Searching...")
+                                .child("Searching...")
                                 .with_animation(
                                     ("search_pulse", 0usize),
                                     Animation::new(std::time::Duration::from_millis(800))
@@ -421,10 +359,19 @@ impl Render for PackageWorkstationView {
                 .border_color(theme.border)
                 .child(
                     div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
                         .font_weight(FontWeight::BOLD)
                         .text_sm()
                         .text_color(theme.text_primary)
-                        .child("📦 Locally Installed Packages"),
+                        .child(
+                            svg()
+                                .path(crate::icons::AppIcon::Installed.path())
+                                .size_4()
+                                .text_color(theme.accent),
+                        )
+                        .child("Locally Installed Packages"),
                 )
                 .child(
                     div()
@@ -452,10 +399,19 @@ impl Render for PackageWorkstationView {
                     .border_color(theme.border)
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
                             .font_weight(FontWeight::BOLD)
                             .text_sm()
                             .text_color(theme.text_primary)
-                            .child("🔄 Available System Updates"),
+                            .child(
+                                svg()
+                                    .path(crate::icons::AppIcon::Updates.path())
+                                    .size_4()
+                                    .text_color(theme.accent),
+                            )
+                            .child("Available System Updates"),
                     )
                     .child(
                         div()
@@ -748,7 +704,7 @@ impl Render for PackageWorkstationView {
                                 tc.update(cx, |center, cx| {
                                     center.post(
                                         ToastKind::Success,
-                                        "Commande copiée",
+                                        "Command copied",
                                         cmd.clone(),
                                         None,
                                         rm,
@@ -766,8 +722,8 @@ impl Render for PackageWorkstationView {
                             tc.update(cx, |center, cx| {
                                 center.post(
                                     ToastKind::Success,
-                                    "PKGBUILD copié",
-                                    "Le fichier PKGBUILD a été copié dans le presse-papiers.",
+                                    "PKGBUILD copied",
+                                    "The PKGBUILD recipe has been copied to your clipboard.",
                                     None,
                                     rm,
                                     cx,
