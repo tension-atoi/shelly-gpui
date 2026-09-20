@@ -49,3 +49,21 @@
 | **Responsive Breakpoints** | Wide (>= 820px), Medium (600-819px), Narrow (< 600px) | `WorkbenchBreakpoint::from_width` pure classification | Unit test `test_query_workbench_breakpoints_wide_medium_narrow` | **PASSED** |
 | **Exact-SHA Build & Package** | Built and packaged via Arch PKGBUILD matching exact git commit SHA | `makepkg -C -c -f`, `pacman -U`, `pacman -Q` verification | Verified with pacman package query | **PASSED** |
 | **Zero Deadcode & 100/100 Tests** | `#![deny(dead_code)]` with zero warnings; 100% tests passing | Strict YAGNI, 100 unit tests passing in release locked profile | `cargo test --release --locked` exits 0 (100 passed) | **PASSED** |
+
+---
+
+## Phase UX-03 Acceptance Matrix (Results Workbench & Package Identity)
+
+| Requirement | Specification | Implementation | Verification Method | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Deterministic Identity Primitive** | Truthful deterministic resolution chain (source icon $\to$ source vector $\to$ fallback box). Strict Zero Fake Logos policy | `components::package_identity` with `resolve_icon`, `render_avatar` (Cards), and `render_inline_glyph` (Table). 5 custom SVGs (`source-alpm.svg`, `source-aur.svg`, `source-flatpak.svg`, `source-appimage.svg`, `package-generic.svg`) | Unit tests in `icons.rs` and `package_identity.rs`; runtime verification in Cards and Table views | **PASSED** |
+| **Information Hierarchy Baseline** | Predictable typographic baseline (Name $\to$ Version $\to$ Source & Repo $\to$ Size $\to$ State). Elimination of unaligned pill piles | `components::package_card` with 3-line hierarchy: Line 1 (Name + Version + Size), Line 2 (Source + Repo + State), Line 3 (Description) | Wayland captures `evidence_ux03_03`, `evidence_ux03_04`; code audit | **PASSED** |
+| **Table as Canonical Surface** | High density, right-aligned monospace sizes, inline 14px source glyphs in Name column, synchronized column widths | `components::package_table` with `render_inline_glyph`, `col_name`, `col_version`, `col_source`, `col_size` (right-aligned + `pr_3`), and `col_status` | Wayland captures `evidence_ux03_01`, `evidence_ux03_02`, `evidence_ux03_06` | **PASSED** |
+| **Cards Distinct Spatial View** | Justify ~80px spatial footprint with rich 36x36 tinted identity avatars, multi-line descriptions, and electric cyan left accent rail | `components::package_card` with `avatar_bg_color`, `avatar_border_color`, 36x36 container, hover surface, and active accent rail | Wayland captures `evidence_ux03_03`, `evidence_ux03_04`, `evidence_ux03_05` | **PASSED** |
+| **Default Table on Clean Installs** | Clean installs default to `Table` mode; existing user preferences preserved; reactive persistence | `GpuiUiConfig::default` sets `view_mode: PackageViewMode::Table`, `#[serde(default = "default_view_mode")]`, wired to `SessionEvent::ViewModeChanged` | Unit tests in `config.rs`; verified via `gpui-ui.json` persistence test | **PASSED** |
+| **Compact Mode Density** | Compact view renders 62px cards (28x28 avatars) and 30px table rows with collapsed 56px sidebar rail | `UiMetrics::CARD_HEIGHT_COMPACT = 62.0`, `ROW_HEIGHT_COMPACT = 30.0` | Wayland capture `evidence_ux03_05_cards_view_compact_mode.png` | **PASSED** |
+| **Light Theme Visual Parity** | High-contrast source avatars, badges, and table rows in light theme with WCAG AAA readability | High-contrast light theme color mappings in `package_identity.rs` and `package_table.rs` | Wayland capture `evidence_ux03_06_light_theme_parity.png` | **PASSED** |
+| **Command Surface Frozen** | Command surface untouched: `query_workbench.rs`, `search_input.rs`, `menu.rs`, and `view_mode_switcher.rs` | Zero lines changed in command surface components | `git diff` audit against UX-02P baseline | **PASSED** |
+| **Zero Deadcode & 103/103 Tests** | `#![deny(dead_code)]` with zero warnings; 103 unit tests passing in release locked profile | Added unit test suite for package identity, icons, and config serde | `cargo test --release --locked` exits 0 (103 passed), `cargo clippy` exits 0 | **PASSED** |
+| **Native PKGBUILD Installation** | Arch package built and installed matching commit SHA | Packaged via `makepkg -C -c -f`, installed via `pacman -U` | `pacman -Q shelly-gpui-git` confirmed `r4695.gc0f55365-1` | **PASSED** |
+

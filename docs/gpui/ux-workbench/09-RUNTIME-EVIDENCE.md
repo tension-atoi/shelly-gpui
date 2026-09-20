@@ -156,3 +156,32 @@ The complete visual evidence suite captured directly from the live Wayland compo
 | **07** | **Table View Mode** | [`evidence_ux02p_07_table_view_mode.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_07_table_view_mode.png) | Multi-column table layout with active unboxed view switcher icon highlight and status rail parity | **PASSED** |
 | **08** | **Light Theme Parity** | [`evidence_ux02p_08_light_theme_parity.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_08_light_theme_parity.png) | Complete light theme visual parity: unboxed toolbar, status rail summary, search input, and high-contrast typography | **PASSED** |
 
+---
+
+## 8. Phase UX-03 Runtime Evidence: Results Workbench & Package Identity
+
+### 8.1 Environment & Package Verification
+- **Target OS**: Arch Linux x86_64
+- **Compositor**: Hyprland (Native Wayland, `xwayland: false`)
+- **Display**: `WAYLAND_DISPLAY=wayland-1`
+- **Installed Package**: `shelly-gpui-git r4695.gc0f55365-1`
+- **Source Git Commit**: `c0f55365e128148ca298f24ea15c5e88863f6ee8`
+- **Running Binary**: `/usr/lib/shelly/shelly-gpui-bin`
+- **Verification Command**:
+  ```sh
+  pacman -Q shelly-gpui-git
+  # Output: shelly-gpui-git r4695.gc0f55365-1
+  ```
+
+### 8.2 Live Wayland UX-03 Gallery
+
+| Figure | State / Component | Screenshot Artifact | Verified UX Properties | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **01** | **Table View Search Results** | [`evidence_ux03_01_table_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_01_table_view_search_results.png) | High-density multi-column Table layout with inline 14px source icons (`source-alpm.svg` cyan swoosh, `source-aur.svg` violet crest) in Name column, monospace versions, right-aligned formatted sizes with `pr_3` margin, and state pills | **PASSED** |
+| **02** | **Table View Selection & Inspector** | [`evidence_ux03_02_table_view_selection.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_02_table_view_selection.png) | Selected table row (`ripgrep`) highlighted across full width with electric cyan left accent rail; docked Inspector populated with action buttons, tabs, and metadata cards | **PASSED** |
+| **03** | **Cards View Search Results** | [`evidence_ux03_03_cards_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_03_cards_view_search_results.png) | View switcher `[ ⊞ ]` active; rich 36x36 tinted identity avatars (ALPM cyan, AUR violet), 3-line structural hierarchy (Line 1: Name + Version + Size; Line 2: Source + Repo + State; Line 3: Description) | **PASSED** |
+| **04** | **AUR Card Selection & Inspector** | [`evidence_ux03_04_cards_view_selection.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_04_cards_view_selection.png) | Selected AUR card (`the_platinum_searcher-bin`) with electric cyan left accent rail and active surface; Inspector populated with AUR badges and upstream repository metadata | **PASSED** |
+| **05** | **Compact Cards View** | [`evidence_ux03_05_cards_view_compact_mode.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_05_cards_view_compact_mode.png) | Compact view mode active (62px card height, 28x28 avatar, collapsed 56px navigation rail) maximizing vertical information density with 15 cards visible simultaneously | **PASSED** |
+| **06** | **Light Theme Parity** | [`evidence_ux03_06_light_theme_parity.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_06_light_theme_parity.png) | Complete light theme visual parity; high-contrast source avatars, crisp badges, and selected row with electric cyan accent rail and pristine inspector typography | **PASSED** |
+
+
