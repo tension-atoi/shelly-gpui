@@ -1,7 +1,6 @@
 use crate::backend::models::UnifiedPackage;
 use crate::components::package_identity::PackageIdentity;
 use crate::components::package_table::PackageTable;
-use crate::components::status_pill::StatusPill;
 use crate::theme::Theme;
 use crate::ui_metrics::UiMetrics;
 use gpui::prelude::FluentBuilder;
@@ -45,6 +44,21 @@ impl PackageCard {
         let display_size = PackageTable::display_size(pkg);
         let has_size = display_size != "—";
 
+        // Dérivation de la source et du dépôt sans badge en forme de pilule
+        let source_label = match pkg.source_type.to_uppercase().as_str() {
+            "ALPM" => "Arch",
+            "AUR" => "AUR",
+            "FLATPAK" => "Flatpak",
+            "APPIMAGE" => "AppImage",
+            _ => pkg.source_type.as_str(),
+        };
+
+        let show_repo = !pkg.repository_or_remote.is_empty()
+            && !pkg
+                .repository_or_remote
+                .eq_ignore_ascii_case(&pkg.source_type)
+            && !pkg.repository_or_remote.eq_ignore_ascii_case(source_label);
+
         div()
             .h(px(card_height))
             .w_full()
@@ -67,7 +81,7 @@ impl PackageCard {
                 let hover_border = theme.border_focus;
                 el.hover(move |s| s.bg(hover_bg).border_color(hover_border))
             })
-            // Ancre visuelle : Avatar d'identité de paquet
+            // Ancre visuelle : Avatar d'identité de paquet résolu selon la chaîne à 3 tiers
             .child(PackageIdentity::render_avatar(
                 pkg,
                 avatar_size,
@@ -84,7 +98,7 @@ impl PackageCard {
                     .flex_col()
                     .justify_between()
                     .overflow_hidden()
-                    // Ligne 1 : En-tête (Nom à gauche, Version + Taille à droite)
+                    // Ligne 1 : En-tête (Nom à gauche, Version + Taille à droite en monospace)
                     .child(
                         div()
                             .flex()
@@ -117,6 +131,7 @@ impl PackageCard {
                                         el.child(
                                             div()
                                                 .text_xs()
+                                                .font_family("monospace")
                                                 .font_weight(FontWeight::BOLD)
                                                 .text_color(theme.warning)
                                                 .child(format!("→ {}", new_ver)),
@@ -125,6 +140,7 @@ impl PackageCard {
                                     .child(
                                         div()
                                             .text_xs()
+                                            .font_family("monospace")
                                             .font_weight(FontWeight::MEDIUM)
                                             .text_color(theme.text_muted)
                                             .child(pkg.version.clone()),
@@ -133,6 +149,7 @@ impl PackageCard {
                                         el.child(
                                             div()
                                                 .text_xs()
+                                                .font_family("monospace")
                                                 .font_weight(FontWeight::NORMAL)
                                                 .text_color(theme.text_secondary)
                                                 .child(display_size),
@@ -140,38 +157,64 @@ impl PackageCard {
                                     }),
                             ),
                     )
-                    // Ligne 2 : Badges de métadonnées (Source + Dépôt + État)
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .child(StatusPill::source_badge(&pkg.source_type, theme))
-                            .when(
-                                !pkg.repository_or_remote.is_empty()
-                                    && !pkg
-                                        .repository_or_remote
-                                        .eq_ignore_ascii_case(&pkg.source_type),
-                                |el| {
-                                    el.child(StatusPill::repo_badge(
-                                        &pkg.repository_or_remote,
-                                        theme,
-                                    ))
-                                },
-                            )
-                            .child(StatusPill::state_pill(
-                                pkg.is_installed,
-                                pkg.has_update,
-                                theme,
-                            )),
-                    )
-                    // Ligne 3 : Description aérée avec troncature propre
+                    // Ligne 2 : Métadonnées desktop calmes sans pilules colorées ("Arch · extra · Installed")
+                    .child({
+                        let mut meta = div().flex().items_center().gap_1p5().text_xs().child(
+                            div()
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(theme.text_secondary)
+                                .child(source_label.to_string()),
+                        );
+
+                        if show_repo {
+                            meta = meta
+                                .child(div().text_color(theme.text_muted).child("·"))
+                                .child(
+                                    div()
+                                        .text_color(theme.text_muted)
+                                        .child(pkg.repository_or_remote.clone()),
+                                );
+                        }
+
+                        meta = meta.child(div().text_color(theme.text_muted).child("·"));
+
+                        if pkg.has_update {
+                            meta = meta.child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .text_color(theme.warning)
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(div().size(px(5.0)).rounded_full().bg(theme.warning))
+                                    .child("Update available"),
+                            );
+                        } else if pkg.is_installed {
+                            meta = meta.child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .text_color(theme.success)
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(div().size(px(5.0)).rounded_full().bg(theme.success))
+                                    .child("Installed"),
+                            );
+                        } else {
+                            meta =
+                                meta.child(div().text_color(theme.text_muted).child("Available"));
+                        }
+
+                        meta
+                    })
+                    // Ligne 3 : Description aérée avec bornage strict multi-lignes
                     .child(
                         div()
                             .text_xs()
                             .text_color(theme.text_secondary)
                             .overflow_hidden()
                             .text_ellipsis()
+                            .line_clamp(if props.compact { 1 } else { 2 })
                             .child(if pkg.description.is_empty() {
                                 "No description available for this package.".to_string()
                             } else {

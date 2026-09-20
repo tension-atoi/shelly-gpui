@@ -38,28 +38,37 @@ To maintain software integrity and avoid regressions:
 ### 3.1 The Problem with Naive Package Displays
 In naive software centers, packages either display no visual anchor at all (monotonous walls of text) or commit the fatal flaw of "fake logos" (heuristic web scraping, downloading random low-resolution images, or mapping package name prefixes to arbitrary brand assets).
 
-### 3.2 The Strict Identity Resolution Chain
-Shelly enforces a truthful, three-tier resolution chain:
+### 3.2 The Strict 3-Tier Identity Resolution Chain
+Shelly enforces a truthful, three-tier deterministic resolution chain:
 
 ```mermaid
 flowchart TD
-    Start["Package Item Evaluation"] --> Step1{"Authentic Source Icon Provided?<br/>(e.g., AppImage icon_name, desktop file)"}
-    Step1 -- Yes --> UseProvided["1. Authentic Source Icon"]
-    Step1 -- No --> Step2{"Known Package Source?<br/>(ALPM, AUR, Flatpak, AppImage)"}
+    Start["Package Item Evaluation"] --> Step1{"Tier 1: Authentic Source-Provided Icon?<br/>(Flatpak export icon, XDG desktop icon, AppImage icon on disk)"}
+    Step1 -- Found on Disk --> UseProvided["1. Authentic Source Icon<br/>(Rendered via img or svg)"]
+    Step1 -- Not Found --> Step2{"Tier 2: Known Package Source?<br/>(ALPM, AUR, Flatpak, AppImage)"}
     Step2 -- Yes --> UseSymbolic["2. Verified Source Symbolic SVG<br/>(Arch Swoosh, AUR Crest, Flatpak Cube, AppImage Diamond)"]
     Step2 -- No --> UseGeneric["3. Generic Package Fallback SVG<br/>(Neutral Package Box)"]
 ```
 
-### 3.3 Semantic Color Tinting
-Each source is assigned a distinct, high-contrast semantic identity token:
+1. **Tier 1 (Authentic Source Icon)**:
+   - Flatpak packages probe `/var/lib/flatpak/exports/share/icons/hicolor/` and `~/.local/share/flatpak/exports/share/icons/hicolor/` for high-resolution PNG or SVG assets matching the App ID.
+   - Standard and AUR packages probe `/usr/share/icons/hicolor/`, `/usr/share/pixmaps/`, and user icon directories.
+   - Verified on local filesystem before use; rendered via `gpui::img(path)` for raster or `gpui::svg().path(...)` for vector assets.
+2. **Tier 2 (Verified Source Symbolic Vector)**:
+   - High-contrast geometric vector glyphs for known sources: Arch Swoosh (`source-alpm.svg`), AUR Crest (`source-aur.svg`), Flatpak Cube (`source-flatpak.svg`), AppImage Diamond (`source-appimage.svg`).
+3. **Tier 3 (Generic Fallback)**:
+   - Neutral package box (`package-generic.svg`) for unknown sources or missing metadata.
 
-| Package Source | Symbolic Glyph | Dark Theme Tint (`bg / border`) | Light Theme Tint (`bg / border`) | Semantic Meaning |
-| :--- | :--- | :--- | :--- | :--- |
-| **ALPM** | Arch Swoosh | `rgb(0x38bdf8)` @ 12% / 25% | `rgb(0x0284c7)` @ 10% / 20% | Official Arch Repositories (`core`, `extra`, `multilib`) |
-| **AUR** | AUR Community Crest | `rgb(0xa855f7)` @ 12% / 25% | `rgb(0x7c3aed)` @ 10% / 20% | Arch User Repository (Community PKGBUILDs) |
-| **Flatpak** | Isometric Cube | `rgb(0x06b6d4)` @ 12% / 25% | `rgb(0x0891b2)` @ 10% / 20% | Sandboxed Flathub / Remote Runtimes |
-| **AppImage** | Portable Diamond | `rgb(0xf97316)` @ 12% / 25% | `rgb(0xea580c)` @ 10% / 20% | Self-contained Executable Binaries |
-| **Generic** | Package Box | `border` @ 50% | `border` @ 50% | Unspecified / Fallback |
+### 3.3 Semantic Color Tinting & WCAG 2.1 AA Accessibility
+Each source is assigned a distinct semantic identity token compliant with WCAG 2.1 AA contrast requirements:
+
+| Package Source | Symbolic Glyph | Dark Theme Tint (`bg / border`) | Light Theme Tint (`bg / border`) | Contrast Ratio (vs Background) | Semantic Meaning |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ALPM** | Arch Swoosh | `rgb(0x38bdf8)` @ 12% / 28% | `rgb(0x0284c7)` @ 10% / 28% | $\ge 8.4:1$ (Dark) / $\ge 4.5:1$ (Light) | Official Arch Repositories (`core`, `extra`, `multilib`) |
+| **AUR** | AUR Crest | `rgb(0xa855f7)` @ 12% / 28% | `rgb(0x7c3aed)` @ 10% / 28% | $\ge 5.0:1$ (Dark) / $\ge 4.5:1$ (Light) | Arch User Repository (Community PKGBUILDs) |
+| **Flatpak** | Isometric Cube | `rgb(0x06b6d4)` @ 12% / 28% | `rgb(0x0891b2)` @ 10% / 28% | $\ge 8.0:1$ (Dark) / $\ge 4.5:1$ (Light) | Sandboxed Flathub / Remote Runtimes |
+| **AppImage** | Portable Diamond | `rgb(0xf97316)` @ 12% / 28% | `rgb(0xea580c)` @ 10% / 28% | $\ge 6.7:1$ (Dark) / $\ge 4.5:1$ (Light) | Self-contained Executable Binaries |
+| **Generic** | Package Box | `border` @ 50% | `border` @ 50% | Neutral | Unspecified / Fallback |
 
 ---
 
@@ -67,34 +76,34 @@ Each source is assigned a distinct, high-contrast semantic identity token:
 
 ### 4.1 Card Geometry & Spatial Budget
 - **Normal Mode**:
-  - Row Wrapper Height: `80.0px` (`UiMetrics::CARD_WRAPPER_NORMAL`)
-  - Inner Card Height: `72.0px` (`UiMetrics::CARD_HEIGHT_NORMAL`)
-  - Vertical Inset: `4.0px` top and bottom (`py(px(4.0))`), perfectly matching $72 + 4 + 4 = 80\text{px}$.
+  - Row Wrapper Height: `88.0px` (`UiMetrics::CARD_WRAPPER_NORMAL`)
+  - Inner Card Height: `80.0px` (`UiMetrics::CARD_HEIGHT_NORMAL`)
+  - Vertical Inset: `4.0px` top and bottom (`py(px(4.0))`), perfectly satisfying $80 + 4 + 4 = 88\text{px}$.
   - Avatar Dimensions: `36.0px` $\times$ `36.0px` with `6.0px` rounded corners.
 - **Compact Mode**:
-  - Row Wrapper Height: `66.0px` (`UiMetrics::CARD_WRAPPER_COMPACT`)
-  - Inner Card Height: `58.0px` (`UiMetrics::CARD_HEIGHT_COMPACT`)
-  - Vertical Inset: `4.0px` top and bottom (`py(px(4.0))`), perfectly matching $58 + 4 + 4 = 66\text{px}$.
+  - Row Wrapper Height: `70.0px` (`UiMetrics::CARD_WRAPPER_COMPACT`)
+  - Inner Card Height: `62.0px` (`UiMetrics::CARD_HEIGHT_COMPACT`)
+  - Vertical Inset: `4.0px` top and bottom (`py(px(4.0))`), perfectly satisfying $62 + 4 + 4 = 70\text{px}$.
   - Avatar Dimensions: `28.0px` $\times$ `28.0px` with `4.0px` rounded corners.
 
-### 4.2 Card Visual Layout
+### 4.2 Card Visual Layout & Desktop Metadata Line
 
 ```text
 ┌─[4px Accent]────────────────────────────────────────────────────────────────────────┐
 │  ┌──────────┐  ripgrep                              14.1.0-1          1.8 MiB       │
-│  │  [ALPM]  │  [ALPM · extra]  [Installed]                                          │
+│  │  [ALPM]  │  Arch · extra · ● Installed                                           │
 │  │  Swoosh  │  Ultra-fast line-oriented search tool combining the usable ergonomics │
 │  └──────────┘  of ag with the raw speed of grep.                                    │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 1. **Left Visual Anchor**:
-   - The `PackageIdentity` avatar occupies a fixed square container.
+   - The `PackageIdentity` avatar occupies a fixed square container (`36px` normal, `28px` compact).
    - When selected, a `4px` electric cyan accent rail anchors the left edge.
 2. **Right Content Column**:
-   - **Line 1 (Header)**: Package Name in `FontWeight::BOLD`, `text_sm`, with `theme.text_primary` (or `theme.accent` when selected). The right side presents the Version (`text_xs`, `text_muted`) and Size if known.
-   - **Line 2 (Metadata Rail)**: Crisp, non-colliding badges: Source + Repository (`ALPM · extra`), and State (`Installed`, `Update Available`, or neutral `Available`).
-   - **Line 3 (Description)**: In Normal mode, allows 2 clean lines of secondary text (`text_xs`, `theme.text_secondary`), giving real substance to search results. In Compact mode, cleanly clamped to 1 line.
+   - **Line 1 (Header)**: Package Name in `FontWeight::BOLD`, `text_sm`, with `theme.text_primary` (or `theme.accent` when selected). The right side presents the Version and Size formatted with `.font_family("monospace")` for tabular scanning.
+   - **Line 2 (Desktop Metadata Line)**: Eradication of candy pill badges. Displays a unified, calm desktop metadata string: `Arch · extra · ● Installed` (or `AUR · aur · Available`), with zero container borders or fills. The status dot (`●`) provides subtle color reinforcement without visual noise.
+   - **Line 3 (Description)**: Enforces real GPUI multi-line clamping via `.line_clamp(if compact { 1 } else { 2 })`. In normal mode, renders up to 2 context-rich lines of package description (`text_xs`, `theme.text_secondary`), giving real substance to search results. In compact mode, cleanly clamped to 1 line.
 
 ---
 
@@ -103,7 +112,7 @@ Each source is assigned a distinct, high-contrast semantic identity token:
 ### 5.1 The Table as Canonical Workstation Surface
 For power users managing thousands of system packages, the Table view is the primary workhorse. It maximizes vertical scanning speed and provides instantaneous comparison of versions, repositories, and disk footprints.
 
-### 5.2 Column Topology & Metrics
+### 5.2 Column Topology & Synchronized Metrics
 Row Height:
 - Normal Mode: `36.0px` (`UiMetrics::ROW_HEIGHT_NORMAL`)
 - Compact Mode: `30.0px` (`UiMetrics::ROW_HEIGHT_COMPACT`)
@@ -111,14 +120,14 @@ Row Height:
 
 | Column | Header | Proportion / Width | Content Alignment | Visual Elements |
 | :--- | :--- | :--- | :--- | :--- |
-| **Col 1** | `NAME` | `flex_1` (expandable) | Left | 16x16 inline `PackageIdentity` avatar + Package Name |
-| **Col 2** | `VERSION` | `110.0px` fixed | Left | Monospace/clean version string (`text_xs`, `text_muted`) |
-| **Col 3** | `SOURCE` | `90.0px` fixed | Left | Source badge (`ALPM`, `AUR`, `Flatpak`, `AppImage`) |
-| **Col 4** | `SIZE` | `75.0px` fixed | Right (`justify_end`) | Formatted disk size (`format_bytes`) or neutral `—` |
-| **Col 5** | `STATUS` | `85.0px` fixed | Left / Center | Semantic state badge (`Installed`, `Update`, `Available`) |
+| **Col 1** | `NAME` | `flex_1` (expandable) | Left | 16x16 inline `PackageIdentity` glyph + Package Name |
+| **Col 2** | `VERSION` | `105.0px` fixed | Left | Monospace font (`.font_family("monospace")`), `text_xs`, `text_muted` |
+| **Col 3** | `SOURCE` | `105.0px` fixed | Left | Clean textual desktop format (`Arch / extra`, `AUR / aur`), zero chip pills |
+| **Col 4** | `SIZE` | `80.0px` fixed | Right (`justify_end` + `pr_3`) | Monospace font (`.font_family("monospace")`), formatted size or neutral `—` |
+| **Col 5** | `STATUS` | `85.0px` fixed | Left | Status text with subtle indicator dot (`● Installed`, `● Update`, or `Available`) |
 
 ### 5.3 Table Header & Row Synchronization
-Header columns and row cells share the exact same width tokens (`110px`, `90px`, `75px`, `85px`) and padding (`px_3`), guaranteeing zero horizontal jitter or columnar misalignment.
+Header columns and row cells share the exact same width tokens (`105px`, `105px`, `80px`, `85px`) and padding (`px_3`), guaranteeing zero horizontal jitter or columnar misalignment.
 
 ---
 

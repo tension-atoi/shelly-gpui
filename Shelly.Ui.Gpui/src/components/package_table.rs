@@ -1,6 +1,5 @@
 use crate::backend::models::{UnifiedPackage, UnifiedPackageSource};
 use crate::components::package_identity::PackageIdentity;
-use crate::components::status_pill::StatusPill;
 use crate::theme::Theme;
 use crate::ui_metrics::UiMetrics;
 use gpui::prelude::FluentBuilder;
@@ -64,14 +63,14 @@ impl PackageTable {
             )
             .child(
                 div()
-                    .w(px(110.0))
+                    .w(px(105.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("VERSION"),
             )
             .child(
                 div()
-                    .w(px(85.0))
+                    .w(px(105.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("SOURCE"),
@@ -88,7 +87,7 @@ impl PackageTable {
             )
             .child(
                 div()
-                    .w(px(80.0))
+                    .w(px(85.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("STATUS"),
@@ -119,6 +118,26 @@ impl PackageTable {
             UiMetrics::ROW_HEIGHT_NORMAL
         };
 
+        // Source et repo textuels sans pills
+        let source_label = match pkg.source_type.to_uppercase().as_str() {
+            "ALPM" => "Arch",
+            "AUR" => "AUR",
+            "FLATPAK" => "Flatpak",
+            "APPIMAGE" => "AppImage",
+            _ => pkg.source_type.as_str(),
+        };
+
+        let source_display = if !pkg.repository_or_remote.is_empty()
+            && !pkg
+                .repository_or_remote
+                .eq_ignore_ascii_case(&pkg.source_type)
+            && !pkg.repository_or_remote.eq_ignore_ascii_case(source_label)
+        {
+            format!("{} / {}", source_label, pkg.repository_or_remote)
+        } else {
+            source_label.to_string()
+        };
+
         div()
             .h(px(row_height))
             .w_full()
@@ -135,7 +154,7 @@ impl PackageTable {
                 let hover_bg = theme.bg_surface_hover;
                 el.hover(move |s| s.bg(hover_bg))
             })
-            // Column 1: Name avec icône d'identité de source en ligne
+            // Column 1: Name avec icône d'identité en ligne
             .child(
                 div()
                     .flex_1()
@@ -161,13 +180,14 @@ impl PackageTable {
                             .child(pkg.name.clone()),
                     ),
             )
-            // Column 2: Version
+            // Column 2: Version en police monospace
             .child(
                 div()
-                    .w(px(110.0))
+                    .w(px(105.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .text_xs()
+                    .font_family("monospace")
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.text_muted)
                     .child(if pkg.has_update {
@@ -176,15 +196,18 @@ impl PackageTable {
                         pkg.version.clone()
                     }),
             )
-            // Column 3: Source Badge
+            // Column 3: Source textuelle propre ("Arch / extra", sans badge chip)
             .child(
                 div()
-                    .w(px(85.0))
-                    .flex()
-                    .items_center()
-                    .child(StatusPill::source_badge(&pkg.source_type, theme)),
+                    .w(px(105.0))
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .text_xs()
+                    .font_weight(FontWeight::NORMAL)
+                    .text_color(theme.text_secondary)
+                    .child(source_display),
             )
-            // Column 4: Size (aligné à droite pour comparaison visuelle stricte)
+            // Column 4: Size en police monospace aligné à droite avec padding
             .child(
                 div()
                     .w(px(80.0))
@@ -194,20 +217,43 @@ impl PackageTable {
                     .overflow_hidden()
                     .text_ellipsis()
                     .text_xs()
+                    .font_family("monospace")
                     .text_color(theme.text_secondary)
                     .child(Self::display_size(pkg)),
             )
-            // Column 5: Status
+            // Column 5: Status textuel desktop calme avec indicateur subtil (sans badge pill)
             .child(
                 div()
-                    .w(px(80.0))
+                    .w(px(85.0))
                     .flex()
                     .items_center()
-                    .child(StatusPill::state_pill(
-                        pkg.is_installed,
-                        pkg.has_update,
-                        theme,
-                    )),
+                    .child(if pkg.has_update {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .text_xs()
+                            .text_color(theme.warning)
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(div().size(px(5.0)).rounded_full().bg(theme.warning))
+                            .child("Update")
+                    } else if pkg.is_installed {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .text_xs()
+                            .text_color(theme.success)
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(div().size(px(5.0)).rounded_full().bg(theme.success))
+                            .child("Installed")
+                    } else {
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::NORMAL)
+                            .text_color(theme.text_muted)
+                            .child("Available")
+                    }),
             )
     }
 }
