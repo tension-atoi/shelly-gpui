@@ -16,7 +16,6 @@ pub struct Theme {
     pub accent_hover: Rgba,
     pub success: Rgba,
     pub warning: Rgba,
-    pub warning_hover: Rgba,
     pub danger: Rgba,
     pub danger_hover: Rgba,
     pub badge_alpm: Rgba,
@@ -48,7 +47,6 @@ impl Theme {
             accent_hover: rgb(0x7dd3fc),      // Luminous cyan highlight
             success: rgb(0x10b981),           // Vibrant emerald
             warning: rgb(0xf59e0b),           // Bright amber
-            warning_hover: rgb(0xfbbf24),     // Luminous amber highlight
             danger: rgb(0xf43f5e),            // Vivid ruby rose
             danger_hover: rgb(0xfb7185),      // Luminous ruby highlight
             badge_alpm: rgb(0x38bdf8),        // Electric Cyan (Official ALPM)
@@ -74,7 +72,6 @@ impl Theme {
             accent_hover: rgb(0x0369a1),
             success: rgb(0x059669),
             warning: rgb(0xd97706),
-            warning_hover: rgb(0xb45309),
             danger: rgb(0xe11d48),
             danger_hover: rgb(0xbe123c),
             badge_alpm: rgb(0x0284c7),

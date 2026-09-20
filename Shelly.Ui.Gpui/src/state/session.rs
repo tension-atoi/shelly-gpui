@@ -117,6 +117,57 @@ impl SourceFilter {
     }
 }
 
+/// Mode d'affichage de la surface des paquets (Cartes ou Table dense)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum PackageViewMode {
+    #[default]
+    Cards,
+    Table,
+}
+
+impl PackageViewMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            PackageViewMode::Cards => "Cards",
+            PackageViewMode::Table => "Table",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            PackageViewMode::Cards => "▦",
+            PackageViewMode::Table => "☰",
+        }
+    }
+}
+
+/// Onglets de l'inspecteur sémantique de paquet
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum InspectorTab {
+    #[default]
+    Overview,
+    Dependencies,
+    FilesBuild,
+}
+
+impl InspectorTab {
+    pub fn label(&self) -> &'static str {
+        match self {
+            InspectorTab::Overview => "Overview",
+            InspectorTab::Dependencies => "Dependencies",
+            InspectorTab::FilesBuild => "Files & Build",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            InspectorTab::Overview => "📋",
+            InspectorTab::Dependencies => "🔗",
+            InspectorTab::FilesBuild => "🛠️",
+        }
+    }
+}
+
 /// Événements sémantiques émis par la session applicative
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionEvent {
@@ -125,6 +176,8 @@ pub enum SessionEvent {
     SearchQueryChanged(String),
     PackageSelected(Option<PackageKey>),
     SidebarToggled(bool),
+    ViewModeChanged(PackageViewMode),
+    InspectorTabChanged(InspectorTab),
 }
 
 /// Entité GPUI gérant l'état de navigation et d'intention de l'utilisateur
@@ -136,6 +189,8 @@ pub struct AppSession {
     pub search_generation: usize,
     pub is_searching: bool,
     pub sidebar_collapsed: bool,
+    pub view_mode: PackageViewMode,
+    pub inspector_tab: InspectorTab,
 }
 
 impl EventEmitter<SessionEvent> for AppSession {}
@@ -150,6 +205,8 @@ impl AppSession {
             search_generation: 0,
             is_searching: false,
             sidebar_collapsed: false,
+            view_mode: PackageViewMode::Cards,
+            inspector_tab: InspectorTab::Overview,
         }
     }
 
@@ -179,6 +236,22 @@ impl AppSession {
         if self.selected_package_key != key {
             self.selected_package_key = key.clone();
             cx.emit(SessionEvent::PackageSelected(key));
+            cx.notify();
+        }
+    }
+
+    pub fn set_view_mode(&mut self, mode: PackageViewMode, cx: &mut Context<Self>) {
+        if self.view_mode != mode {
+            self.view_mode = mode;
+            cx.emit(SessionEvent::ViewModeChanged(mode));
+            cx.notify();
+        }
+    }
+
+    pub fn set_inspector_tab(&mut self, tab: InspectorTab, cx: &mut Context<Self>) {
+        if self.inspector_tab != tab {
+            self.inspector_tab = tab;
+            cx.emit(SessionEvent::InspectorTabChanged(tab));
             cx.notify();
         }
     }
@@ -237,6 +310,8 @@ mod tests {
         assert_eq!(session.selected_package_key, None);
         assert!(!session.sidebar_collapsed);
         assert_eq!(session.search_generation, 0);
+        assert_eq!(session.view_mode, PackageViewMode::Cards);
+        assert_eq!(session.inspector_tab, InspectorTab::Overview);
     }
 
     #[test]
@@ -255,5 +330,20 @@ mod tests {
         assert_eq!(SourceFilter::Aur.label(), "AUR");
         assert_eq!(SourceFilter::Flatpak.label(), "Flatpak");
         assert_eq!(SourceFilter::AppImage.label(), "AppImage");
+    }
+
+    #[test]
+    fn test_view_mode_and_inspector_tab_metadata() {
+        assert_eq!(PackageViewMode::Cards.label(), "Cards");
+        assert_eq!(PackageViewMode::Table.label(), "Table");
+        assert_eq!(PackageViewMode::Cards.icon(), "▦");
+        assert_eq!(PackageViewMode::Table.icon(), "☰");
+
+        assert_eq!(InspectorTab::Overview.label(), "Overview");
+        assert_eq!(InspectorTab::Dependencies.label(), "Dependencies");
+        assert_eq!(InspectorTab::FilesBuild.label(), "Files & Build");
+        assert_eq!(InspectorTab::Overview.icon(), "📋");
+        assert_eq!(InspectorTab::Dependencies.icon(), "🔗");
+        assert_eq!(InspectorTab::FilesBuild.icon(), "🛠️");
     }
 }

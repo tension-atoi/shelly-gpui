@@ -3,15 +3,17 @@ use crate::backend::models::{ArchNewsItem, UnifiedPackage};
 use crate::backend::process::LogStreamEvent;
 use crate::components::log_drawer::{LogDrawer, LogDrawerProps};
 use crate::components::package_card::{PackageCard, PackageCardProps};
+use crate::components::package_table::PackageTable;
 use crate::components::sidebar::{Sidebar, SidebarProps};
 use crate::components::unified_search::{UnifiedSearch, UnifiedSearchProps};
 use crate::config::{ConfigManager, GpuiUiConfig, ShellySettings};
 use crate::state::{
-    AppSession, ConsoleEvent, ConsoleModel, NavDestination, PackageKey, PackageSourceKind,
-    PackageStore, PackageStoreEvent, SessionEvent, SourceFilter,
+    AppSession, ConsoleEvent, ConsoleModel, InspectorTab, NavDestination, PackageKey,
+    PackageSourceKind, PackageStore, PackageStoreEvent, PackageViewMode, SessionEvent,
+    SourceFilter,
 };
 use crate::theme::Theme;
-use crate::views::details::{PackageDetailsProps, PackageDetailsView};
+use crate::views::inspector::{PackageInspectorProps, PackageInspectorView};
 use crate::views::news::{NewsView, NewsViewProps};
 use crate::views::settings::{SettingsView, SettingsViewProps};
 use gpui::*;
@@ -42,6 +44,8 @@ pub struct WorkspaceView {
     pub is_resizing_splitter: bool,
     pub scroll_handle: UniformListScrollHandle,
     pub logs_copied_feedback: bool,
+    pub copy_cmd_feedback: bool,
+    pub is_loading_pkgbuild: bool,
 }
 
 impl WorkspaceView {
@@ -82,10 +86,28 @@ impl WorkspaceView {
                 log::debug!("Paquet sélectionné : {:?}", opt_key);
                 if let Some(key) = opt_key {
                     this.ensure_package_details(key.clone(), cx);
+                    if this.session.read(cx).inspector_tab == InspectorTab::FilesBuild
+                        && key.source == PackageSourceKind::Aur
+                    {
+                        this.ensure_pkgbuild(key.name.clone(), cx);
+                    }
                 }
                 cx.notify();
             }
             SessionEvent::SidebarToggled(_) => {
+                cx.notify();
+            }
+            SessionEvent::ViewModeChanged(_) => {
+                cx.notify();
+            }
+            SessionEvent::InspectorTabChanged(tab) => {
+                if *tab == InspectorTab::FilesBuild {
+                    if let Some(ref key) = this.session.read(cx).selected_package_key {
+                        if key.source == PackageSourceKind::Aur {
+                            this.ensure_pkgbuild(key.name.clone(), cx);
+                        }
+                    }
+                }
                 cx.notify();
             }
         })
@@ -133,7 +155,7 @@ impl WorkspaceView {
         })
         .detach();
 
-        let view = Self {
+        let mut view = Self {
             session,
             store,
             console,
@@ -146,14 +168,46 @@ impl WorkspaceView {
             news: Vec::new(),
             is_loading_news: false,
             is_mutating: false,
-            list_pane_width: 420.0,
+            list_pane_width: 460.0,
             is_resizing_splitter: false,
             scroll_handle: UniformListScrollHandle::new(),
             logs_copied_feedback: false,
+            copy_cmd_feedback: false,
+            is_loading_pkgbuild: false,
         };
+
+        // Configuration d'environnement pour l'initialisation / automatisation
+        if let Ok(mode) = std::env::var("SHELLY_VIEW_MODE") {
+            if mode.eq_ignore_ascii_case("table") {
+                view.session
+                    .update(cx, |s, cx| s.set_view_mode(PackageViewMode::Table, cx));
+            } else if mode.eq_ignore_ascii_case("cards") {
+                view.session
+                    .update(cx, |s, cx| s.set_view_mode(PackageViewMode::Cards, cx));
+            }
+        }
+
+        if let Ok(tab) = std::env::var("SHELLY_INSPECTOR_TAB") {
+            let parsed_tab = match tab.to_ascii_lowercase().as_str() {
+                "dependencies" => Some(InspectorTab::Dependencies),
+                "files_build" | "build" | "files" => Some(InspectorTab::FilesBuild),
+                "overview" => Some(InspectorTab::Overview),
+                _ => None,
+            };
+            if let Some(t) = parsed_tab {
+                view.session.update(cx, |s, cx| s.set_inspector_tab(t, cx));
+            }
+        }
 
         // Chargement initial asynchrone non-bloquant
         view.trigger_initial_load(cx);
+
+        if let Ok(query) = std::env::var("SHELLY_SEARCH_QUERY") {
+            if !query.trim().is_empty() {
+                view.search_input_buffer = query.clone();
+                view.execute_search(query, cx);
+            }
+        }
 
         view
     }
@@ -187,6 +241,21 @@ impl WorkspaceView {
                     view.store.update(cx, |st, cx| {
                         st.set_installed_packages(unified, cx);
                     });
+                    if let Ok(target) = std::env::var("SHELLY_SELECT_PACKAGE") {
+                        if view.session.read(cx).selected_package_key.is_none() {
+                            let store = view.store.read(cx);
+                            if let Some(pkg) = store
+                                .installed_packages
+                                .iter()
+                                .find(|p| p.name.eq_ignore_ascii_case(&target))
+                            {
+                                let key = pkg.key();
+                                view.session.update(cx, |s, cx| {
+                                    s.select_package(Some(key), cx);
+                                });
+                            }
+                        }
+                    }
                 });
             }
         })
@@ -302,6 +371,65 @@ impl WorkspaceView {
             })
             .detach();
         }
+    }
+
+    /// S'assure que la recette PKGBUILD d'un paquet AUR est disponible dans le cache
+    fn ensure_pkgbuild(&mut self, pkg_name: String, cx: &mut Context<Self>) {
+        if self.store.read(cx).get_cached_pkgbuild(&pkg_name).is_some() {
+            return;
+        }
+
+        let client = self.store.read(cx).client.clone();
+        let name_clone = pkg_name.clone();
+
+        self.is_loading_pkgbuild = true;
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let res = client.fetch_aur_pkgbuild(&name_clone).await;
+            let _ = this.update(cx, |view, cx| {
+                view.is_loading_pkgbuild = false;
+                match res {
+                    Ok(content) => {
+                        view.store.update(cx, |st, _cx| {
+                            st.cache_pkgbuild(name_clone, content);
+                        });
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Échec de récupération du PKGBUILD pour {}: {:?}",
+                            name_clone,
+                            err
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Copie la commande canonique d'installation dans le presse-papiers avec feedback visuel
+    pub fn copy_install_command(&mut self, cmd: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(cmd));
+        self.copy_cmd_feedback = true;
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(2))
+                .await;
+            let _ = this.update(cx, |view, cx| {
+                view.copy_cmd_feedback = false;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Copie le PKGBUILD dans le presse-papiers
+    pub fn copy_pkgbuild_to_clipboard(&mut self, content: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(content));
     }
 
     /// Déclenche la recherche avec temporisation (debounce)
@@ -461,12 +589,24 @@ impl WorkspaceView {
             let _ = this.update(cx, |view, cx| {
                 let current_gen = view.session.read(cx).search_generation;
                 if current_gen == gen {
+                    let mut selected_key_to_set = None;
+                    if let Ok(target) = std::env::var("SHELLY_SELECT_PACKAGE") {
+                        if let Some(pkg) = results
+                            .iter()
+                            .find(|p| p.name.eq_ignore_ascii_case(&target))
+                        {
+                            selected_key_to_set = Some(pkg.key());
+                        }
+                    }
                     view.store.update(cx, |st, cx| {
                         st.cache_search(&query_clone, filter, results.clone());
                         st.set_active_results(results, gen, cx);
                     });
                     view.session.update(cx, |s, cx| {
                         s.set_searching(false, cx);
+                        if let Some(k) = selected_key_to_set {
+                            s.select_package(Some(k), cx);
+                        }
                     });
                     view.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
                 }
@@ -681,7 +821,15 @@ impl Render for WorkspaceView {
         let entity = cx.entity().clone();
 
         // ── Lecture de l'état de session ────────────────────────────────────
-        let (destination, source_filter, is_searching, selected_key, is_sidebar_collapsed) = {
+        let (
+            destination,
+            source_filter,
+            is_searching,
+            selected_key,
+            is_sidebar_collapsed,
+            view_mode,
+            inspector_tab,
+        ) = {
             let session = self.session.read(cx);
             (
                 session.destination,
@@ -689,6 +837,8 @@ impl Render for WorkspaceView {
                 session.is_searching,
                 session.selected_package_key.clone(),
                 session.sidebar_collapsed,
+                session.view_mode,
+                session.inspector_tab,
             )
         };
 
@@ -726,15 +876,22 @@ impl Render for WorkspaceView {
                 let top_bar = match destination {
                     NavDestination::Browse => {
                         let entity_filter = entity.clone();
+                        let entity_mode = entity.clone();
                         let filter_bar = UnifiedSearch::render_filter_bar(&UnifiedSearchProps {
                             active_filter: source_filter,
                             is_searching,
                             total_count: packages.len(),
+                            view_mode,
                             theme: &theme,
                             on_select_filter: Rc::new(move |filter, _w, cx| {
                                 entity_filter.update(cx, |view, cx| {
                                     view.session
                                         .update(cx, |s, cx| s.set_source_filter(filter, cx));
+                                });
+                            }),
+                            on_select_view_mode: Rc::new(move |mode, _w, cx| {
+                                entity_mode.update(cx, |view, cx| {
+                                    view.session.update(cx, |s, cx| s.set_view_mode(mode, cx));
                                 });
                             }),
                         });
@@ -893,44 +1050,103 @@ impl Render for WorkspaceView {
                     let list_theme = theme;
                     let selected_name = selected_pkg.as_ref().map(|p| p.name.clone());
 
-                    uniform_list("package-list-surface", package_count, {
-                        let packages = packages.clone();
-                        let selected_name = selected_name.clone();
+                    if view_mode == PackageViewMode::Table {
+                        div()
+                            .flex()
+                            .flex_col()
+                            .size_full()
+                            .child(PackageTable::render_header(&theme))
+                            .child(
+                                div().flex_1().h_full().overflow_hidden().child(
+                                    uniform_list("package-list-table", package_count, {
+                                        let packages = packages.clone();
+                                        let selected_name = selected_name.clone();
 
-                        move |range, _window, _cx| {
-                            range
-                                .map(|idx| {
-                                    let pkg = &packages[idx];
-                                    let is_selected = selected_name
-                                        .as_ref()
-                                        .map(|n| n == &pkg.name)
-                                        .unwrap_or(false);
-                                    let pkg_key = pkg.key();
-                                    let on_select = entity_select.clone();
+                                        move |range, _window, _cx| {
+                                            range
+                                                .map(|idx| {
+                                                    let pkg = &packages[idx];
+                                                    let is_selected = selected_name
+                                                        .as_ref()
+                                                        .map(|n| n == &pkg.name)
+                                                        .unwrap_or(false);
+                                                    let pkg_key = pkg.key();
+                                                    let on_select = entity_select.clone();
 
-                                    div()
-                                        .h(px(78.0))
-                                        .px_3()
-                                        .py_1()
-                                        .child(PackageCard::render(PackageCardProps {
-                                            package: pkg,
-                                            is_selected,
-                                            theme: &list_theme,
-                                        }))
-                                        .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
-                                            let key = pkg_key.clone();
-                                            on_select.update(cx, |view, cx| {
-                                                view.session.update(cx, |s, cx| {
-                                                    s.select_package(Some(key), cx);
+                                                    div()
+                                                        .h(px(36.0))
+                                                        .child(PackageTable::render_row(
+                                                            pkg,
+                                                            is_selected,
+                                                            &list_theme,
+                                                        ))
+                                                        .on_mouse_down(
+                                                            MouseButton::Left,
+                                                            move |_e, _w, cx| {
+                                                                let key = pkg_key.clone();
+                                                                on_select.update(cx, |view, cx| {
+                                                                    view.session.update(
+                                                                        cx,
+                                                                        |s, cx| {
+                                                                            s.select_package(
+                                                                                Some(key),
+                                                                                cx,
+                                                                            );
+                                                                        },
+                                                                    );
+                                                                });
+                                                            },
+                                                        )
+                                                })
+                                                .collect()
+                                        }
+                                    })
+                                    .h_full()
+                                    .track_scroll(self.scroll_handle.clone()),
+                                ),
+                            )
+                            .into_any_element()
+                    } else {
+                        uniform_list("package-list-surface", package_count, {
+                            let packages = packages.clone();
+                            let selected_name = selected_name.clone();
+
+                            move |range, _window, _cx| {
+                                range
+                                    .map(|idx| {
+                                        let pkg = &packages[idx];
+                                        let is_selected = selected_name
+                                            .as_ref()
+                                            .map(|n| n == &pkg.name)
+                                            .unwrap_or(false);
+                                        let pkg_key = pkg.key();
+                                        let on_select = entity_select.clone();
+
+                                        div()
+                                            .h(px(78.0))
+                                            .px_3()
+                                            .py_1()
+                                            .child(PackageCard::render(PackageCardProps {
+                                                package: pkg,
+                                                is_selected,
+                                                theme: &list_theme,
+                                            }))
+                                            .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
+                                                let key = pkg_key.clone();
+                                                on_select.update(cx, |view, cx| {
+                                                    view.session.update(cx, |s, cx| {
+                                                        s.select_package(Some(key), cx);
+                                                    });
                                                 });
-                                            });
-                                        })
-                                })
-                                .collect()
-                        }
-                    })
-                    .track_scroll(self.scroll_handle.clone())
-                    .into_any_element()
+                                            })
+                                    })
+                                    .collect()
+                            }
+                        })
+                        .h_full()
+                        .track_scroll(self.scroll_handle.clone())
+                        .into_any_element()
+                    }
                 };
 
                 let list_pane = div()
@@ -965,14 +1181,25 @@ impl Render for WorkspaceView {
                         });
                     });
 
-                // Panneau d'inspection des détails
+                // Panneau d'inspection sémantique
                 let entity_install = entity.clone();
                 let entity_remove = entity.clone();
+                let entity_tab = entity.clone();
+                let entity_copy_cmd = entity.clone();
+                let entity_copy_pkgbuild = entity.clone();
                 let entity_nav_dep = entity.clone();
 
                 let alpm_details = selected_key
                     .as_ref()
                     .and_then(|k| self.store.read(cx).get_cached_details(k).cloned());
+
+                let cached_pkgbuild = selected_pkg.as_ref().and_then(|p| {
+                    if p.source_type == "AUR" {
+                        self.store.read(cx).get_cached_pkgbuild(&p.name)
+                    } else {
+                        None
+                    }
+                });
 
                 let selected_pkg_clone = selected_pkg.clone();
                 let details_pane =
@@ -980,11 +1207,22 @@ impl Render for WorkspaceView {
                         .flex_1()
                         .h_full()
                         .overflow_hidden()
-                        .child(PackageDetailsView::render(PackageDetailsProps {
+                        .child(PackageInspectorView::render(PackageInspectorProps {
                             package: selected_pkg.as_ref(),
                             alpm_details: alpm_details.as_ref(),
+                            pkgbuild: cached_pkgbuild,
+                            is_loading_pkgbuild: self.is_loading_pkgbuild,
+                            active_tab: inspector_tab,
                             theme: &theme,
                             is_busy: self.is_mutating,
+                            copy_feedback: self.copy_cmd_feedback,
+                            on_select_tab: Rc::new(move |tab, _w, cx| {
+                                entity_tab.update(cx, |view, cx| {
+                                    view.session.update(cx, |s, cx| {
+                                        s.set_inspector_tab(tab, cx);
+                                    });
+                                });
+                            }),
                             on_install: selected_pkg_clone.as_ref().map(|p| {
                                 let p_clone = p.clone();
                                 let key = p.key();
@@ -996,7 +1234,7 @@ impl Render for WorkspaceView {
                                         let pkg_name = p_clone.name.clone();
                                         entity_install.update(cx, |view, cx| {
                                             view.run_package_mutation(
-                                                &format!("Installation de {}", pkg_name),
+                                                &format!("Installation of {}", pkg_name),
                                                 MutationAction::Install { is_aur, is_flatpak },
                                                 pkg_name,
                                                 key_c,
@@ -1017,7 +1255,7 @@ impl Render for WorkspaceView {
                                         let pkg_name = p_clone.name.clone();
                                         entity_remove.update(cx, |view, cx| {
                                             view.run_package_mutation(
-                                                &format!("Désinstallation de {}", pkg_name),
+                                                &format!("Uninstallation of {}", pkg_name),
                                                 MutationAction::Remove { is_flatpak },
                                                 pkg_name,
                                                 key_c,
@@ -1028,7 +1266,27 @@ impl Render for WorkspaceView {
                                 )
                                     as Rc<dyn Fn(&MouseDownEvent, &mut Window, &mut App)>
                             }),
-                            on_navigate_dep: Some(Rc::new(move |dep_name, _w, cx| {
+                            on_copy_install_cmd: selected_pkg_clone.as_ref().and_then(|p| {
+                                crate::state::canonical_install_command(p).map(|cmd| {
+                                    Rc::new(move |_w: &mut Window, cx: &mut App| {
+                                        let cmd_c = cmd.clone();
+                                        entity_copy_cmd.update(cx, |view, cx| {
+                                            view.copy_install_command(cmd_c, cx);
+                                        });
+                                    })
+                                        as Rc<dyn Fn(&mut Window, &mut App)>
+                                })
+                            }),
+                            on_copy_pkgbuild: cached_pkgbuild.cloned().map(|content| {
+                                Rc::new(move |_w: &mut Window, cx: &mut App| {
+                                    let content_c = content.clone();
+                                    entity_copy_pkgbuild.update(cx, |view, cx| {
+                                        view.copy_pkgbuild_to_clipboard(content_c, cx);
+                                    });
+                                })
+                                    as Rc<dyn Fn(&mut Window, &mut App)>
+                            }),
+                            on_navigate_package: Some(Rc::new(move |dep_name, _w, cx| {
                                 entity_nav_dep.update(cx, |view, cx| {
                                     view.session.update(cx, |s, cx| {
                                         s.set_destination(NavDestination::Browse, cx);

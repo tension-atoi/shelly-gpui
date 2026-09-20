@@ -4,13 +4,16 @@ use crate::theme::Theme;
 use gpui::*;
 use std::rc::Rc;
 
+pub type NavDestinationHandler = Rc<dyn Fn(NavDestination, &mut Window, &mut App) + 'static>;
+pub type WindowActionHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
+
 pub struct SidebarProps<'a> {
     pub active_destination: NavDestination,
     pub updates_count: usize,
     pub is_collapsed: bool,
     pub theme: &'a Theme,
-    pub on_select_destination: Rc<dyn Fn(NavDestination, &mut Window, &mut App) + 'static>,
-    pub on_toggle_collapse: Rc<dyn Fn(&mut Window, &mut App) + 'static>,
+    pub on_select_destination: NavDestinationHandler,
+    pub on_toggle_collapse: WindowActionHandler,
 }
 
 pub struct Sidebar;
@@ -22,7 +25,7 @@ impl Sidebar {
         badge_count: usize,
         is_collapsed: bool,
         theme: &Theme,
-        on_select: Rc<dyn Fn(NavDestination, &mut Window, &mut App) + 'static>,
+        on_select: NavDestinationHandler,
     ) -> impl IntoElement {
         let is_active = active_dest == dest;
         let icon = dest.icon();

@@ -1,14 +1,19 @@
-use crate::state::SourceFilter;
+use crate::state::{PackageViewMode, SourceFilter};
 use crate::theme::Theme;
 use gpui::*;
 use std::rc::Rc;
+
+pub type SourceFilterHandler = Rc<dyn Fn(SourceFilter, &mut Window, &mut App) + 'static>;
+pub type ViewModeHandler = Rc<dyn Fn(PackageViewMode, &mut Window, &mut App) + 'static>;
 
 pub struct UnifiedSearchProps<'a> {
     pub active_filter: SourceFilter,
     pub is_searching: bool,
     pub total_count: usize,
+    pub view_mode: PackageViewMode,
     pub theme: &'a Theme,
-    pub on_select_filter: Rc<dyn Fn(SourceFilter, &mut Window, &mut App) + 'static>,
+    pub on_select_filter: SourceFilterHandler,
+    pub on_select_view_mode: ViewModeHandler,
 }
 
 pub struct UnifiedSearch;
@@ -20,7 +25,7 @@ impl UnifiedSearch {
         active_filter: SourceFilter,
         badge_color: Option<Rgba>,
         theme: &Theme,
-        on_select: Rc<dyn Fn(SourceFilter, &mut Window, &mut App) + 'static>,
+        on_select: SourceFilterHandler,
     ) -> impl IntoElement {
         let is_active = active_filter == filter;
         let base = div()
@@ -63,6 +68,85 @@ impl UnifiedSearch {
         let theme = props.theme;
         let active = props.active_filter;
         let on_select = props.on_select_filter.clone();
+
+        let is_cards = props.view_mode == PackageViewMode::Cards;
+        let is_table = props.view_mode == PackageViewMode::Table;
+        let on_cards = props.on_select_view_mode.clone();
+        let on_table = props.on_select_view_mode.clone();
+
+        let view_switcher = div()
+            .flex()
+            .items_center()
+            .bg(theme.bg_app)
+            .border_1()
+            .border_color(theme.border)
+            .rounded_md()
+            .p(px(2.0))
+            .gap(px(2.0))
+            .child(
+                div()
+                    .px(px(6.0))
+                    .py(px(2.0))
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .text_xs()
+                    .font_weight(if is_cards {
+                        FontWeight::BOLD
+                    } else {
+                        FontWeight::NORMAL
+                    })
+                    .bg(if is_cards {
+                        theme.bg_surface_active
+                    } else {
+                        theme.bg_app
+                    })
+                    .text_color(if is_cards {
+                        theme.accent
+                    } else {
+                        theme.text_muted
+                    })
+                    .hover(move |s| s.text_color(theme.text_primary))
+                    .child(format!(
+                        "{} {}",
+                        PackageViewMode::Cards.icon(),
+                        PackageViewMode::Cards.label()
+                    ))
+                    .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                        on_cards(PackageViewMode::Cards, window, cx);
+                    }),
+            )
+            .child(
+                div()
+                    .px(px(6.0))
+                    .py(px(2.0))
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .text_xs()
+                    .font_weight(if is_table {
+                        FontWeight::BOLD
+                    } else {
+                        FontWeight::NORMAL
+                    })
+                    .bg(if is_table {
+                        theme.bg_surface_active
+                    } else {
+                        theme.bg_app
+                    })
+                    .text_color(if is_table {
+                        theme.accent
+                    } else {
+                        theme.text_muted
+                    })
+                    .hover(move |s| s.text_color(theme.text_primary))
+                    .child(format!(
+                        "{} {}",
+                        PackageViewMode::Table.icon(),
+                        PackageViewMode::Table.label()
+                    ))
+                    .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                        on_table(PackageViewMode::Table, window, cx);
+                    }),
+            );
 
         div()
             .flex()
@@ -136,7 +220,8 @@ impl UnifiedSearch {
                             .child(format!("{} results", props.total_count))
                     } else {
                         div()
-                    }),
+                    })
+                    .child(view_switcher),
             )
     }
 

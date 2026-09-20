@@ -102,6 +102,18 @@ impl ShellyClient {
         }
     }
 
+    /// Récupère le contenu brut du PKGBUILD pour un paquet AUR
+    pub async fn fetch_aur_pkgbuild(&self, name: &str) -> Result<String> {
+        if name.trim().is_empty() {
+            return Ok(String::new());
+        }
+
+        let raw =
+            ProcessRunner::run_json_command(&self.binary_path, &["search", "aur", name, "-p"])
+                .await?;
+        Ok(raw)
+    }
+
     /// Recherche les applications Flatpak
     pub async fn search_flatpak(&self, query: &str) -> Result<Vec<FlatpakHit>> {
         if query.trim().is_empty() {

@@ -38,6 +38,7 @@ pub struct PackageStore {
     pub updates_count: usize,
     pub detail_cache: HashMap<PackageKey, AlpmPackage>,
     pub search_cache: HashMap<SearchKey, Vec<UnifiedPackage>>,
+    pub pkgbuild_cache: HashMap<String, String>,
     pub in_flight_generation: usize,
 }
 
@@ -53,6 +54,7 @@ impl PackageStore {
             updates_count: 0,
             detail_cache: HashMap::new(),
             search_cache: HashMap::new(),
+            pkgbuild_cache: HashMap::new(),
             in_flight_generation: 0,
         }
     }
@@ -119,9 +121,20 @@ impl PackageStore {
         self.detail_cache.insert(key, details);
     }
 
+    /// Récupère le PKGBUILD mis en cache pour un paquet AUR
+    pub fn get_cached_pkgbuild(&self, name: &str) -> Option<&String> {
+        self.pkgbuild_cache.get(name)
+    }
+
+    /// Met en cache le contenu d'un PKGBUILD
+    pub fn cache_pkgbuild(&mut self, name: String, content: String) {
+        self.pkgbuild_cache.insert(name, content);
+    }
+
     /// Invalide un paquet spécifique suite à une mutation (install/remove/update)
     pub fn invalidate_package(&mut self, key: &PackageKey, cx: &mut Context<Self>) {
         self.detail_cache.remove(key);
+        self.pkgbuild_cache.remove(&key.name);
         // Supprime les entrées de cache de recherche contenant ce paquet pour éviter les incohérences d'état
         self.search_cache
             .retain(|_, list| !list.iter().any(|p| p.name == key.name));
@@ -270,5 +283,27 @@ mod tests {
         assert!(cached.is_some());
         assert_eq!(cached.unwrap()[0].name, "Obsidian");
         assert_eq!(cached.unwrap()[0].source_type, "AppImage");
+    }
+
+    #[test]
+    fn test_pkgbuild_cache_storage_and_invalidation() {
+        let client = ShellyClient::new(None);
+        let mut store = PackageStore::new(client);
+
+        let pkg_name = "visual-studio-code-bin";
+        let pkgbuild = "pkgname=visual-studio-code-bin\npkgver=1.138.0";
+
+        assert!(store.get_cached_pkgbuild(pkg_name).is_none());
+
+        store.cache_pkgbuild(pkg_name.into(), pkgbuild.into());
+        assert_eq!(
+            store.get_cached_pkgbuild(pkg_name),
+            Some(&pkgbuild.to_string())
+        );
+
+        // Invalidate via key
+        let key = PackageKey::new(PackageSourceKind::Aur, pkg_name, None);
+        store.pkgbuild_cache.remove(&key.name);
+        assert!(store.get_cached_pkgbuild(pkg_name).is_none());
     }
 }

@@ -34,7 +34,7 @@ impl StatusPill {
                 .text_xs()
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(theme.bg_app)
-                .child("Installé")
+                .child("Installed")
         } else {
             div()
                 .px_2()
@@ -44,7 +44,7 @@ impl StatusPill {
                 .text_xs()
                 .font_weight(FontWeight::NORMAL)
                 .text_color(theme.text_muted)
-                .child("Disponible")
+                .child("Available")
         }
     }
 

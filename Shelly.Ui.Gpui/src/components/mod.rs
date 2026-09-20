@@ -1,5 +1,8 @@
+pub mod inspector_header;
 pub mod log_drawer;
 pub mod package_card;
+pub mod package_table;
+pub mod semantic_value;
 pub mod sidebar;
 pub mod status_pill;
 pub mod unified_search;
