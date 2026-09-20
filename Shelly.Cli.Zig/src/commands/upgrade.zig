@@ -89,7 +89,7 @@ pub fn dispatch(
         if (!preview.proceed or !preview.has_updates) return 0;
     }
 
-    if (!invocation.globals.ui_mode and requiresElevation(invocation)) {
+    if (requiresElevation(invocation) and !running_as_root) {
         if (shouldPrepareStandardPreview(invocation, running_as_root)) {
             const preview = prepareStandardUpgradePreview(context, invocation) catch |err| {
                 try context.stderr.print("Could not prepare the package upgrade plan. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
@@ -1685,6 +1685,7 @@ test "standard upgrade preview runs only before non-root elevation" {
     );
     try std.testing.expect(ui == .dispatch);
     try std.testing.expect(!shouldPrepareStandardPreview(&ui.dispatch, false));
+    try std.testing.expect(requiresElevation(&ui.dispatch));
 
     const all = try parser.parse(
         arena.allocator(),

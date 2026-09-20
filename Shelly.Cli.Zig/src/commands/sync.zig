@@ -69,7 +69,7 @@ pub fn dispatch(
 
     const system_remote_mutation = is_flatpak and isFlatpakRemoteMutation(invocation) and
         booleanOption(invocation, "--system", true);
-    if ((is_standard or system_remote_mutation) and !invocation.globals.ui_mode) {
+    if ((is_standard or system_remote_mutation) and !elevation.isRoot()) {
         const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
             try context.stderr.print("Could not obtain administrator privileges for package synchronization. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
             return 1;

@@ -219,7 +219,7 @@ pub fn dispatch(
             "Cannot build dependencies for multiple packages at once.",
         );
 
-    if (isFlatpakRepair(invocation) and !invocation.globals.ui_mode and !elevation.isRoot()) {
+    if (isFlatpakRepair(invocation) and !elevation.isRoot()) {
         const elevate = repairTargetRequiresElevation(context, invocation.positionals[0]) catch |err| {
             if (Zigalpm.flatpak.errors.unavailableMessage(err)) |message| {
                 try context.stderr.print("{s}\n", .{message});
@@ -235,7 +235,7 @@ pub fn dispatch(
             };
             if (elevated_exit) |exit_code| return exit_code;
         }
-    } else if (!invocation.globals.ui_mode and needsElevation(invocation)) {
+    } else if (needsElevation(invocation) and !elevation.isRoot()) {
         const carries_aur = std.mem.eql(u8, invocation.command.path, aur_command_path);
         const elevated_arguments = if (carries_aur)
             try aur_url.argumentsWithEffectiveBase(context, invocation)
@@ -1219,6 +1219,36 @@ fn needsElevation(invocation: *const parser.Invocation) bool {
 fn isFlatpakRepair(invocation: *const parser.Invocation) bool {
     return std.mem.eql(u8, invocation.command.path, flatpak_command_path) and
         optionEnabled(invocation, "--repair");
+}
+
+test "install UI mode preserves elevation requirements" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const manifest = try spec.Manifest.load(arena.allocator());
+
+    const std_ui = try parser.parse(
+        arena.allocator(),
+        &manifest,
+        &.{ "install", "standard", "--ui-mode", "ripgrep" },
+    );
+    try std.testing.expect(std_ui == .dispatch);
+    try std.testing.expect(needsElevation(&std_ui.dispatch));
+
+    const flatpak_user = try parser.parse(
+        arena.allocator(),
+        &manifest,
+        &.{ "install", "flatpak", "--user", "--ui-mode", "org.example.App" },
+    );
+    try std.testing.expect(flatpak_user == .dispatch);
+    try std.testing.expect(!needsElevation(&flatpak_user.dispatch));
+
+    const flatpak_system = try parser.parse(
+        arena.allocator(),
+        &manifest,
+        &.{ "install", "flatpak", "--ui-mode", "org.example.App" },
+    );
+    try std.testing.expect(flatpak_system == .dispatch);
+    try std.testing.expect(needsElevation(&flatpak_system.dispatch));
 }
 
 test "Flatpak repair is an install modifier with f shortcode" {

@@ -54,7 +54,7 @@ pub fn dispatch(
         if (!confirmed_standard) return 0;
     }
 
-    if (!invocation.globals.ui_mode and needsElevation(invocation) and !elevation.isRoot()) {
+    if (needsElevation(invocation) and !elevation.isRoot()) {
         const carries_aur = std.mem.eql(u8, invocation.command.path, aur_command_path);
         const aur_arguments = if (carries_aur)
             try aur_url.argumentsWithEffectiveBase(context, invocation)

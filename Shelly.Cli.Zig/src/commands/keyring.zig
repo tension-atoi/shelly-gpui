@@ -40,7 +40,7 @@ pub fn dispatch(
     if (actionForPath(invocation.command.path) == null) return null;
 
     const user_receive = optionEnabled(invocation, "--user");
-    if (!user_receive and !invocation.globals.ui_mode and !elevation.isRoot()) {
+    if (!user_receive and !elevation.isRoot()) {
         const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
             try context.stderr.print("Could not obtain administrator privileges for keyring operation. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
             return 1;

@@ -158,7 +158,7 @@ pub fn dispatch(
     invocation: *const parser.Invocation,
 ) !?u8 {
     const backend = backendForPath(invocation.command.path) orelse return null;
-    if (backend == .standard and !invocation.globals.ui_mode) {
+    if (backend == .standard and !elevation.isRoot()) {
         const arguments = try elevatedPurifyArguments(context, invocation);
         defer context.allocator.free(arguments);
         const elevated_exit = elevation.relaunchIfNeeded(context, arguments) catch |err| {

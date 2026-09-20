@@ -69,7 +69,7 @@ pub fn dispatch(
     if (invocation.positionals.len == 0)
         return try reportValidationFailure(context, invocation, "Specify at least one package name. See the command help for usage.");
 
-    if (!invocation.globals.ui_mode and needsElevation(invocation)) {
+    if (needsElevation(invocation) and !elevation.isRoot()) {
         const carries_aur = std.mem.eql(u8, invocation.command.path, aur_command_path);
         const elevated_arguments = if (carries_aur)
             try aur_url.argumentsWithEffectiveBase(context, invocation)
@@ -531,6 +531,29 @@ test "recognizes every remove command path" {
     try std.testing.expect(isRemovePath(aur_command_path));
     try std.testing.expect(isRemovePath(flatpak_command_path));
     try std.testing.expect(!isRemovePath("shelly install standard"));
+}
+
+test "remove UI mode preserves elevation requirements" {
+    const spec = @import("../cli/spec.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const manifest = try spec.Manifest.load(arena.allocator());
+
+    const std_ui = try parser.parse(
+        arena.allocator(),
+        &manifest,
+        &.{ "remove", "standard", "--ui-mode", "ripgrep" },
+    );
+    try std.testing.expect(std_ui == .dispatch);
+    try std.testing.expect(needsElevation(&std_ui.dispatch));
+
+    const flatpak_ui = try parser.parse(
+        arena.allocator(),
+        &manifest,
+        &.{ "remove", "flatpak", "--ui-mode", "org.example.App" },
+    );
+    try std.testing.expect(flatpak_ui == .dispatch);
+    try std.testing.expect(!needsElevation(&flatpak_ui.dispatch));
 }
 
 test "maps dependency modifiers and force precedence" {

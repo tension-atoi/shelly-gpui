@@ -81,7 +81,7 @@ pub fn dispatch(
 
     const action = if (kind.isList()) selectedListAction(invocation) else null;
     const mutates = !kind.isList() or action.? != .list;
-    if (mutates and !invocation.globals.ui_mode) {
+    if (mutates and !elevation.isRoot()) {
         const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
             try context.stderr.print("Could not obtain administrator privileges for package marking. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
             return 1;

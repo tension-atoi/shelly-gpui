@@ -60,7 +60,7 @@ pub fn dispatch(
 
     const action = selectedAction(invocation).?;
     const mutates = action != .list;
-    if (mutates and !invocation.globals.ui_mode and !elevation.isRoot()) {
+    if (mutates and !elevation.isRoot()) {
         const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
             try context.stderr.print("Could not obtain administrator privileges for repository operation. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
             return 1;
