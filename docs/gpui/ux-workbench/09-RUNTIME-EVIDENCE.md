@@ -124,3 +124,35 @@ The complete visual evidence suite captured directly from the live Wayland compo
 | **15** | **Dark Theme Parity** | [`evidence_ux02_15_dark_theme_expanded.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02_15_dark_theme_expanded.png) | Full dark theme workstation; high contrast obsidian surfaces, color-coded badges (`ALPM`, `AUR`) |
 | **16** | **Inspector Overview Tab** | [`evidence_ux02_16_inspector_dependencies_tab.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02_16_inspector_dependencies_tab.png) | Inspector docked side-by-side with active package details |
 | **17** | **AUR Package Selected & Toast**| [`evidence_ux02_17_aur_package_selected.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02_17_aur_package_selected.png) | AUR package (`the_platinum_searcher-bin`) selected with AUR badges and upstream metadata; toast notification displayed |
+
+---
+
+## 7. Phase UX-02P Runtime Evidence: Command Surface Productization
+
+### 7.1 Environment & Package Verification
+- **Target OS**: Arch Linux x86_64
+- **Compositor**: Hyprland (Native Wayland, `xwayland: false`)
+- **Display**: `WAYLAND_DISPLAY=wayland-1`
+- **Installed Package**: `shelly-gpui-git r4692.ge6228b99-1`
+- **Source Git Commit**: `e6228b99d827cc81b9449021ffa15b40e4beb563`
+- **Process ID (PID)**: `3752848`
+- **Running Binary**: `/usr/lib/shelly/shelly-gpui-bin`
+- **Verification Command**:
+  ```sh
+  pacman -Q shelly-gpui-git
+  # Output: shelly-gpui-git r4692.ge6228b99-1
+  ```
+
+### 7.2 Live Wayland UX-02P Gallery
+
+| Figure | State / Component | Screenshot Artifact | Verified UX Properties | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **01** | **Resting Unboxed Toolbar** | [`evidence_ux02p_01_resting_unboxed_toolbar.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_01_resting_unboxed_toolbar.png) | Row 2 completely unboxed at rest with transparent background and border; Row 3 permanent status rail displaying `0 packages` in dedicated 24px container | **PASSED** |
+| **02** | **Active Search & Status Rail** | [`evidence_ux02p_02_search_active_and_rail.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_02_search_active_and_rail.png) | Search input with 110ms focus ring and clear `×`; Row 3 permanent rail displaying `16 packages` without layout shift | **PASSED** |
+| **03** | **Desktop Checkmark Sort Menu** | [`evidence_ux02p_03_sort_menu_checkmarks.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_03_sort_menu_checkmarks.png) | Native desktop checkmark `✓` (`Relevance`) with precise alignment spacing for all items; zero radio circles | **PASSED** |
+| **04** | **Desktop Checkmark State Menu** | [`evidence_ux02p_04_state_menu_checkmarks.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_04_state_menu_checkmarks.png) | Native desktop checkmark `✓` (`All States`) with alignment spacers for all items; zero radio circles | **PASSED** |
+| **05** | **Non-Redundant Filters Menu** | [`evidence_ux02p_05_filters_menu_sources_only.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_05_filters_menu_sources_only.png) | Wide breakpoint: `Filters` disclosure contains exclusively package sources (`Official`, `AUR`, `Flatpak`, `AppImage`); Package State is omitted | **PASSED** |
+| **06** | **Active Filter Badge & Summary Rail** | [`evidence_ux02p_06_filter_badge_and_rail_summary.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_06_filter_badge_and_rail_summary.png) | Button shows `Filters  1` in cyan/bold; Row 3 fixed 24px rail displays `3 packages  •  Official + Flatpak + AppImage` and inline `× Clear filters` button with strictly zero vertical layout shift | **PASSED** |
+| **07** | **Table View Mode** | [`evidence_ux02p_07_table_view_mode.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_07_table_view_mode.png) | Multi-column table layout with active unboxed view switcher icon highlight and status rail parity | **PASSED** |
+| **08** | **Light Theme Parity** | [`evidence_ux02p_08_light_theme_parity.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux02p_08_light_theme_parity.png) | Complete light theme visual parity: unboxed toolbar, status rail summary, search input, and high-contrast typography | **PASSED** |
+
