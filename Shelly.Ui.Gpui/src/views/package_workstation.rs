@@ -2,11 +2,13 @@ use crate::backend::models::UnifiedPackage;
 use crate::components::package_card::{PackageCard, PackageCardProps};
 use crate::components::package_table::PackageTable;
 use crate::components::unified_search::UnifiedSearch;
+use crate::state::console::{ConsoleEvent, ConsoleModel};
 use crate::state::{
     canonical_install_command, AppSession, NavDestination, PackageStore, PackageViewMode,
     SourceFilter, ToastCenter, ToastKind,
 };
 use crate::theme::Theme;
+use crate::ui_metrics::UiMetrics;
 use crate::views::inspector::{PackageInspectorProps, PackageInspectorView};
 use gpui::*;
 use gpui::{uniform_list, UniformListScrollHandle};
@@ -23,18 +25,30 @@ pub struct SplitterDragState {
 }
 
 /// Calcul pur et robuste de la largeur du panneau dérivé des deltas de pointeur
+/// Garantit un minimum invariant pour la liste et l'inspecteur à toute largeur de fenêtre
 pub fn compute_splitter_width(
     drag_start_width: f32,
     drag_start_pointer_x: f32,
     current_pointer_x: f32,
+    window_width: f32,
 ) -> f32 {
     let delta_x = current_pointer_x - drag_start_pointer_x;
-    (drag_start_width + delta_x).clamp(280.0, 700.0)
+    let requested_width = drag_start_width + delta_x;
+    let dynamic_list_max = (window_width
+        - UiMetrics::SIDEBAR_EXPANDED
+        - UiMetrics::SPLITTER_WIDTH
+        - UiMetrics::INSPECTOR_MIN_WIDTH)
+        .min(700.0);
+    requested_width.clamp(
+        UiMetrics::LIST_MIN_WIDTH,
+        dynamic_list_max.max(UiMetrics::LIST_MIN_WIDTH),
+    )
 }
 
 pub struct PackageWorkstationView {
     pub session: Entity<AppSession>,
     pub store: Entity<PackageStore>,
+    pub console: Entity<ConsoleModel>,
     pub toast_center: Entity<ToastCenter>,
     pub list_pane_width: f32,
     pub drag_state: Option<SplitterDragState>,
@@ -45,15 +59,18 @@ pub struct PackageWorkstationView {
     pub is_loading_pkgbuild: bool,
     pub reduce_motion: bool,
     pub theme: Theme,
+    pub compact: bool,
 }
 
 impl PackageWorkstationView {
     pub fn new(
         session: Entity<AppSession>,
         store: Entity<PackageStore>,
+        console: Entity<ConsoleModel>,
         toast_center: Entity<ToastCenter>,
         theme: Theme,
         reduce_motion: bool,
+        compact: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.subscribe(&session, |_this, _emitter, _event, cx| {
@@ -66,9 +83,20 @@ impl PackageWorkstationView {
         })
         .detach();
 
+        cx.subscribe(&console, |_this, _emitter, event, cx| {
+            match event {
+                ConsoleEvent::OperationStarted(_) | ConsoleEvent::OperationFinished(_) => {
+                    cx.notify();
+                }
+                _ => {}
+            }
+        })
+        .detach();
+
         Self {
             session,
             store,
+            console,
             toast_center,
             list_pane_width: 460.0,
             drag_state: None,
@@ -79,6 +107,7 @@ impl PackageWorkstationView {
             is_loading_pkgbuild: false,
             reduce_motion,
             theme,
+            compact,
         }
     }
 
@@ -90,15 +119,27 @@ impl PackageWorkstationView {
         self.on_upgrade_all = Some(handler);
     }
 
-    pub fn on_pointer_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+    pub fn on_pointer_move(
+        &mut self,
+        event: &MouseMoveEvent,
+        window_width: f32,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(drag) = self.drag_state {
             let current_x = event.position.x.to_f64() as f32;
             let new_width =
-                compute_splitter_width(drag.start_width, drag.start_pointer_x, current_x);
+                compute_splitter_width(drag.start_width, drag.start_pointer_x, current_x, window_width);
             if (new_width - self.list_pane_width).abs() >= 1.0 {
                 self.list_pane_width = new_width;
                 cx.notify();
             }
+        }
+    }
+
+    pub fn set_compact(&mut self, compact: bool, cx: &mut Context<Self>) {
+        if self.compact != compact {
+            self.compact = compact;
+            cx.notify();
         }
     }
 
@@ -126,6 +167,7 @@ impl Render for PackageWorkstationView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let entity = cx.entity().clone();
+        let is_busy = self.console.read(cx).is_running();
 
         let (
             destination,
@@ -420,7 +462,17 @@ impl Render for PackageWorkstationView {
                             .flex()
                             .items_center()
                             .gap_3()
-                            .child(
+                            .child(if is_busy {
+                                div()
+                                    .px_3()
+                                    .py_1()
+                                    .rounded_md()
+                                    .bg(theme.bg_surface_active)
+                                    .text_xs()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme.text_muted)
+                                    .child("Upgrade All")
+                            } else {
                                 div()
                                     .px_3()
                                     .py_1()
@@ -439,8 +491,8 @@ impl Render for PackageWorkstationView {
                                         if let Some(ref cb) = on_upgrade_cb {
                                             cb(w, cx);
                                         }
-                                    }),
-                            )
+                                    })
+                            })
                             .child(mode_switcher),
                     )
             }
@@ -482,6 +534,11 @@ impl Render for PackageWorkstationView {
             let list_theme = theme;
 
             if view_mode == PackageViewMode::Table {
+                let row_h = if self.compact {
+                    UiMetrics::ROW_HEIGHT_COMPACT
+                } else {
+                    UiMetrics::ROW_HEIGHT_NORMAL
+                };
                 div()
                     .flex()
                     .flex_col()
@@ -492,6 +549,7 @@ impl Render for PackageWorkstationView {
                             uniform_list("package-list-table", package_count, {
                                 let packages = packages.clone();
                                 let selected_name = selected_name.clone();
+                                let is_compact = self.compact;
 
                                 move |range, _window, _cx| {
                                     range
@@ -505,11 +563,12 @@ impl Render for PackageWorkstationView {
                                             let on_select = entity_select.clone();
 
                                             div()
-                                                .h(px(36.0))
+                                                .h(px(row_h))
                                                 .child(PackageTable::render_row(
                                                     pkg,
                                                     is_selected,
                                                     &list_theme,
+                                                    is_compact,
                                                 ))
                                                 .on_mouse_down(
                                                     MouseButton::Left,
@@ -532,6 +591,12 @@ impl Render for PackageWorkstationView {
                     )
                     .into_any_element()
             } else {
+                let card_wrapper_h = if self.compact {
+                    UiMetrics::CARD_WRAPPER_COMPACT
+                } else {
+                    UiMetrics::CARD_WRAPPER_NORMAL
+                };
+                let is_compact = self.compact;
                 uniform_list("package-list-surface", package_count, {
                     let packages = packages.clone();
                     let selected_name = selected_name.clone();
@@ -548,13 +613,14 @@ impl Render for PackageWorkstationView {
                                 let on_select = entity_select.clone();
 
                                 div()
-                                    .h(px(78.0))
+                                    .h(px(card_wrapper_h))
                                     .px_3()
                                     .py_1()
                                     .child(PackageCard::render(PackageCardProps {
                                         package: pkg,
                                         is_selected,
                                         theme: &list_theme,
+                                        compact: is_compact,
                                     }))
                                     .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
                                         let key = pkg_key.clone();
@@ -640,7 +706,7 @@ impl Render for PackageWorkstationView {
                     is_loading_pkgbuild: self.is_loading_pkgbuild,
                     active_tab,
                     theme: &theme,
-                    is_busy: false,
+                    is_busy,
                     copy_feedback: self.copy_cmd_feedback,
                     on_select_tab: Rc::new(move |tab, _w, cx| {
                         entity_tab.update(cx, |view, cx| {
@@ -676,6 +742,7 @@ impl Render for PackageWorkstationView {
                     on_copy_install_cmd: selected_pkg_clone.as_ref().and_then(|p| {
                         canonical_install_command(p).map(|cmd| {
                             let tc = tc_entity.clone();
+                            let rm = reduce_motion;
                             Rc::new(move |_w: &mut Window, cx: &mut App| {
                                 cx.write_to_clipboard(ClipboardItem::new_string(cmd.clone()));
                                 tc.update(cx, |center, cx| {
@@ -684,7 +751,7 @@ impl Render for PackageWorkstationView {
                                         "Commande copiée",
                                         cmd.clone(),
                                         None,
-                                        false,
+                                        rm,
                                         cx,
                                     );
                                 });
@@ -693,6 +760,7 @@ impl Render for PackageWorkstationView {
                     }),
                     on_copy_pkgbuild: cached_pkgbuild.cloned().map(|content| {
                         let tc = tc_entity.clone();
+                        let rm = reduce_motion;
                         Rc::new(move |_w: &mut Window, cx: &mut App| {
                             cx.write_to_clipboard(ClipboardItem::new_string(content.clone()));
                             tc.update(cx, |center, cx| {
@@ -701,7 +769,7 @@ impl Render for PackageWorkstationView {
                                     "PKGBUILD copié",
                                     "Le fichier PKGBUILD a été copié dans le presse-papiers.",
                                     None,
-                                    false,
+                                    rm,
                                     cx,
                                 );
                             });
@@ -730,9 +798,10 @@ impl Render for PackageWorkstationView {
             .flex_row()
             .size_full()
             .overflow_hidden()
-            .on_mouse_move(move |event, _window, cx| {
+            .on_mouse_move(move |event, window, cx| {
+                let window_width = window.window_bounds().get_bounds().size.width / px(1.0);
                 entity_move.update(cx, |view, cx| {
-                    view.on_pointer_move(event, cx);
+                    view.on_pointer_move(event, window_width, cx);
                 });
             })
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
@@ -753,26 +822,26 @@ mod tests {
 
     #[test]
     fn test_splitter_delta_forward() {
-        let width = compute_splitter_width(460.0, 650.0, 700.0);
+        let width = compute_splitter_width(460.0, 650.0, 700.0, 1280.0);
         assert_eq!(width, 510.0);
     }
 
     #[test]
     fn test_splitter_delta_reverse() {
-        let width = compute_splitter_width(460.0, 650.0, 600.0);
+        let width = compute_splitter_width(460.0, 650.0, 600.0, 1280.0);
         assert_eq!(width, 410.0);
     }
 
     #[test]
     fn test_splitter_clamp_minimum() {
-        let width = compute_splitter_width(460.0, 650.0, 100.0);
+        let width = compute_splitter_width(460.0, 650.0, 100.0, 1280.0);
         assert_eq!(width, 280.0, "Must clamp to 280 minimum");
     }
 
     #[test]
     fn test_splitter_clamp_maximum() {
-        let width = compute_splitter_width(460.0, 650.0, 1200.0);
-        assert_eq!(width, 700.0, "Must clamp to 700 maximum");
+        let width = compute_splitter_width(460.0, 650.0, 1200.0, 1280.0);
+        assert_eq!(width, 700.0, "Must clamp to 700 maximum at 1280px");
     }
 
     #[test]
@@ -780,17 +849,51 @@ mod tests {
         // Sidebar collapsed (56px) vs expanded (190px)
         let collapsed_start_x = 56.0 + 460.0; // 516
         let collapsed_current_x = 56.0 + 520.0; // 576
-        let width_collapsed = compute_splitter_width(460.0, collapsed_start_x, collapsed_current_x);
+        let width_collapsed = compute_splitter_width(460.0, collapsed_start_x, collapsed_current_x, 1280.0);
 
         let expanded_start_x = 190.0 + 460.0; // 650
         let expanded_current_x = 190.0 + 520.0; // 710
-        let width_expanded = compute_splitter_width(460.0, expanded_start_x, expanded_current_x);
+        let width_expanded = compute_splitter_width(460.0, expanded_start_x, expanded_current_x, 1280.0);
 
         assert_eq!(width_collapsed, 520.0);
         assert_eq!(width_expanded, 520.0);
         assert_eq!(
             width_collapsed, width_expanded,
             "Splitter width calculation must be completely independent of sidebar width"
+        );
+    }
+
+    #[test]
+    fn test_splitter_guarantees_inspector_minimum_across_reference_viewports() {
+        // Reference size 1: 1024x680
+        // max list = (1024 - 190 - 5 - 320).min(700) = 509
+        let width_1024 = compute_splitter_width(460.0, 650.0, 1200.0, 1024.0);
+        assert_eq!(width_1024, 509.0);
+        let inspector_1024 = 1024.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1024;
+        assert!(
+            inspector_1024 >= UiMetrics::INSPECTOR_MIN_WIDTH,
+            "Inspector must have at least 320px at 1024px viewport (got {})",
+            inspector_1024
+        );
+
+        // Reference size 2: 1280x840
+        let width_1280 = compute_splitter_width(460.0, 650.0, 1200.0, 1280.0);
+        assert_eq!(width_1280, 700.0);
+        let inspector_1280 = 1280.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1280;
+        assert!(
+            inspector_1280 >= UiMetrics::INSPECTOR_MIN_WIDTH,
+            "Inspector must have at least 320px at 1280px viewport (got {})",
+            inspector_1280
+        );
+
+        // Reference size 3: 1600x1000
+        let width_1600 = compute_splitter_width(460.0, 650.0, 1200.0, 1600.0);
+        assert_eq!(width_1600, 700.0);
+        let inspector_1600 = 1600.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1600;
+        assert!(
+            inspector_1600 >= UiMetrics::INSPECTOR_MIN_WIDTH,
+            "Inspector must have at least 320px at 1600px viewport (got {})",
+            inspector_1600
         );
     }
 }

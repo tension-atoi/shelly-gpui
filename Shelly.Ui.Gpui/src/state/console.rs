@@ -39,6 +39,10 @@ impl ConsoleModel {
         self.auto_open = auto_open;
     }
 
+    pub fn is_running(&self) -> bool {
+        matches!(self.status, OperationStatus::Running(_))
+    }
+
     pub fn append_stdout(&mut self, line: &str, cx: &mut Context<Self>) {
         let entry = LogEntry::stdout(line);
         self.logs.push(entry.clone());
@@ -263,5 +267,23 @@ mod tests {
             status,
             OperationStatus::Success("All packages up to date".to_string())
         );
+    }
+
+    #[test]
+    fn test_console_is_running_authority() {
+        let mut console = ConsoleModel::new();
+        assert!(!console.is_running());
+
+        console.start_operation_state("upgrade");
+        assert!(console.is_running());
+
+        console.finish_operation_state(true, "Upgrade complete");
+        assert!(!console.is_running());
+
+        console.start_operation_state("install");
+        assert!(console.is_running());
+
+        console.finish_operation_state(false, "Failed");
+        assert!(!console.is_running());
     }
 }

@@ -1,6 +1,7 @@
 use crate::backend::models::{UnifiedPackage, UnifiedPackageSource};
 use crate::components::status_pill::StatusPill;
 use crate::theme::Theme;
+use crate::ui_metrics::UiMetrics;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 
@@ -41,7 +42,7 @@ impl PackageTable {
 
     pub fn render_header(theme: &Theme) -> impl IntoElement {
         div()
-            .h(px(32.0))
+            .h(px(UiMetrics::ROW_HEIGHT_HEADER))
             .w_full()
             .flex()
             .items_center()
@@ -89,7 +90,12 @@ impl PackageTable {
             )
     }
 
-    pub fn render_row(pkg: &UnifiedPackage, is_selected: bool, theme: &Theme) -> impl IntoElement {
+    pub fn render_row(
+        pkg: &UnifiedPackage,
+        is_selected: bool,
+        theme: &Theme,
+        compact: bool,
+    ) -> impl IntoElement {
         let bg_color = if is_selected {
             theme.bg_surface_active
         } else {
@@ -102,8 +108,14 @@ impl PackageTable {
             theme.border
         };
 
+        let row_height = if compact {
+            UiMetrics::ROW_HEIGHT_COMPACT
+        } else {
+            UiMetrics::ROW_HEIGHT_NORMAL
+        };
+
         div()
-            .h(px(36.0))
+            .h(px(row_height))
             .w_full()
             .flex()
             .items_center()

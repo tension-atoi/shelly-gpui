@@ -42,7 +42,6 @@ pub struct WorkspaceView {
     pub search_debounce_task: Option<Task<()>>,
     pub news: Vec<ArchNewsItem>,
     pub is_loading_news: bool,
-    pub is_mutating: bool,
     pub motion_policy: crate::state::motion::MotionPolicy,
 }
 
@@ -81,13 +80,16 @@ impl WorkspaceView {
         let toast_center = cx.new(|_cx| ToastCenter::new());
 
         let reduce_motion = gpui_config.reduce_motion;
+        let compact = gpui_config.compact_view;
         let workstation = cx.new(|cx| {
             PackageWorkstationView::new(
                 session.clone(),
                 store.clone(),
+                console.clone(),
                 toast_center.clone(),
                 theme,
                 reduce_motion,
+                compact,
                 cx,
             )
         });
@@ -219,7 +221,6 @@ impl WorkspaceView {
             search_debounce_task: None,
             news: Vec::new(),
             is_loading_news: false,
-            is_mutating: false,
             motion_policy: crate::state::motion::MotionPolicy::new(gpui_config.reduce_motion),
         };
 
@@ -659,11 +660,10 @@ impl WorkspaceView {
         key: PackageKey,
         cx: &mut Context<Self>,
     ) {
-        if self.is_mutating {
+        if self.console.read(cx).is_running() {
             return;
         }
 
-        self.is_mutating = true;
         self.console.update(cx, |c, cx| {
             c.start_operation(action_name, cx);
         });
@@ -711,7 +711,6 @@ impl WorkspaceView {
             }
 
             let _ = this.update(cx, |view, cx| {
-                view.is_mutating = false;
                 view.console.update(cx, |c, cx| {
                     c.finish_operation(final_status, &final_msg, cx);
                 });
@@ -755,6 +754,7 @@ impl WorkspaceView {
                 self.workstation.update(cx, |ws, cx| {
                     ws.set_theme(theme, cx);
                     ws.set_reduce_motion(reduce, cx);
+                    ws.set_compact(self.gpui_config.compact_view, cx);
                 });
 
                 self.sidebar.update(cx, |sb, cx| {
@@ -995,6 +995,8 @@ impl Render for WorkspaceView {
                                     let compact = view.settings.draft_gpui.compact_view;
                                     view.session
                                         .update(cx, |s, cx| s.set_sidebar_collapsed(compact, cx));
+                                    view.workstation
+                                        .update(cx, |ws, cx| ws.set_compact(compact, cx));
                                     cx.notify();
                                 })
                             })

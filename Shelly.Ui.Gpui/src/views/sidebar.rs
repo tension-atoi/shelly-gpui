@@ -3,6 +3,7 @@ use crate::state::package_store::PackageStore;
 use crate::state::session::{AppSession, NavDestination, SessionEvent};
 use crate::state::{AnimatedScalar, MotionDurations};
 use crate::theme::Theme;
+use crate::ui_metrics::UiMetrics;
 use gpui::*;
 use std::rc::Rc;
 use std::time::Instant;
@@ -20,9 +21,6 @@ pub struct SidebarView {
 }
 
 impl SidebarView {
-    pub const EXPANDED_WIDTH: f32 = 190.0;
-    pub const COLLAPSED_WIDTH: f32 = 56.0;
-
     pub fn new(
         session: Entity<AppSession>,
         store: Entity<PackageStore>,
@@ -32,18 +30,18 @@ impl SidebarView {
     ) -> Self {
         let is_collapsed = session.read(cx).sidebar_collapsed;
         let initial_width = if is_collapsed {
-            Self::COLLAPSED_WIDTH
+            UiMetrics::SIDEBAR_COLLAPSED
         } else {
-            Self::EXPANDED_WIDTH
+            UiMetrics::SIDEBAR_EXPANDED
         };
         let width_scalar = AnimatedScalar::new(initial_width);
 
         let session_sub = cx.subscribe(&session, |this, _session, event, cx| {
             if let SessionEvent::SidebarToggled(collapsed) = event {
                 let target = if *collapsed {
-                    Self::COLLAPSED_WIDTH
+                    UiMetrics::SIDEBAR_COLLAPSED
                 } else {
-                    Self::EXPANDED_WIDTH
+                    UiMetrics::SIDEBAR_EXPANDED
                 };
                 this.width_scalar.retarget(
                     target,

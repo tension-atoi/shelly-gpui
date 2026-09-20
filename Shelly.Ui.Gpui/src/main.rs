@@ -9,6 +9,7 @@ mod components;
 mod config;
 mod state;
 mod theme;
+pub mod ui_metrics;
 mod views;
 
 use gpui::*;

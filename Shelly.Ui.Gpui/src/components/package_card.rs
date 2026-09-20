@@ -1,6 +1,7 @@
 use crate::backend::models::UnifiedPackage;
 use crate::components::status_pill::StatusPill;
 use crate::theme::Theme;
+use crate::ui_metrics::UiMetrics;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 
@@ -8,6 +9,7 @@ pub struct PackageCardProps<'a> {
     pub package: &'a UnifiedPackage,
     pub is_selected: bool,
     pub theme: &'a Theme,
+    pub compact: bool,
 }
 
 pub struct PackageCard;
@@ -30,14 +32,20 @@ impl PackageCard {
             theme.border
         };
 
+        let card_height = if props.compact {
+            UiMetrics::CARD_HEIGHT_COMPACT
+        } else {
+            UiMetrics::CARD_HEIGHT_NORMAL
+        };
+
         div()
-            .h(px(72.0))
+            .h(px(card_height))
             .w_full()
             .flex()
             .flex_col()
             .justify_between()
             .px_3()
-            .py_2()
+            .py(if props.compact { px(4.0) } else { px(8.0) })
             .rounded_md()
             .border_1()
             .border_color(border_color)
