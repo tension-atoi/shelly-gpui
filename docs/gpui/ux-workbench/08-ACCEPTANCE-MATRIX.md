@@ -67,5 +67,5 @@
 | **Light Theme Parity & WCAG 2.1 AA** | High-contrast source avatars, clean text columns, and table rows in light theme meeting WCAG 2.1 AA ($\ge 17:1$ primary, $\ge 4.5:1$ secondary metadata) | Contrast-verified light theme color mappings in `package_identity.rs` and `package_table.rs` | Wayland capture `evidence_ux03_06_light_theme_parity.png` | **PASSED** |
 | **Command Surface Frozen** | Command surface untouched: `query_workbench.rs`, `search_input.rs`, `menu.rs`, and `view_mode_switcher.rs` | Zero lines changed in command surface components | `git diff` audit against UX-02P baseline | **PASSED** |
 | **Zero Deadcode & 103/103 Tests** | `#![deny(dead_code)]` with zero warnings; 103 unit tests passing in release locked profile | Added unit test suite for package identity, icons, and config serde | `cargo test --release --locked` exits 0 (103 passed), `cargo clippy` exits 0 | **PASSED** |
-| **Native PKGBUILD Installation** | Arch package built and installed matching commit SHA | Packaged via `makepkg -C -c -f`, installed via `pacman -U` | Verified with pacman package query | **PASSED** |
+| **Native PKGBUILD Installation** | Arch package built and installed matching commit SHA | Packaged via `makepkg -C -c -f`, installed via `pacman -U` | `pacman -Q shelly-gpui-git` confirmed `r4697.gaada56d2-1` | **PASSED** |
 

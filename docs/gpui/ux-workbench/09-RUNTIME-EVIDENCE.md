@@ -158,30 +158,30 @@ The complete visual evidence suite captured directly from the live Wayland compo
 
 ---
 
-## 8. Phase UX-03 Runtime Evidence: Results Workbench & Package Identity
+## 8. Phase UX-03 & UX-03R Runtime Evidence: Results Workbench & Package Identity Closure
 
 ### 8.1 Environment & Package Verification
 - **Target OS**: Arch Linux x86_64
 - **Compositor**: Hyprland (Native Wayland, `xwayland: false`)
 - **Display**: `WAYLAND_DISPLAY=wayland-1`
-- **Installed Package**: `shelly-gpui-git r4695.gc0f55365-1`
-- **Source Git Commit**: `c0f55365e128148ca298f24ea15c5e88863f6ee8`
+- **Installed Package**: `shelly-gpui-git r4697.gaada56d2-1`
+- **Source Git Commit**: `aada56d2`
 - **Running Binary**: `/usr/lib/shelly/shelly-gpui-bin`
 - **Verification Command**:
   ```sh
   pacman -Q shelly-gpui-git
-  # Output: shelly-gpui-git r4695.gc0f55365-1
+  # Output: shelly-gpui-git r4697.gaada56d2-1
   ```
 
-### 8.2 Live Wayland UX-03 Gallery
+### 8.2 Live Wayland UX-03R Gallery
 
 | Figure | State / Component | Screenshot Artifact | Verified UX Properties | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **01** | **Table View Search Results** | [`evidence_ux03_01_table_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_01_table_view_search_results.png) | High-density multi-column Table layout with inline 14px source icons (`source-alpm.svg` cyan swoosh, `source-aur.svg` violet crest) in Name column, monospace versions, right-aligned formatted sizes with `pr_3` margin, and state pills | **PASSED** |
-| **02** | **Table View Selection & Inspector** | [`evidence_ux03_02_table_view_selection.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_02_table_view_selection.png) | Selected table row (`ripgrep`) highlighted across full width with electric cyan left accent rail; docked Inspector populated with action buttons, tabs, and metadata cards | **PASSED** |
-| **03** | **Cards View Search Results** | [`evidence_ux03_03_cards_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_03_cards_view_search_results.png) | View switcher `[ ⊞ ]` active; rich 36x36 tinted identity avatars (ALPM cyan, AUR violet), 3-line structural hierarchy (Line 1: Name + Version + Size; Line 2: Source + Repo + State; Line 3: Description) | **PASSED** |
-| **04** | **AUR Card Selection & Inspector** | [`evidence_ux03_04_cards_view_selection.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_04_cards_view_selection.png) | Selected AUR card (`the_platinum_searcher-bin`) with electric cyan left accent rail and active surface; Inspector populated with AUR badges and upstream repository metadata | **PASSED** |
-| **05** | **Compact Cards View** | [`evidence_ux03_05_cards_view_compact_mode.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_05_cards_view_compact_mode.png) | Compact view mode active (62px card height, 28x28 avatar, collapsed 56px navigation rail) maximizing vertical information density with 15 cards visible simultaneously | **PASSED** |
-| **06** | **Light Theme Parity** | [`evidence_ux03_06_light_theme_parity.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_06_light_theme_parity.png) | Complete light theme visual parity; high-contrast source avatars, crisp badges, and selected row with electric cyan accent rail and pristine inspector typography | **PASSED** |
+| **01** | **Table View Search Results** | [`evidence_ux03_01_table_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_01_table_view_search_results.png) | High-density multi-column Table layout with inline 16x16 source glyphs (`source-alpm.svg` cyan swoosh, `source-aur.svg` violet crest) in Name column, monospace versions, clean textual source (`Arch / cachyos-v3`, `AUR`) without candy pills, right-aligned monospace sizes (`pr_3`), calm status text (`Available`), docked inspector placeholder | **PASSED** |
+| **02** | **Table View Selection & Inspector** | [`evidence_ux03_02_table_view_selection.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_02_table_view_selection.png) | Selected table row (`ripgrep`) highlighted across full width with electric cyan left accent rail; docked Inspector populated with action buttons (`Install`), tabs (`Overview`), description, and repository metadata | **PASSED** |
+| **03** | **Cards View Mode** | [`evidence_ux03_03_cards_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_03_cards_view_search_results.png) | View switcher `[ ⊞ ]` active; 88px wrapper / 80px card footprint with 36x36 tinted source avatars; 3-line structural hierarchy (Line 1: Name + Monospace Version + Monospace Size; Line 2: Calm Desktop Metadata line `Arch · local · ● Installed` without candy pills; Line 3: Multi-line description clamped to 2 lines via `.line_clamp(2)`) | **PASSED** |
+| **04** | **Card Selection & Inspector** | [`evidence_ux03_04_cards_view_selection.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_04_cards_view_selection.png) | Selected card (`abseil-cpp`) with electric cyan left accent rail and active surface; docked Inspector populated with actions (`Uninstall`, `Copy install command`), tabs (`Overview`, `Dependencies`, `Files & Build`), and package metadata | **PASSED** |
+| **05** | **Compact Cards View** | [`evidence_ux03_05_cards_view_compact_mode.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_05_cards_view_compact_mode.png) | Compact view mode active (70px wrapper, 62px card height, 28x28 avatar, collapsed 56px navigation rail, 1-line description clamp via `.line_clamp(1)`) maximizing vertical density with 13+ cards visible simultaneously | **PASSED** |
+| **06** | **Light Theme Parity & WCAG 2.1 AA** | [`evidence_ux03_06_light_theme_parity.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_06_light_theme_parity.png) | Complete light theme visual parity; high-contrast source avatars, clean text columns (`Arch / local`), monospace versions and sizes, subtle status dots, meeting WCAG 2.1 AA contrast requirements | **PASSED** |
 
 
