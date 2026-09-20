@@ -21,6 +21,7 @@ Phase UX-01 executes the foundational architecture of the **Shelly GPUI UX Workb
 ## Documents in this Phase
 - [`00-README.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/00-README.md): Overview and roadmap of Phase UX-01.
 - [`01-PRODUCT-PRINCIPLES.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/01-PRODUCT-PRINCIPLES.md): Core tenets: Native workstation vs web app, ergonomics, beauty, and strict hierarchy.
-- [`02-LAYOUT-AND-INSPECTOR.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/02-LAYOUT-AND-INSPECTOR.md): Mathematical derivation of splitter limits, ratio invariants, and adaptive layout modes.
-- [`08-ACCEPTANCE-MATRIX.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/08-ACCEPTANCE-MATRIX.md): Verification matrix for all Phase UX-01 requirements.
-- [`09-RUNTIME-EVIDENCE.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/09-RUNTIME-EVIDENCE.md): Live Wayland execution evidence, Hyprland metrics, and package verification.
+- [`02-LAYOUT-AND-INSPECTOR.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/02-LAYOUT-AND-INSPECTOR.md): Mathematical derivation of splitter limits, ratio invariants, and adaptive layout modes (Phase UX-01).
+- [`03-QUERY-WORKBENCH.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/03-QUERY-WORKBENCH.md): Query Workbench architecture, toolbar controls, popovers, and comprehensive runtime UX critique (Phase UX-02).
+- [`08-ACCEPTANCE-MATRIX.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/08-ACCEPTANCE-MATRIX.md): Verification matrix for all Phase UX-01 & UX-02 requirements.
+- [`09-RUNTIME-EVIDENCE.md`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/09-RUNTIME-EVIDENCE.md): Live Wayland execution evidence, Hyprland metrics, and complete UI/UX state gallery.

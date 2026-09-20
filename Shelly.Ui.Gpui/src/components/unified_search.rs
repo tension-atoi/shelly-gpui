@@ -53,7 +53,7 @@ impl UnifiedSearch {
                     .text_xs()
                     .text_color(theme.text_muted)
                     .child("• No network requests are dispatched on empty input")
-                    .child("• Source pills filter results by distribution backend")
+                    .child("• Filters menu refines results by distribution backend and state")
                     .child("• Use Up / Down arrows to navigate through the virtualized results"),
             )
     }

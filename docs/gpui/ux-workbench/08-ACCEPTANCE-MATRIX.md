@@ -1,4 +1,6 @@
-# 08 — Phase UX-01 Acceptance Matrix
+# 08 — Acceptance Matrix (Phases UX-01 & UX-02)
+
+## Phase UX-01 Acceptance Matrix
 
 | Requirement | Specification | Implementation | Verification Method | Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -12,3 +14,19 @@
 | **Native Packaging** | AUR PKGBUILD builds clean package from remote git commit | Built via `makepkg -C -c -f`, installed via `pacman -U` | `pacman -Q shelly-gpui-git` (`r4687.g3fd657b3-1`) and byte integrity check | **PASSED** |
 | **Wayland Runtime Execution** | App launches under native Wayland Hyprland compositor with active window | `/proc/<pid>/exe -> /usr/lib/shelly/shelly-gpui-bin`, Hyprland `xwayland: 0` | PID 2733610, `hyprctl clients -j`, Wayland screenshot via `grim` | **PASSED** |
 
+---
+
+## Phase UX-02 Acceptance Matrix (Query Workbench Redesign)
+
+| Requirement | Specification | Implementation | Verification Method | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Eradication of Floating Pills** | Zero floating pill chips in Query Workbench; `render_quick_pill` deleted | Codebase completely clean of quick pill rendering | Code audit of `query_workbench.rs`, `grep` check, screenshot review | **PASSED** |
+| **Dominant Native Search Input** | Full-width input with tactile states (focus, hover, clear `×`, search glyph) | `SearchInputView` with `w_full()`, border ring, clear action | Wayland captures `evidence_ux02_01`, `evidence_ux02_06`; unit tests in `search_input.rs` | **PASSED** |
+| **Desktop Native Toolbar (Row 2)** | Uniform 28px native toolbar with disclosure button, state dropdown, sort dropdown, and view switcher | `render_toolbar` flex row with `render_filter_button`, `render_state_button`, `render_sort_button`, and `ViewModeSwitcher` | Wayland captures `evidence_ux02_01`, `evidence_ux02_06`, `evidence_ux02_08` | **PASSED** |
+| **Filters Disclosure Popover** | Multi-source checkboxes (Official, AUR, Flatpak, AppImage) + state radios + section dividers | `MenuSurface` with `MenuCheckItem` and `MenuRadioItem` | Wayland capture `evidence_ux02_02_filters_menu_open.png`; unit tests | **PASSED** |
+| **Active Filter Badge Counter** | Button shows badge with count of active non-default filters: `Filters (N) ▾` | `compute_filter_badge_count` pure math function | Wayland captures `evidence_ux02_03`, `evidence_ux02_04b`; unit tests | **PASSED** |
+| **Active Filter Textual Summary** | Single clean row replacing chip pile: `Showing X packages • Sources: ... • State: ...` | `format_active_filter_summary` pure formatting function | Wayland captures `evidence_ux02_03`, `evidence_ux02_04b`; unit tests | **PASSED** |
+| **Inline Clear Filters Action** | Tactile `× Clear filters` button resetting scope and state with zero layout jank | `on_clear_filters` wired to session reset; Row 3 collapses cleanly | Wayland capture `evidence_ux02_04c_filters_cleared.png`; session unit test | **PASSED** |
+| **Zero Deadcode & Warnings** | Enforce `#![deny(dead_code)]` and zero clippy warnings | All components and handlers wired; strict YAGNI followed | `cargo clippy --release --locked -- -D warnings` exits 0 | **PASSED** |
+| **Release Locked Tests** | 99/99 tests passing in release locked profile | Added unit test suite for Query Workbench filters, summary, and session | `cargo test --release --locked` exits 0 (99 passed) | **PASSED** |
+| **Wayland Runtime Deployment** | Binary packaged and executed live under Hyprland Wayland compositor | Packaged as `shelly-gpui-git r4689.g73143130-1`, active window verified | PID 2957817, client `0x5651973c84a0`, 18 runtime screenshots captured | **PASSED** |
