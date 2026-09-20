@@ -191,28 +191,18 @@ impl WorkspaceView {
         .detach();
 
         // Abonnement réactif à SearchInput de PackageWorkstationView
-        let entity_ws_search = cx.entity().clone();
         let search_input_ent = workstation.read(cx).search_input.clone();
-        cx.subscribe(
-            &search_input_ent,
-            move |_this, _emitter, event, cx| match event {
-                crate::components::search_input::SearchEvent::Changed(query) => {
-                    entity_ws_search.update(cx, |view, cx| {
-                        view.on_search_input(query.clone(), cx);
-                    });
-                }
-                crate::components::search_input::SearchEvent::Submitted(query) => {
-                    entity_ws_search.update(cx, |view, cx| {
-                        view.execute_search(query.clone(), cx);
-                    });
-                }
-                crate::components::search_input::SearchEvent::Cleared => {
-                    entity_ws_search.update(cx, |view, cx| {
-                        view.on_search_input(String::new(), cx);
-                    });
-                }
-            },
-        )
+        cx.subscribe(&search_input_ent, |this, _emitter, event, cx| match event {
+            crate::components::search_input::SearchEvent::Changed(query) => {
+                this.on_search_input(query.clone(), cx);
+            }
+            crate::components::search_input::SearchEvent::Submitted(query) => {
+                this.execute_search(query.clone(), cx);
+            }
+            crate::components::search_input::SearchEvent::Cleared => {
+                this.on_search_input(String::new(), cx);
+            }
+        })
         .detach();
 
         // Abonnements réactifs typés aux événements du magasin de paquets et de la console

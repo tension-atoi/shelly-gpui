@@ -414,7 +414,14 @@ impl LogDrawer {
 
         let mut container = div().flex().flex_col().bg(theme.bg_sidebar).child(header);
 
-        if props.height > 1.0 {
+        if props.height > 10.0 {
+            let mut body_container = div()
+                .h(px(props.height))
+                .overflow_hidden()
+                .flex()
+                .flex_col()
+                .w_full();
+
             if !props.backend_phases.is_empty() {
                 let mut phases_strip = div()
                     .flex()
@@ -476,7 +483,7 @@ impl LogDrawer {
                         );
                     phases_strip = phases_strip.child(card);
                 }
-                container = container.child(phases_strip);
+                body_container = body_container.child(phases_strip);
             }
 
             if auto_scroll && !props.logs.is_empty() {
@@ -488,8 +495,8 @@ impl LogDrawer {
             let mut log_content = div()
                 .id("log_drawer_scroll")
                 .flex()
+                .flex_1()
                 .flex_col()
-                .h(px(props.height))
                 .overflow_scroll()
                 .track_scroll(props.scroll_handle)
                 .p_3()
@@ -529,7 +536,8 @@ impl LogDrawer {
                 }
             }
 
-            container = container.child(log_content);
+            body_container = body_container.child(log_content);
+            container = container.child(body_container);
         }
 
         container
