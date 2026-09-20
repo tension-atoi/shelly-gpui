@@ -155,7 +155,7 @@ impl WorkspaceView {
         })
         .detach();
 
-        let mut view = Self {
+        let view = Self {
             session,
             store,
             console,
@@ -176,62 +176,8 @@ impl WorkspaceView {
             is_loading_pkgbuild: false,
         };
 
-        // Configuration d'environnement pour l'initialisation / automatisation
-        if let Ok(mode) = std::env::var("SHELLY_VIEW_MODE") {
-            if mode.eq_ignore_ascii_case("table") {
-                view.session
-                    .update(cx, |s, cx| s.set_view_mode(PackageViewMode::Table, cx));
-            } else if mode.eq_ignore_ascii_case("cards") {
-                view.session
-                    .update(cx, |s, cx| s.set_view_mode(PackageViewMode::Cards, cx));
-            }
-        }
-
-        if let Ok(tab) = std::env::var("SHELLY_INSPECTOR_TAB") {
-            let parsed_tab = match tab.to_ascii_lowercase().as_str() {
-                "dependencies" => Some(InspectorTab::Dependencies),
-                "files_build" | "build" | "files" => Some(InspectorTab::FilesBuild),
-                "overview" => Some(InspectorTab::Overview),
-                _ => None,
-            };
-            if let Some(t) = parsed_tab {
-                view.session.update(cx, |s, cx| s.set_inspector_tab(t, cx));
-            }
-        }
-
         // Chargement initial asynchrone non-bloquant
         view.trigger_initial_load(cx);
-
-        if let Ok(sf) = std::env::var("SHELLY_SOURCE_FILTER") {
-            let filter = match sf.to_ascii_lowercase().as_str() {
-                "alpm" => Some(SourceFilter::Alpm),
-                "aur" => Some(SourceFilter::Aur),
-                "flatpak" => Some(SourceFilter::Flatpak),
-                "appimage" => Some(SourceFilter::AppImage),
-                "all" => Some(SourceFilter::All),
-                _ => None,
-            };
-            if let Some(f) = filter {
-                view.session.update(cx, |s, cx| s.set_source_filter(f, cx));
-            }
-        }
-
-        if let Ok(query) = std::env::var("SHELLY_SEARCH_QUERY") {
-            if !query.trim().is_empty() {
-                view.search_input_buffer = query.clone();
-                view.execute_search(query, cx);
-            }
-        }
-
-        if let Ok(cmd_to_copy) = std::env::var("SHELLY_TEST_COPY_CMD") {
-            view.copy_install_command(cmd_to_copy, cx);
-        }
-
-        if let Ok(scroll_idx_str) = std::env::var("SHELLY_TEST_SCROLL_INDEX") {
-            if let Ok(idx) = scroll_idx_str.parse::<usize>() {
-                view.scroll_handle.scroll_to_item(idx, ScrollStrategy::Top);
-            }
-        }
 
         view
     }
@@ -265,21 +211,6 @@ impl WorkspaceView {
                     view.store.update(cx, |st, cx| {
                         st.set_installed_packages(unified, cx);
                     });
-                    if let Ok(target) = std::env::var("SHELLY_SELECT_PACKAGE") {
-                        if view.session.read(cx).selected_package_key.is_none() {
-                            let store = view.store.read(cx);
-                            if let Some(pkg) = store
-                                .installed_packages
-                                .iter()
-                                .find(|p| p.name.eq_ignore_ascii_case(&target))
-                            {
-                                let key = pkg.key();
-                                view.session.update(cx, |s, cx| {
-                                    s.select_package(Some(key), cx);
-                                });
-                            }
-                        }
-                    }
                 });
             }
         })
@@ -613,43 +544,14 @@ impl WorkspaceView {
             let _ = this.update(cx, |view, cx| {
                 let current_gen = view.session.read(cx).search_generation;
                 if current_gen == gen {
-                    let mut selected_key_to_set = None;
-                    if let Ok(target) = std::env::var("SHELLY_SELECT_PACKAGE") {
-                        if let Some(pkg) = results
-                            .iter()
-                            .find(|p| p.name.eq_ignore_ascii_case(&target))
-                        {
-                            selected_key_to_set = Some(pkg.key());
-                        }
-                    }
                     view.store.update(cx, |st, cx| {
                         st.cache_search(&query_clone, filter, results.clone());
                         st.set_active_results(results, gen, cx);
                     });
                     view.session.update(cx, |s, cx| {
                         s.set_searching(false, cx);
-                        if let Some(k) = selected_key_to_set {
-                            s.select_package(Some(k), cx);
-                        }
                     });
-                    if let Ok(scroll_idx_str) = std::env::var("SHELLY_TEST_SCROLL_INDEX") {
-                        if let Ok(idx) = scroll_idx_str.parse::<usize>() {
-                            cx.spawn(async move |this, cx| {
-                                cx.background_executor()
-                                    .timer(std::time::Duration::from_millis(200))
-                                    .await;
-                                let _ = this.update(cx, |view, cx| {
-                                    view.scroll_handle.scroll_to_item(idx, ScrollStrategy::Top);
-                                    cx.notify();
-                                });
-                            })
-                            .detach();
-                        } else {
-                            view.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
-                        }
-                    } else {
-                        view.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
-                    }
+                    view.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
                 }
             });
         })

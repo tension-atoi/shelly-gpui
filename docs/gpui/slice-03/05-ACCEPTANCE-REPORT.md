@@ -4,7 +4,8 @@
 **Target Slice**: SLICE-03C — Behavioral Runtime Evidence & Contract Closure  
 **Baseline Git HEAD**: `216831c1450aeee95a76e159d7579b0e3340b236`  
 **Implementation Git HEAD**: `abf88db66158a1744176181ddb45528350aed92a`  
-**Closure Git HEAD**: `5656537877eebec5626ebc8ff61df9e38f615598`  
+**Behavioral Evidence Closure Git HEAD**: `e4737cc66d0afd5aa43b12818838f90e878d8d8a`  
+**Final Verification & Scaffolding Cleanup**: Current commit on `main`  
 **Compositor**: Hyprland 0.56.2 (`WAYLAND_DISPLAY=wayland-1`, native Wayland client `xwayland: false`, `app_id: shelly-gpui`)  
 **Zero Deadcode Policy**: Hard Compiler Enforcement (`deny(dead_code)`, `deny(unused_variables)`, `deny(unused_imports)`, `deny(unused_must_use)`)  
 
@@ -14,13 +15,14 @@
 
 Slice-03 achieves complete, rigorous closure of the **Package Surface & Semantic Inspector** specification. The dual package viewing surface (Cards vs Table) provides seamless density control over shared search results. The package inspector provides a capability-driven 3-tab architecture (`Overview`, `Dependencies`, `Files & Build`) with typed semantic domain models and live AUR PKGBUILD recipe streaming.
 
-This closure report bridges every previous evidentiary gap between static captures and verifiable runtime behavior:
-1. **Fixed Table Header**: Clarified architectural reality: the table header is a **fixed container** rendered as a sibling above the virtualized scroll viewport (`uniform_list`), remaining permanently anchored at the top during vertical scrolling.
-2. **Dual View Continuity**: Verified that toggling between Cards and Table view modes retains identical `search_query`, `store.active_results`, and `selected_package_key` without executing any subprocess or re-fetching.
-3. **Wayland Clipboard Interaction**: Explains Wayland's `wl_data_device.set_selection` requirement for an active input event serial, verifying that canonical install command generation is fully tested and transient "Copied!" feedback is visually rendered.
-4. **Dependency Semantic Navigation**: Verified that clicking dependency pills navigates to clean package names (stripping version constraints and descriptions) in Browse search.
-5. **Honest Source Coverage Matrix**: Documents empirical runtime verification across ALPM, AUR, and Flatpak, while honestly classifying AppImage as `NOT AVAILABLE ON TEST HOST`.
-6. **Action Button Execution**: Accurately bounds mutation button claims to `CODE PATH ESTABLISHED` / `TESTED` rather than asserting destructive package mutation occurred in Slice-03.
+This final closure report eliminates every remaining documentary discrepancy, ensures strict truthfulness in evidence classification, and removes all temporary test scaffolding:
+1. **Immutable Document Identity**: Accurately records the baseline SHA (`216831c1...`), implementation SHA (`abf88db6...`), and behavioral evidence closure SHA (`e4737cc6...`), avoiding self-referential paradoxes.
+2. **Canonical Install Commands**: Aligns documentation precisely with `src/state/semantic.rs`: `shelly install standard <name>` (ALPM), `shelly install aur <name>` (AUR), `shelly install flatpak <name>` (Flatpak), and `None` (AppImage unsupported).
+3. **Clipboard Truthfulness**: Classifies command generation as `TESTED`, clipboard call path as `CODE PATH ESTABLISHED`, transient "Copied!" feedback rendering as `RUNTIME VERIFIED`, and explicitly notes the OS clipboard payload itself as `NOT RUNTIME VERIFIED`.
+4. **External URL Truthfulness**: Classifies interactive URL rendering as `RUNTIME VERIFIED`, the `cx.open_url` call path as `CODE PATH ESTABLISHED`, external application launch as `NOT RUNTIME VERIFIED`, and removes unverified assertions regarding platform dispatch mechanisms.
+5. **Dual View Evidence Nuance**: Distinguishes `AppSession` continuity (`TESTED`), shared `PackageStore` results (`ESTABLISHED`), no-subprocess invariant (`ESTABLISHED`), and visual Cards/Table layout continuity (`RUNTIME VERIFIED`).
+6. **Dependency Navigation**: Distinguishes `DependencyRef` parsing and clean-name state transition (`TESTED`) from click handler wiring (`CODE PATH ESTABLISHED`).
+7. **Zero Test Scaffolding in Production**: Completely removes all evidence-only runtime hooks (`SHELLY_TEST_*`, `SHELLY_SELECT_PACKAGE`, `SHELLY_SOURCE_FILTER`) from `workspace.rs`, ensuring production code adheres strictly to YAGNI and the Zero Deadcode Policy.
 
 All code strictly enforces the Zero Deadcode Policy with 21/21 passing unit tests and 8 empirical runtime screenshots captured under a live native Wayland compositor.
 
@@ -34,38 +36,12 @@ In `WorkspaceView`, both Cards and Table modes read from the single source of tr
 - `session.selected_package_key`: Active `PackageKey` identifying the currently inspected package.
 - `session.search_query`: Active search string buffer.
 
-When the operator clicks the View Switcher pill toggle (`▦ Cards` ↔ `☰ Table`), only `session.view_mode` is mutated. Neither `execute_search` nor any external CLI subprocess is invoked. The active results, scroll position, and inspector state are completely preserved.
+When the operator clicks the View Switcher pill toggle (`▦ Cards` ↔ `☰ Table`), only `session.view_mode` is mutated. Neither `execute_search` nor any external CLI subprocess is invoked.
 
-This invariant is verified by unit test `test_view_mode_continuity_preserves_selection_query_and_generation`:
-```rust
-#[test]
-fn test_view_mode_continuity_preserves_selection_query_and_generation() {
-    let mut session = AppSession::new();
-    session.destination = NavDestination::Browse;
-    session.search_query = "ripgrep".to_string();
-    session.search_generation = 12;
-
-    let expected_key = PackageKey::new(
-        PackageSourceKind::Alpm,
-        "ripgrep",
-        Some("cachyos-v3".to_string()),
-    );
-    session.selected_package_key = Some(expected_key.clone());
-    assert_eq!(session.view_mode, PackageViewMode::Cards);
-
-    // Switch Cards -> Table
-    session.view_mode = PackageViewMode::Table;
-    assert_eq!(session.search_query, "ripgrep");
-    assert_eq!(session.selected_package_key, Some(expected_key.clone()));
-    assert_eq!(session.search_generation, 12);
-
-    // Switch Table -> Cards
-    session.view_mode = PackageViewMode::Cards;
-    assert_eq!(session.search_query, "ripgrep");
-    assert_eq!(session.selected_package_key, Some(expected_key));
-    assert_eq!(session.search_generation, 12);
-}
-```
+The epistemological breakdown is:
+- **`TESTED`**: `AppSession` continuity across mode toggling is proven by unit test `test_view_mode_continuity_preserves_selection_query_and_generation` (`search_query`, `selected_package_key`, and `search_generation` remain completely invariant).
+- **`ESTABLISHED`**: The shared `PackageStore` source and the fact that `set_view_mode` triggers no backend search or subprocess are architectural invariants established by code review.
+- **`RUNTIME VERIFIED`**: Visual rendering and selection retention between Cards and Table modes are verified in `evidence_slice03_cards.png` and `evidence_slice03_table.png`.
 
 ### 2.2 Fixed Table Header (Corrected from "Sticky")
 The table header (`PackageTable::render_header(&theme)`) is implemented as an explicit sibling element positioned directly above the virtualized list viewport:
@@ -85,34 +61,50 @@ div()
 ```
 Calling this header "sticky" was imprecise; it is an architecturally **fixed table header**. Because it resides outside the `uniform_list` scroll container, items scroll beneath it while the column labels (`NAME`, `VERSION`, `SOURCE`, `SIZE`, `STATUS`) remain permanently visible at the top. This is visually and behaviorally verified in `evidence_slice03_table_scrolled.png`.
 
-### 2.3 Wayland Clipboard & Install Command Feedback
-Under Wayland compositors (Hyprland 0.56.2), the `wl_data_device.set_selection` protocol requires a valid user input event serial. When triggered by a user click, GPUI's event pipeline carries this serial to `cx.write_to_clipboard(ClipboardItem::new_string(cmd))`.
+### 2.3 Canonical Install Commands & Clipboard Truthfulness
+The canonical install command generation matches the Shelly CLI invocation syntax defined in `src/state/semantic.rs`:
+- **ALPM**: `shelly install standard <name>`
+- **AUR**: `shelly install aur <name>`
+- **Flatpak**: `shelly install flatpak <name>`
+- **AppImage**: `None` (unsupported; no canonical install command exposed)
 
-The canonical install command generation is tested for all sources via `test_canonical_install_command`:
-- ALPM: `shelly install <name>`
-- AUR: `shelly install aur/<name>`
-- Flatpak: `shelly install flatpak/<name>`
-- AppImage: `shelly install appimage/<name>`
+This is authoritative and verified by unit test `test_canonical_install_command`.
 
-When clicked, `copy_install_command` sets `self.copy_cmd_feedback = true` and spawns an asynchronous 2-second decay timer that resets the feedback state.
+Regarding clipboard operations:
+- **`TESTED`**: Canonical command string generation.
+- **`CODE PATH ESTABLISHED`**: `copy_install_command` dispatches `cx.write_to_clipboard(ClipboardItem::new_string(cmd))` and sets the transient feedback timer.
+- **`RUNTIME VERIFIED`**: The transient 2-second "Copied!" button feedback state is rendered on click.
+- **`NOT RUNTIME VERIFIED`**: Clipboard contents were not read back from the Wayland compositor clipboard during the test run; payload correctness is therefore established by unit tests rather than empirical clipboard readback.
 
 ### 2.4 Semantic Upstream URL & External Dispatch
 In the Overview tab, the upstream URL is rendered as an interactive element. When clicked, it dispatches:
 ```rust
 cx.open_url(url.as_str());
 ```
-This delegates to GPUI's platform layer, which invokes `xdg-open` on Linux systems. Classified truthfully as **`CODE PATH ESTABLISHED`** and **`RUNTIME VERIFIED`** (interactive rendering verified in `evidence_slice03_overview.png` and `evidence_slice03_flatpak.png`).
+Epistemological classification:
+- **`RUNTIME VERIFIED`**: Interactive rendering of upstream URL links is verified in `evidence_slice03_overview.png` and `evidence_slice03_flatpak.png`.
+- **`CODE PATH ESTABLISHED`**: The call site to `cx.open_url` is fully wired to the UI click handler.
+- **`NOT RUNTIME VERIFIED`**: Spawning of an external browser window was not captured at the compositor level. Unverified assumptions regarding specific underlying system launchers (such as `xdg-open`) are omitted.
 
 ### 2.5 Structured Dependency Navigation
-`DependencyRef::parse` sanitizes complex dependency strings (e.g. `libalpm.so>=14: Arch package management library`) into clean name (`libalpm.so`), version constraint (`>=14`), and description. When a dependency pill is clicked:
-1. `session.destination` is set to `NavDestination::Browse`.
-2. `session.search_query` is set to `dep.name` (clean package name, without constraint or description).
-3. `trigger_search` initiates a search for that package.
+`DependencyRef::parse` sanitizes complex dependency strings (e.g. `libalpm.so>=14: Arch package management library`) into clean name (`libalpm.so`), version constraint (`>=14`), and description.
 
-Verified by unit test `test_dependency_navigation_preserves_clean_package_name`.
+Epistemological classification:
+- **`TESTED`**: Dependency string parsing (3 unit tests) and clean-name state transition (`test_dependency_navigation_preserves_clean_package_name`, proving constraints/descriptions are stripped before search).
+- **`CODE PATH ESTABLISHED`**: The pill click event is wired to set `NavDestination::Browse`, update `session.search_query`, and trigger `execute_search`.
+- **`RUNTIME VERIFIED`**: Categorized dependency groups and pill rendering verified in `evidence_slice03_dependencies.png`.
 
 ### 2.6 Honest Action Button Execution Bounds
 In `InspectorHeader`, action buttons (`Install`, `Remove`, `Upgrade`) are derived dynamically from `PackageCapabilities::derive(pkg)`. While the mutation streaming pipeline (`run_package_mutation`) is fully wired to `shelly install/remove/upgrade` via Tokio mpsc channels, destructive system mutations were deliberately **not executed** on the operator's production workstation during Slice-03 testing. They are classified truthfully as **`CODE PATH ESTABLISHED`** and **`TESTED`**.
+
+### 2.7 Removal of Test Scaffolding
+To maintain strict compliance with the Zero Deadcode Policy and YAGNI, all evidence-only runtime hooks added for automated capture have been completely removed from `src/views/workspace.rs`:
+- Removed `SHELLY_TEST_COPY_CMD`
+- Removed `SHELLY_TEST_SCROLL_INDEX`
+- Removed `SHELLY_SELECT_PACKAGE`
+- Removed `SHELLY_SOURCE_FILTER`
+
+The production binary contains zero diagnostic or capture scaffolding.
 
 ---
 
@@ -133,25 +125,25 @@ In `InspectorHeader`, action buttons (`Install`, `Remove`, `Upgrade`) are derive
 ```text
 running 21 tests
 test components::package_table::tests::test_format_bytes ... ok
-test state::console::tests::test_clear_logs_preserves_lifecycle_status ... ok
 test state::console::tests::test_console_model_defaults ... ok
-test state::package_store::tests::test_pkgbuild_cache_storage_and_invalidation ... ok
-test state::package_store::tests::test_appimage_filtering_and_key_identity ... ok
 test state::package_store::tests::test_package_store_cache_and_invalidation ... ok
-test state::package_store::tests::test_search_cache_storage ... ok
+test state::package_store::tests::test_appimage_filtering_and_key_identity ... ok
+test state::console::tests::test_clear_logs_preserves_lifecycle_status ... ok
+test state::package_store::tests::test_pkgbuild_cache_storage_and_invalidation ... ok
 test state::package_store::tests::test_search_key_normalization ... ok
+test state::package_store::tests::test_search_cache_storage ... ok
 test state::semantic::tests::test_canonical_install_command ... ok
-test state::semantic::tests::test_dependency_ref_parse_unversioned ... ok
 test components::package_table::tests::test_display_size_truthfulness ... ok
+test state::semantic::tests::test_dependency_ref_parse_unversioned ... ok
 test state::semantic::tests::test_dependency_ref_parse_versioned ... ok
-test state::semantic::tests::test_package_capabilities_derive ... ok
 test state::semantic::tests::test_dependency_ref_parse_with_description ... ok
 test state::session::tests::test_app_session_defaults ... ok
+test state::semantic::tests::test_package_capabilities_derive ... ok
 test state::session::tests::test_dependency_navigation_preserves_clean_package_name ... ok
 test state::session::tests::test_nav_destination_metadata ... ok
+test state::session::tests::test_source_filter_metadata ... ok
 test state::session::tests::test_package_key_equality_and_hashing ... ok
 test state::session::tests::test_view_mode_and_inspector_tab_metadata ... ok
-test state::session::tests::test_source_filter_metadata ... ok
 test state::session::tests::test_view_mode_continuity_preserves_selection_query_and_generation ... ok
 
 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -220,4 +212,5 @@ The release binary was executed on Wayland display `wayland-1` under Hyprland 0.
 | Typed Semantic Domain Models | **ACCEPTED** | Parsed `DependencyRef`, `PackageCapabilities`, `SemanticTarget`, and canonical install commands |
 | Truthful Size & Capability Telemetry | **ACCEPTED** | No phantom numbers, honest capability gap notice for ALPM archive content |
 | Zero Deadcode Policy | **ACCEPTED** | Hard compiler enforcement, 0 unused items, 0 warning suppressions |
+| Zero Test Scaffolding | **ACCEPTED** | All evidence-only hooks removed from production source code |
 | Full Test & Runtime Verification | **ACCEPTED** | 21 unit tests passing, 8 native Wayland screenshots verified |
