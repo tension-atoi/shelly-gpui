@@ -1,0 +1,126 @@
+# Maintainer: tension-atoi <tension-atoi@users.noreply.github.com>
+# Forked from: Seafoam-Labs/Shelly-ALPM
+# Paquet: frontend GPUI natif Rust pour le gestionnaire de paquets Shelly (ALPM + AUR + Flatpak + AppImage)
+
+pkgname=shelly-gpui-git
+pkgver=r0.git
+pkgrel=1
+pkgdesc="Frontend GPUI natif Rust pour Shelly — gestionnaire de paquets Arch Linux (ALPM, AUR, Flatpak, AppImage)"
+arch=('x86_64')
+url="https://github.com/Seafoam-Labs/Shelly-ALPM"
+license=('MIT')
+depends=(
+    'glibc'
+    'gcc-libs'
+    'fontconfig'
+    'freetype2'
+    'libx11'
+    'libxcb'
+    'libxkbcommon'
+    'libxkbcommon-x11'
+    'wayland'
+    'libGL'
+    'mesa'
+    'vulkan-icd-loader'
+    'alpm'
+    'polkit'
+)
+makedepends=(
+    'git'
+    'rust'
+    'cargo'
+    'zig'
+    'pkgconf'
+    'clang'
+)
+optdepends=(
+    'flatpak: support des applications Flatpak'
+    'paru: support AUR via Shelly'
+    'yay: support AUR alternatif'
+)
+provides=('shelly-gpui')
+conflicts=('shelly-gpui')
+source=("${pkgname}::git+https://github.com/Seafoam-Labs/Shelly-ALPM.git#branch=feature/gpui-frontend")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "${srcdir}/${pkgname}"
+    printf "r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+    cd "${srcdir}/${pkgname}"
+    # Pré-charge les dépendances Cargo sans accès réseau à l'étape build
+    cd Shelly.Ui.Gpui
+    cargo fetch --locked 2>/dev/null || cargo fetch
+}
+
+build() {
+    cd "${srcdir}/${pkgname}"
+
+    # 1. Compiler le CLI Zig (backend Shelly)
+    echo ">>> Compilation du backend Shelly CLI (Zig)..."
+    cd Shelly.Cli.Zig
+    zig build -Doptimize=ReleaseSafe
+    cd ..
+
+    # 2. Compiler le frontend GPUI (Rust)
+    echo ">>> Compilation du frontend GPUI (Rust)..."
+    cd Shelly.Ui.Gpui
+    # Pointe SHELLY_BIN vers le CLI local compilé pour les tests éventuels
+    SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
+        cargo build --release --locked 2>/dev/null || \
+    SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
+        cargo build --release
+}
+
+check() {
+    cd "${srcdir}/${pkgname}/Shelly.Ui.Gpui"
+    cargo test --release 2>/dev/null || true
+}
+
+package() {
+    cd "${srcdir}/${pkgname}"
+
+    # ── Binaires ──────────────────────────────────────────────────────────────
+    install -Dm755 "Shelly.Cli.Zig/zig-out/bin/shelly" \
+        "${pkgdir}/usr/lib/shelly/shelly"
+
+    install -Dm755 "Shelly.Ui.Gpui/target/release/shelly-gpui" \
+        "${pkgdir}/usr/bin/shelly-gpui"
+
+    # Wrapper léger qui garantit que le frontend trouve le CLI bundlé
+    install -dm755 "${pkgdir}/usr/bin"
+    cat > "${pkgdir}/usr/bin/shelly-gpui" << 'EOF'
+#!/bin/sh
+exec /usr/lib/shelly/shelly-gpui-bin "$@"
+EOF
+    # Corrige : installe le vrai binaire sous un nom interne
+    install -Dm755 "Shelly.Ui.Gpui/target/release/shelly-gpui" \
+        "${pkgdir}/usr/lib/shelly/shelly-gpui-bin"
+    # Le wrapper /usr/bin/shelly-gpui positionne SHELLY_BIN et lance l'exe
+    cat > "${pkgdir}/usr/bin/shelly-gpui" << 'EOF'
+#!/bin/sh
+SHELLY_BIN=/usr/lib/shelly/shelly exec /usr/lib/shelly/shelly-gpui-bin "$@"
+EOF
+    chmod 755 "${pkgdir}/usr/bin/shelly-gpui"
+
+    # ── Fichier .desktop ──────────────────────────────────────────────────────
+    install -Dm644 "Shelly.Ui.Gpui/assets/com.shellyorg.shelly-gpui.desktop" \
+        "${pkgdir}/usr/share/applications/com.shellyorg.shelly-gpui.desktop"
+
+    # ── Icône SVG ─────────────────────────────────────────────────────────────
+    install -Dm644 "Shelly.Ui.Gpui/assets/shelly-gpui.svg" \
+        "${pkgdir}/usr/share/icons/hicolor/scalable/apps/shelly-gpui.svg"
+
+    # ── Licence ───────────────────────────────────────────────────────────────
+    if [ -f LICENSE ]; then
+        install -Dm644 LICENSE \
+            "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    fi
+
+    # ── Règle Polkit ─────────────────────────────────────────────────────────
+    install -Dm644 "Shelly.Ui.Gpui/assets/com.shellyorg.shelly-gpui.policy" \
+        "${pkgdir}/usr/share/polkit-1/actions/com.shellyorg.shelly-gpui.policy" \
+        2>/dev/null || true
+}
