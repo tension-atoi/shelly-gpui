@@ -190,6 +190,8 @@ impl ShellyClient {
         }
         args.push(name.to_string());
         args.push("--ui-mode".to_string());
+        // --no-confirm évite que le CLI Zig bloque en attendant une entrée clavier
+        args.push("--no-confirm".to_string());
 
         ProcessRunner::spawn_streaming_operation(self.binary_path.clone(), args, tx);
     }
@@ -209,15 +211,18 @@ impl ShellyClient {
         }
         args.push(name.to_string());
         args.push("--ui-mode".to_string());
+        args.push("--no-confirm".to_string());
 
         ProcessRunner::spawn_streaming_operation(self.binary_path.clone(), args, tx);
     }
 
-    /// Lance la mise à niveau globale du système
+    /// Lance la mise à niveau globale du système (tous les backends)
     pub fn upgrade_system(&self, tx: mpsc::UnboundedSender<LogStreamEvent>) {
         let args = vec![
             "upgrade".to_string(),
+            "all".to_string(),   // sous-commande "all" obligatoire
             "--ui-mode".to_string(),
+            "--no-confirm".to_string(),
         ];
         ProcessRunner::spawn_streaming_operation(self.binary_path.clone(), args, tx);
     }

@@ -1,0 +1,93 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Shelly GPUI — Makefile de développement
+# Usage:
+#   make run       — compile (dev) et lance l'app avec le CLI Zig local
+#   make build     — cargo build --release
+#   make check     — cargo check (rapide, sans lier)
+#   make zig       — (re)compile le backend CLI Zig
+#   make clean     — nettoie les artefacts Rust et Zig
+#   make package   — lance makepkg dans un répertoire isolé
+#   make install   — copie les binaires en /usr/local (sans PKGBUILD)
+# ──────────────────────────────────────────────────────────────────────────────
+
+REPO_ROOT   := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+ZIG_SRC     := $(REPO_ROOT)Shelly.Cli.Zig
+ZIG_BIN     := $(ZIG_SRC)/zig-out/bin/shelly
+RUST_SRC    := $(REPO_ROOT)Shelly.Ui.Gpui
+RUST_BIN    := $(RUST_SRC)/target/release/shelly-gpui
+PKGBUILD    := $(REPO_ROOT)PKGBUILD-gpui
+
+# Préfère le CLI Zig local ; tombe en arrière sur le CLI système si absent
+ifeq ($(wildcard $(ZIG_BIN)),)
+  SHELLY_BIN ?= $(shell which shelly 2>/dev/null)
+else
+  SHELLY_BIN ?= $(ZIG_BIN)
+endif
+
+export SHELLY_BIN
+
+# ─── Cibles principales ───────────────────────────────────────────────────────
+
+.PHONY: run build check zig clean package install help
+
+## Lance l'application en mode développement (cargo run)
+run: zig
+	@echo ">>> SHELLY_BIN = $(SHELLY_BIN)"
+	@echo ">>> Lancement de shelly-gpui..."
+	cd $(RUST_SRC) && SHELLY_BIN=$(SHELLY_BIN) cargo run 2>&1
+
+## Compile le binaire de release Rust
+build: zig
+	@echo ">>> Build release..."
+	cd $(RUST_SRC) && SHELLY_BIN=$(SHELLY_BIN) cargo build --release
+	@echo ">>> Binaire : $(RUST_BIN)"
+
+## Vérifie le code Rust sans lier (rapide)
+check:
+	cd $(RUST_SRC) && cargo check
+
+## Compile le backend CLI Zig
+zig:
+	@if [ ! -f "$(ZIG_BIN)" ]; then \
+		echo ">>> Compilation du CLI Zig (ReleaseSafe)..."; \
+		cd $(ZIG_SRC) && zig build -Doptimize=ReleaseSafe; \
+	else \
+		echo ">>> CLI Zig déjà compilé : $(ZIG_BIN)"; \
+	fi
+
+## Force la recompilation du CLI Zig
+zig-rebuild:
+	@echo ">>> Recompilation forcée du CLI Zig..."
+	cd $(ZIG_SRC) && zig build -Doptimize=ReleaseSafe
+
+## Lance makepkg dans /tmp pour tester le PKGBUILD complet
+package:
+	@echo ">>> Test PKGBUILD dans /tmp/shelly-gpui-pkg..."
+	rm -rf /tmp/shelly-gpui-pkg
+	mkdir -p /tmp/shelly-gpui-pkg
+	cp $(PKGBUILD) /tmp/shelly-gpui-pkg/PKGBUILD
+	cd /tmp/shelly-gpui-pkg && makepkg -si --noconfirm
+
+## Installe directement sans PKGBUILD (pour dev rapide)
+install: build
+	@echo ">>> Installation dans /usr/local..."
+	install -Dm755 $(RUST_BIN) /usr/local/lib/shelly/shelly-gpui-bin
+	install -Dm755 $(ZIG_BIN)  /usr/local/lib/shelly/shelly
+	@printf '#!/bin/sh\nSHELLY_BIN=/usr/local/lib/shelly/shelly exec /usr/local/lib/shelly/shelly-gpui-bin "$$@"\n' \
+		| install -Dm755 /dev/stdin /usr/local/bin/shelly-gpui
+	install -Dm644 $(RUST_SRC)/assets/com.shellyorg.shelly-gpui.desktop \
+		/usr/local/share/applications/com.shellyorg.shelly-gpui.desktop
+	install -Dm644 $(RUST_SRC)/assets/shelly-gpui.svg \
+		/usr/local/share/icons/hicolor/scalable/apps/shelly-gpui.svg
+	@echo ">>> Installé. Lance : shelly-gpui"
+
+## Nettoie tous les artefacts compilés
+clean:
+	cd $(RUST_SRC) && cargo clean
+	rm -rf $(ZIG_SRC)/zig-out $(ZIG_SRC)/.zig-cache
+
+## Affiche cette aide
+help:
+	@grep -E '^##' $(MAKEFILE_LIST) | sed 's/## /  /'
+
+.DEFAULT_GOAL := help

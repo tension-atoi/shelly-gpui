@@ -381,6 +381,7 @@ impl WorkspaceView {
                                 );
                                 view.operation_logs
                                     .push(">>> Opération terminée avec succès.".to_string());
+                                view.refresh_after_operation(cx);
                             } else {
                                 view.operation_status = OperationStatus::Error(
                                     format!("Échec (code {:?})", code),
@@ -444,6 +445,7 @@ impl WorkspaceView {
                                     OperationStatus::Success(format!("{} désinstallé", name));
                                 view.operation_logs
                                     .push(">>> Désinstallation terminée avec succès.".to_string());
+                                view.refresh_after_operation(cx);
                             } else {
                                 view.operation_status = OperationStatus::Error(
                                     format!("Échec (code {:?})", code),
@@ -497,6 +499,7 @@ impl WorkspaceView {
                                 view.operation_logs
                                     .push(">>> Mise à niveau terminée avec succès.".to_string());
                                 view.updates_count = 0;
+                                view.refresh_after_operation(cx);
                             } else {
                                 view.operation_status = OperationStatus::Error(format!(
                                     "Erreur lors de la mise à niveau (code {:?})",
@@ -515,6 +518,31 @@ impl WorkspaceView {
             }
         })
         .detach();
+    }
+
+    /// Rafraîchit les paquets et le compteur de mises à jour après une opération réussie
+    pub fn refresh_after_operation(&mut self, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            if let Ok(updates) = client.list_updates().await {
+                let count = updates.len();
+                let _ = this.update(cx, |view, cx| {
+                    view.updates_count = count;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+
+        match self.active_tab {
+            TAB_ALPM => self.perform_search(self.search_query.clone(), cx),
+            TAB_AUR => self.search_aur_tab(self.search_query.clone(), cx),
+            TAB_FLATPAK => self.search_flatpak_tab(self.search_query.clone(), cx),
+            TAB_APPIMAGE => self.load_appimages(cx),
+            TAB_UPDATES => self.load_updates(cx),
+            TAB_NEWS => self.load_news(cx),
+            _ => {}
+        }
     }
 
     /// Traite une frappe clavier dans la barre de recherche.
@@ -867,6 +895,7 @@ impl Render for WorkspaceView {
                 .h_full()
                 .child(PackageDetailsView::render(PackageDetailsProps {
                     package: selected_pkg,
+                    alpm_details: self.selected_alpm_details.as_ref(),
                     theme: &theme,
                     is_busy,
                     on_install: Some(Rc::new(cx.listener(|this, _, _, cx| {

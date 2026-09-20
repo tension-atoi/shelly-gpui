@@ -1,4 +1,4 @@
-use crate::backend::models::{UnifiedPackage, UnifiedPackageSource};
+use crate::backend::models::{AlpmPackage, UnifiedPackage, UnifiedPackageSource};
 use crate::components::status_pill::StatusPill;
 use crate::theme::Theme;
 use gpui::*;
@@ -9,6 +9,7 @@ pub type MouseClickHandler = Rc<dyn Fn(&MouseDownEvent, &mut Window, &mut App) +
 
 pub struct PackageDetailsProps<'a> {
     pub package: Option<&'a UnifiedPackage>,
+    pub alpm_details: Option<&'a AlpmPackage>,
     pub theme: &'a Theme,
     pub is_busy: bool,
     pub on_install: Option<MouseClickHandler>,
@@ -189,10 +190,12 @@ impl PackageDetailsView {
         // Métadonnées spécifiques selon la source
         match &pkg.inner {
             UnifiedPackageSource::Standard(alpm) => {
+                let effective_alpm = props.alpm_details.unwrap_or(alpm);
+
                 let mut meta_grid = div()
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .gap_2p5()
                     .p_4()
                     .rounded_md()
                     .bg(theme.bg_surface)
@@ -200,54 +203,64 @@ impl PackageDetailsView {
                     .border_color(theme.border)
                     .mb_6();
 
-                if let Some(ref url) = alpm.url {
+                if let Some(ref repo) = effective_alpm.repository {
+                    meta_grid = meta_grid.child(Self::meta_row("Dépôt", repo, theme));
+                }
+                if let Some(ref base) = effective_alpm.package_base {
+                    if base != &pkg.name {
+                        meta_grid = meta_grid.child(Self::meta_row("Paquet de base", base, theme));
+                    }
+                }
+                if let Some(ref url) = effective_alpm.url {
                     meta_grid = meta_grid.child(Self::meta_row("Site amont", url, theme));
                 }
-                if let Some(size) = alpm.installed_size {
-                    let mb = (size as f64) / (1024.0 * 1024.0);
-                    meta_grid = meta_grid.child(Self::meta_row("Taille installée", &format!("{:.2} Mo", mb), theme));
+                if !effective_alpm.licenses.is_empty() {
+                    meta_grid = meta_grid.child(Self::meta_row("Licence", &effective_alpm.licenses.join(", "), theme));
                 }
-                if !alpm.licenses.is_empty() {
-                    meta_grid = meta_grid.child(Self::meta_row("Licence", &alpm.licenses.join(", "), theme));
+                if let Some(dl_size) = effective_alpm.download_size {
+                    meta_grid = meta_grid.child(Self::meta_row("Taille téléchargement", &Self::format_size(dl_size), theme));
                 }
-                if let Some(ref date) = alpm.build_date {
+                if let Some(size) = effective_alpm.installed_size.or(effective_alpm.size) {
+                    meta_grid = meta_grid.child(Self::meta_row("Taille installée", &Self::format_size(size), theme));
+                }
+                if let Some(ref reason) = effective_alpm.install_reason {
+                    meta_grid = meta_grid.child(Self::meta_row("Motif d'installation", reason, theme));
+                }
+                if let Some(ref date) = effective_alpm.build_date {
                     meta_grid = meta_grid.child(Self::meta_row("Date de compilation", date, theme));
+                }
+                if let Some(ref date) = effective_alpm.install_date {
+                    meta_grid = meta_grid.child(Self::meta_row("Date d'installation", date, theme));
+                }
+                if !effective_alpm.groups.is_empty() {
+                    meta_grid = meta_grid.child(Self::meta_row("Groupes", &effective_alpm.groups.join(", "), theme));
                 }
 
                 root = root.child(meta_grid);
 
-                // Dépendances
-                if !alpm.depends.is_empty() {
-                    let mut deps_div = div()
-                        .flex()
-                        .flex_col()
-                        .mb_6()
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.text_muted)
-                                .mb_2()
-                                .child(format!("DÉPENDANCES ({})", alpm.depends.len())),
-                        );
+                // Fournit (Provides)
+                if !effective_alpm.provides.is_empty() {
+                    root = root.child(Self::chip_section("FOURNIT (PROVIDES)", &effective_alpm.provides, theme, theme.text_secondary));
+                }
 
-                    let mut chips = div().flex().flex_wrap().gap_2();
-                    for dep in alpm.depends.iter().take(24) {
-                        chips = chips.child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .rounded_sm()
-                                .bg(theme.bg_surface)
-                                .border_1()
-                                .border_color(theme.border)
-                                .text_xs()
-                                .text_color(theme.text_secondary)
-                                .child(dep.clone()),
-                        );
-                    }
-                    deps_div = deps_div.child(chips);
-                    root = root.child(deps_div);
+                // Conflits (Conflicts)
+                if !effective_alpm.conflicts.is_empty() {
+                    root = root.child(Self::chip_section("CONFLITS", &effective_alpm.conflicts, theme, theme.danger));
+                }
+
+                // Dépendances
+                if !effective_alpm.depends.is_empty() {
+                    root = root.child(Self::chip_section(&format!("DÉPENDANCES ({})", effective_alpm.depends.len()), &effective_alpm.depends, theme, theme.text_secondary));
+                }
+
+                // Dépendances optionnelles
+                if !effective_alpm.opt_depends.is_empty() {
+                    root = root.child(Self::chip_section(&format!("DÉPENDANCES OPTIONNELLES ({})", effective_alpm.opt_depends.len()), &effective_alpm.opt_depends, theme, theme.warning));
+                }
+
+                // Requis par (Required by)
+                if !effective_alpm.required_by.is_empty() {
+                    root = root.child(Self::chip_section(&format!("REQUIS PAR ({})", effective_alpm.required_by.len()), &effective_alpm.required_by, theme, theme.text_muted));
                 }
             }
             UnifiedPackageSource::Aur(aur) => {
@@ -326,5 +339,49 @@ impl PackageDetailsView {
             .text_xs()
             .child(div().text_color(theme.text_muted).child(label))
             .child(div().text_color(theme.text_primary).font_weight(FontWeight::MEDIUM).child(val.to_string()))
+    }
+
+    fn chip_section(title: &str, items: &[String], theme: &Theme, chip_text_color: Rgba) -> impl IntoElement {
+        let section = div()
+            .flex()
+            .flex_col()
+            .mb_6()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_muted)
+                    .mb_2()
+                    .child(title.to_string()),
+            );
+
+        let mut chips = div().flex().flex_wrap().gap_2();
+        for item in items.iter().take(30) {
+            chips = chips.child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .rounded_sm()
+                    .bg(theme.bg_surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .text_xs()
+                    .text_color(chip_text_color)
+                    .child(item.clone()),
+            );
+        }
+        section.child(chips)
+    }
+
+    fn format_size(bytes: u64) -> String {
+        if bytes >= 1024 * 1024 * 1024 {
+            format!("{:.2} Go", (bytes as f64) / (1024.0 * 1024.0 * 1024.0))
+        } else if bytes >= 1024 * 1024 {
+            format!("{:.2} Mo", (bytes as f64) / (1024.0 * 1024.0))
+        } else if bytes >= 1024 {
+            format!("{:.2} Ko", (bytes as f64) / 1024.0)
+        } else {
+            format!("{} octets", bytes)
+        }
     }
 }
