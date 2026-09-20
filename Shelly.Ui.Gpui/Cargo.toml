@@ -1,0 +1,24 @@
+[package]
+name = "shelly-gpui"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tension Atoi", "Seafoam Labs"]
+description = "High-performance GPU-accelerated package manager frontend for Shelly and Arch Linux"
+license = "GPL-3.0-only"
+
+[dependencies]
+gpui = "0.2.2"
+tokio = { version = "1.40", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+futures = "0.3"
+log = "0.4"
+env_logger = "0.11"
+dirs = "6.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
