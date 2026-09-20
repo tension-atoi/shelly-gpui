@@ -18,6 +18,9 @@ impl UiMetrics {
     pub const LIST_MIN_USABLE: f32 = 340.0;
     pub const INSPECTOR_MIN_WIDTH: f32 = 320.0;
     pub const INSPECTOR_MIN_USABLE: f32 = 320.0;
+    pub const INSPECTOR_MAX_WIDTH: f32 = 520.0;
+    pub const INSPECTOR_MAX_RATIO: f32 = 3.0 / 7.0;
+    pub const HORIZONTAL_SPLIT_MIN_CONTENT_WIDTH: f32 = 320.0 * (7.0 / 3.0);
 
     // ── Workbench Dimensions ─────────────────────────────────────────────────
     pub const SEARCH_INPUT_HEIGHT: f32 = 40.0;
@@ -83,5 +86,13 @@ mod tests {
             UiMetrics::SPLITTER_WIDTH > 0.0,
             "Splitter width must be positive"
         );
+    }
+
+    #[test]
+    fn test_inspector_ratio_constants() {
+        assert!(UiMetrics::INSPECTOR_MAX_RATIO > 0.42 && UiMetrics::INSPECTOR_MAX_RATIO < 0.43);
+        assert_eq!(UiMetrics::INSPECTOR_MAX_WIDTH, 520.0);
+        assert_eq!(UiMetrics::INSPECTOR_MIN_USABLE, 320.0);
+        assert!(UiMetrics::HORIZONTAL_SPLIT_MIN_CONTENT_WIDTH > 746.0);
     }
 }

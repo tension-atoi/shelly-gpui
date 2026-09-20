@@ -30,25 +30,55 @@ pub struct SplitterDragState {
     pub start_pointer_x: f32,
 }
 
+/// Mode de disposition adaptatif du workbench
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkstationLayoutMode {
+    /// Mode scindé horizontal : liste à gauche, splitter, inspecteur docké à droite
+    Horizontal,
+    /// Mode empilé : liste au-dessus, inspecteur en-dessous (zéro overlay)
+    Stacked,
+}
+
+impl WorkstationLayoutMode {
+    pub fn from_content_width(content_width: f32) -> Self {
+        if content_width >= UiMetrics::HORIZONTAL_SPLIT_MIN_CONTENT_WIDTH {
+            WorkstationLayoutMode::Horizontal
+        } else {
+            WorkstationLayoutMode::Stacked
+        }
+    }
+}
+
 /// Calcul pur et robuste de la largeur du panneau dérivé des deltas de pointeur
-/// Garantit un minimum invariant pour la liste et l'inspecteur à toute largeur de fenêtre
+/// Garantit les invariants stricts du contrat UX :
+/// 1. inspector_width <= min(520.0, content_width * 3/7)
+/// 2. inspector_width >= 320.0 (INSPECTOR_MIN_USABLE)
+/// 3. list_width >= LIST_MIN_USABLE (340.0)
 pub fn compute_splitter_width(
     drag_start_width: f32,
     drag_start_pointer_x: f32,
     current_pointer_x: f32,
-    window_width: f32,
+    content_width: f32,
 ) -> f32 {
     let delta_x = current_pointer_x - drag_start_pointer_x;
     let requested_width = drag_start_width + delta_x;
-    let dynamic_list_max = (window_width
-        - UiMetrics::SIDEBAR_EXPANDED
-        - UiMetrics::SPLITTER_WIDTH
-        - UiMetrics::INSPECTOR_MIN_USABLE)
-        .min(700.0);
-    requested_width.clamp(
-        UiMetrics::LIST_MIN_USABLE,
-        dynamic_list_max.max(UiMetrics::LIST_MIN_USABLE),
-    )
+    let (list_min, list_max) = compute_splitter_bounds(content_width);
+    if list_min <= list_max {
+        requested_width.clamp(list_min, list_max)
+    } else {
+        list_min
+    }
+}
+
+/// Bornes légales strictes de la largeur de liste dans le domaine horizontal
+pub fn compute_splitter_bounds(content_width: f32) -> (f32, f32) {
+    let inspector_max =
+        (content_width * UiMetrics::INSPECTOR_MAX_RATIO).min(UiMetrics::INSPECTOR_MAX_WIDTH);
+    let inspector_min = UiMetrics::INSPECTOR_MIN_USABLE;
+    let list_min =
+        (content_width - UiMetrics::SPLITTER_WIDTH - inspector_max).max(UiMetrics::LIST_MIN_USABLE);
+    let list_max = (content_width - UiMetrics::SPLITTER_WIDTH - inspector_min).max(list_min);
+    (list_min, list_max)
 }
 
 pub struct PackageWorkstationView {
@@ -128,7 +158,7 @@ impl PackageWorkstationView {
             store,
             console,
             toast_center,
-            list_pane_width: 460.0,
+            list_pane_width: 640.0,
             drag_state: None,
             scroll_handle: UniformListScrollHandle::new(),
             on_mutation: None,
@@ -174,7 +204,7 @@ impl PackageWorkstationView {
     pub fn on_pointer_move(
         &mut self,
         event: &MouseMoveEvent,
-        window_width: f32,
+        content_width: f32,
         cx: &mut Context<Self>,
     ) {
         if let Some(drag) = self.drag_state {
@@ -183,7 +213,7 @@ impl PackageWorkstationView {
                 drag.start_width,
                 drag.start_pointer_x,
                 current_x,
-                window_width,
+                content_width,
             );
             if (new_width - self.list_pane_width).abs() >= 1.0 {
                 self.list_pane_width = new_width;
@@ -222,10 +252,30 @@ impl PackageWorkstationView {
 }
 
 impl Render for PackageWorkstationView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let entity = cx.entity().clone();
         let is_busy = self.console.read(cx).is_running();
+
+        let sidebar_collapsed = self.session.read(cx).sidebar_collapsed;
+        let sidebar_width = if sidebar_collapsed {
+            UiMetrics::SIDEBAR_COLLAPSED
+        } else {
+            UiMetrics::SIDEBAR_EXPANDED
+        };
+        let window_width = window.window_bounds().get_bounds().size.width / px(1.0);
+        let content_width = (window_width - sidebar_width).max(0.0);
+        let layout_mode = WorkstationLayoutMode::from_content_width(content_width);
+
+        let (list_min, list_max) = compute_splitter_bounds(content_width);
+        let effective_list_width = self.list_pane_width.clamp(list_min, list_max);
+        self.list_pane_width = effective_list_width;
+
+        let active_list_width = if layout_mode == WorkstationLayoutMode::Horizontal {
+            effective_list_width
+        } else {
+            content_width
+        };
 
         let (
             destination,
@@ -328,7 +378,7 @@ impl Render for PackageWorkstationView {
 
                 QueryWorkbench::render(&QueryWorkbenchProps {
                     search_input: self.search_input.clone(),
-                    list_pane_width: self.list_pane_width,
+                    list_pane_width: active_list_width,
                     source_scope,
                     state_filter,
                     sort_mode,
@@ -737,15 +787,27 @@ impl Render for PackageWorkstationView {
             }
         };
 
-        let list_pane = div()
-            .flex()
-            .flex_col()
-            .w(px(self.list_pane_width))
-            .h_full()
-            .border_r_1()
-            .border_color(theme.border)
-            .child(top_bar)
-            .child(div().flex_1().overflow_hidden().child(list_body));
+        let list_pane = if layout_mode == WorkstationLayoutMode::Horizontal {
+            div()
+                .flex()
+                .flex_col()
+                .w(px(effective_list_width))
+                .h_full()
+                .border_r_1()
+                .border_color(theme.border)
+                .child(top_bar)
+                .child(div().flex_1().overflow_hidden().child(list_body))
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .w_full()
+                .flex_1()
+                .border_b_1()
+                .border_color(theme.border)
+                .child(top_bar)
+                .child(div().flex_1().overflow_hidden().child(list_body))
+        };
 
         // ── 3. Splitter draggable isolé ─────────────────────────────────────
         let is_resizing = self.drag_state.is_some();
@@ -811,118 +873,152 @@ impl Render for PackageWorkstationView {
         let entity_nav_dep = entity.clone();
         let tc_entity = self.toast_center.clone();
 
-        let details_pane = div().flex_1().h_full().overflow_hidden().child(
-            PackageInspectorView::render_with_motion(
-                PackageInspectorProps {
-                    package: selected_pkg.as_ref(),
-                    alpm_details: alpm_details.as_ref(),
-                    detail_error: detail_error.as_deref(),
-                    pkgbuild: cached_pkgbuild,
-                    is_loading_pkgbuild: self.is_loading_pkgbuild,
-                    active_tab,
-                    theme: &theme,
-                    is_busy,
-                    copy_feedback: self.copy_cmd_feedback,
-                    on_select_tab: Rc::new(move |tab, _w, cx| {
-                        entity_tab.update(cx, |view, cx| {
-                            view.session.update(cx, |s, cx| {
-                                s.set_inspector_tab(tab, cx);
-                            });
+        let inspector_element = PackageInspectorView::render_with_motion(
+            PackageInspectorProps {
+                package: selected_pkg.as_ref(),
+                alpm_details: alpm_details.as_ref(),
+                detail_error: detail_error.as_deref(),
+                pkgbuild: cached_pkgbuild,
+                is_loading_pkgbuild: self.is_loading_pkgbuild,
+                active_tab,
+                theme: &theme,
+                is_busy,
+                copy_feedback: self.copy_cmd_feedback,
+                on_select_tab: Rc::new(move |tab, _w, cx| {
+                    entity_tab.update(cx, |view, cx| {
+                        view.session.update(cx, |s, cx| {
+                            s.set_inspector_tab(tab, cx);
                         });
-                    }),
-                    on_install: selected_pkg_clone.as_ref().and_then(|p| {
-                        on_mutation_cb.as_ref().map(|cb| {
-                            let p_c = p.clone();
-                            let cb_c = cb.clone();
-                            Rc::new(move |window: &mut Window, cx: &mut App| {
-                                cb_c(&p_c, true, window, cx);
-                            }) as Rc<dyn Fn(&mut Window, &mut App)>
-                        })
-                    }),
-                    on_remove: selected_pkg_clone.as_ref().and_then(|p| {
-                        on_mutation_cb_rm.as_ref().map(|cb| {
-                            let p_c = p.clone();
-                            let cb_c = cb.clone();
-                            Rc::new(move |window: &mut Window, cx: &mut App| {
-                                cb_c(&p_c, false, window, cx);
-                            }) as Rc<dyn Fn(&mut Window, &mut App)>
-                        })
-                    }),
-                    on_copy_install_cmd: selected_pkg_clone.as_ref().and_then(|p| {
-                        canonical_install_command(p).map(|cmd| {
-                            let tc = tc_entity.clone();
-                            let rm = reduce_motion;
-                            Rc::new(move |_w: &mut Window, cx: &mut App| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(cmd.clone()));
-                                tc.update(cx, |center, cx| {
-                                    center.post(
-                                        ToastKind::Success,
-                                        "Command copied",
-                                        cmd.clone(),
-                                        None,
-                                        rm,
-                                        cx,
-                                    );
-                                });
-                            }) as Rc<dyn Fn(&mut Window, &mut App)>
-                        })
-                    }),
-                    on_copy_pkgbuild: cached_pkgbuild.cloned().map(|content| {
+                    });
+                }),
+                on_install: selected_pkg_clone.as_ref().and_then(|p| {
+                    on_mutation_cb.as_ref().map(|cb| {
+                        let p_c = p.clone();
+                        let cb_c = cb.clone();
+                        Rc::new(move |window: &mut Window, cx: &mut App| {
+                            cb_c(&p_c, true, window, cx);
+                        }) as Rc<dyn Fn(&mut Window, &mut App)>
+                    })
+                }),
+                on_remove: selected_pkg_clone.as_ref().and_then(|p| {
+                    on_mutation_cb_rm.as_ref().map(|cb| {
+                        let p_c = p.clone();
+                        let cb_c = cb.clone();
+                        Rc::new(move |window: &mut Window, cx: &mut App| {
+                            cb_c(&p_c, false, window, cx);
+                        }) as Rc<dyn Fn(&mut Window, &mut App)>
+                    })
+                }),
+                on_copy_install_cmd: selected_pkg_clone.as_ref().and_then(|p| {
+                    canonical_install_command(p).map(|cmd| {
                         let tc = tc_entity.clone();
                         let rm = reduce_motion;
                         Rc::new(move |_w: &mut Window, cx: &mut App| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(content.clone()));
+                            cx.write_to_clipboard(ClipboardItem::new_string(cmd.clone()));
                             tc.update(cx, |center, cx| {
                                 center.post(
                                     ToastKind::Success,
-                                    "PKGBUILD copied",
-                                    "The PKGBUILD recipe has been copied to your clipboard.",
+                                    "Command copied",
+                                    cmd.clone(),
                                     None,
                                     rm,
                                     cx,
                                 );
                             });
                         }) as Rc<dyn Fn(&mut Window, &mut App)>
-                    }),
-                    on_navigate_package: Some(Rc::new(move |pkg_name, _w, cx| {
-                        entity_nav_dep.update(cx, |view, cx| {
-                            view.session.update(cx, |s, cx| {
-                                s.set_destination(crate::state::NavDestination::Browse, cx);
-                                s.set_source_scope(SourceScope::all(), cx);
-                                s.set_state_filter(PackageStateFilter::All, cx);
-                                s.set_search_query(pkg_name.clone(), cx);
-                                s.select_package(None, cx);
-                            });
+                    })
+                }),
+                on_copy_pkgbuild: cached_pkgbuild.cloned().map(|content| {
+                    let tc = tc_entity.clone();
+                    let rm = reduce_motion;
+                    Rc::new(move |_w: &mut Window, cx: &mut App| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(content.clone()));
+                        tc.update(cx, |center, cx| {
+                            center.post(
+                                ToastKind::Success,
+                                "PKGBUILD copied",
+                                "The PKGBUILD recipe has been copied to your clipboard.",
+                                None,
+                                rm,
+                                cx,
+                            );
                         });
-                    })),
-                    on_retry_details,
-                },
-                reduce_motion,
-                inspector_tab_epoch,
-            ),
+                    }) as Rc<dyn Fn(&mut Window, &mut App)>
+                }),
+                on_navigate_package: Some(Rc::new(move |pkg_name, _w, cx| {
+                    entity_nav_dep.update(cx, |view, cx| {
+                        view.session.update(cx, |s, cx| {
+                            s.set_destination(crate::state::NavDestination::Browse, cx);
+                            s.set_source_scope(SourceScope::all(), cx);
+                            s.set_state_filter(PackageStateFilter::All, cx);
+                            s.set_search_query(pkg_name.clone(), cx);
+                            s.select_package(None, cx);
+                        });
+                    });
+                })),
+                on_retry_details,
+            },
+            reduce_motion,
+            inspector_tab_epoch,
         );
 
+        let details_pane = if layout_mode == WorkstationLayoutMode::Horizontal {
+            div()
+                .flex_1()
+                .h_full()
+                .overflow_hidden()
+                .child(inspector_element)
+        } else {
+            div()
+                .w_full()
+                .h(px(280.0))
+                .overflow_hidden()
+                .child(inspector_element)
+        };
+
         // ── 5. Conteneur racine de la station de travail absorbant les moves ──
-        div()
-            .id("package_workstation_root")
-            .flex()
-            .flex_row()
-            .size_full()
-            .overflow_hidden()
-            .on_mouse_move(move |event, window, cx| {
-                let window_width = window.window_bounds().get_bounds().size.width / px(1.0);
-                entity_move.update(cx, |view, cx| {
-                    view.on_pointer_move(event, window_width, cx);
-                });
-            })
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                entity_up.update(cx, |view, cx| {
-                    view.on_pointer_up(cx);
-                });
-            })
-            .child(list_pane)
-            .child(splitter)
-            .child(details_pane)
+        if layout_mode == WorkstationLayoutMode::Horizontal {
+            div()
+                .id("package_workstation_root")
+                .flex()
+                .flex_row()
+                .size_full()
+                .overflow_hidden()
+                .on_mouse_move(move |event, window, cx| {
+                    let window_width = window.window_bounds().get_bounds().size.width / px(1.0);
+                    let sidebar_width = if sidebar_collapsed {
+                        UiMetrics::SIDEBAR_COLLAPSED
+                    } else {
+                        UiMetrics::SIDEBAR_EXPANDED
+                    };
+                    let content_width = (window_width - sidebar_width).max(0.0);
+                    entity_move.update(cx, |view, cx| {
+                        view.on_pointer_move(event, content_width, cx);
+                    });
+                })
+                .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                    entity_up.update(cx, |view, cx| {
+                        view.on_pointer_up(cx);
+                    });
+                })
+                .child(list_pane)
+                .child(splitter)
+                .child(details_pane)
+        } else {
+            div()
+                .id("package_workstation_root")
+                .flex()
+                .flex_col()
+                .size_full()
+                .overflow_hidden()
+                .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                    entity_up.update(cx, |view, cx| {
+                        view.on_pointer_up(cx);
+                    });
+                })
+                .child(list_pane)
+                .child(details_pane)
+        }
     }
 }
 
@@ -932,54 +1028,127 @@ mod tests {
     use core::prelude::v1::test;
 
     #[test]
+    fn test_inspector_ratio_pure_math_and_bounds() {
+        // 1. Boundary at HORIZONTAL_SPLIT_MIN_CONTENT_WIDTH (~746.67px)
+        let min_w = UiMetrics::HORIZONTAL_SPLIT_MIN_CONTENT_WIDTH;
+        let (list_min_boundary, list_max_boundary) = compute_splitter_bounds(min_w);
+        assert!((list_min_boundary - list_max_boundary).abs() < 0.01);
+        let inspector_at_boundary = min_w - UiMetrics::SPLITTER_WIDTH - list_min_boundary;
+        assert!((inspector_at_boundary - UiMetrics::INSPECTOR_MIN_USABLE).abs() < 0.01);
+        assert!(inspector_at_boundary <= min_w * UiMetrics::INSPECTOR_MAX_RATIO + 0.01);
+
+        // 2. Reference 900px viewport
+        let (list_min_900, list_max_900) = compute_splitter_bounds(900.0);
+        let inspector_at_min_list = 900.0 - UiMetrics::SPLITTER_WIDTH - list_min_900;
+        let inspector_at_max_list = 900.0 - UiMetrics::SPLITTER_WIDTH - list_max_900;
+        assert!(inspector_at_min_list <= 900.0 * UiMetrics::INSPECTOR_MAX_RATIO + 0.01);
+        assert!(inspector_at_max_list >= UiMetrics::INSPECTOR_MIN_USABLE - 0.01);
+
+        // 3. Reference 1280px viewport (cap at 520px)
+        let (list_min_1280, list_max_1280) = compute_splitter_bounds(1280.0);
+        let inspector_max_1280 = 1280.0 - UiMetrics::SPLITTER_WIDTH - list_min_1280;
+        let inspector_min_1280 = 1280.0 - UiMetrics::SPLITTER_WIDTH - list_max_1280;
+        assert_eq!(inspector_max_1280, UiMetrics::INSPECTOR_MAX_WIDTH);
+        assert_eq!(inspector_min_1280, UiMetrics::INSPECTOR_MIN_USABLE);
+        assert_eq!(list_min_1280, 755.0);
+        assert_eq!(list_max_1280, 955.0);
+
+        // 4. Large 1600px viewport (cap at 520px)
+        let (list_min_1600, list_max_1600) = compute_splitter_bounds(1600.0);
+        let inspector_max_1600 = 1600.0 - UiMetrics::SPLITTER_WIDTH - list_min_1600;
+        let inspector_min_1600 = 1600.0 - UiMetrics::SPLITTER_WIDTH - list_max_1600;
+        assert_eq!(inspector_max_1600, UiMetrics::INSPECTOR_MAX_WIDTH);
+        assert_eq!(inspector_min_1600, UiMetrics::INSPECTOR_MIN_USABLE);
+        assert_eq!(list_min_1600, 1075.0);
+        assert_eq!(list_max_1600, 1275.0);
+    }
+
+    #[test]
+    fn test_layout_mode_adaptation_at_boundary() {
+        assert_eq!(
+            WorkstationLayoutMode::from_content_width(700.0),
+            WorkstationLayoutMode::Stacked
+        );
+        assert_eq!(
+            WorkstationLayoutMode::from_content_width(746.0),
+            WorkstationLayoutMode::Stacked
+        );
+        assert_eq!(
+            WorkstationLayoutMode::from_content_width(
+                UiMetrics::HORIZONTAL_SPLIT_MIN_CONTENT_WIDTH
+            ),
+            WorkstationLayoutMode::Horizontal
+        );
+        assert_eq!(
+            WorkstationLayoutMode::from_content_width(800.0),
+            WorkstationLayoutMode::Horizontal
+        );
+        assert_eq!(
+            WorkstationLayoutMode::from_content_width(1280.0),
+            WorkstationLayoutMode::Horizontal
+        );
+    }
+
+    #[test]
     fn test_splitter_delta_forward() {
-        let width = compute_splitter_width(460.0, 650.0, 700.0, 1280.0);
-        assert_eq!(width, 510.0);
+        // At 1280px content_width, bounds are [755.0, 955.0]
+        let width = compute_splitter_width(800.0, 650.0, 700.0, 1280.0);
+        assert_eq!(width, 850.0);
     }
 
     #[test]
     fn test_splitter_delta_reverse() {
-        let width = compute_splitter_width(460.0, 650.0, 600.0, 1280.0);
-        assert_eq!(width, 410.0);
+        // At 1280px content_width, bounds are [755.0, 955.0]
+        let width = compute_splitter_width(800.0, 650.0, 620.0, 1280.0);
+        assert_eq!(width, 770.0);
     }
 
     #[test]
     fn test_splitter_clamp_minimum() {
-        let width = compute_splitter_width(460.0, 650.0, 100.0, 1280.0);
-        assert_eq!(width, 340.0, "Must clamp to 340 minimum");
-    }
-
-    #[test]
-    fn test_dual_usable_splitter_clamp_invariants() {
-        let width = compute_splitter_width(460.0, 650.0, 1000.0, 900.0);
-        assert_eq!(width, 385.0);
-        assert!(width >= UiMetrics::LIST_MIN_USABLE);
-        let inspector_remains =
-            900.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width;
-        assert!(inspector_remains >= UiMetrics::INSPECTOR_MIN_USABLE);
+        // At 1280px, minimum list width is 755.0 so inspector does not exceed 520px
+        let width = compute_splitter_width(800.0, 650.0, 100.0, 1280.0);
+        assert_eq!(
+            width, 755.0,
+            "Must clamp to 755 minimum at 1280px content width"
+        );
     }
 
     #[test]
     fn test_splitter_clamp_maximum() {
-        let width = compute_splitter_width(460.0, 650.0, 1200.0, 1280.0);
-        assert_eq!(width, 700.0, "Must clamp to 700 maximum at 1280px");
+        // At 1280px, maximum list width is 955.0 so inspector maintains at least 320px
+        let width = compute_splitter_width(800.0, 650.0, 1200.0, 1280.0);
+        assert_eq!(
+            width, 955.0,
+            "Must clamp to 955 maximum at 1280px content width"
+        );
+    }
+
+    #[test]
+    fn test_dual_usable_splitter_clamp_invariants() {
+        let (_list_min, list_max) = compute_splitter_bounds(900.0);
+        let width = compute_splitter_width(520.0, 650.0, 1000.0, 900.0);
+        assert_eq!(width, list_max);
+        assert!(width >= UiMetrics::LIST_MIN_USABLE);
+        let inspector_remains = 900.0 - UiMetrics::SPLITTER_WIDTH - width;
+        assert!(inspector_remains >= UiMetrics::INSPECTOR_MIN_USABLE);
+        assert!(inspector_remains <= 900.0 * UiMetrics::INSPECTOR_MAX_RATIO + 0.01);
     }
 
     #[test]
     fn test_splitter_sidebar_offset_independence() {
         // Sidebar collapsed (56px) vs expanded (190px)
-        let collapsed_start_x = 56.0 + 460.0; // 516
-        let collapsed_current_x = 56.0 + 520.0; // 576
+        let collapsed_start_x = 56.0 + 800.0;
+        let collapsed_current_x = 56.0 + 850.0;
         let width_collapsed =
-            compute_splitter_width(460.0, collapsed_start_x, collapsed_current_x, 1280.0);
+            compute_splitter_width(800.0, collapsed_start_x, collapsed_current_x, 1280.0);
 
-        let expanded_start_x = 190.0 + 460.0; // 650
-        let expanded_current_x = 190.0 + 520.0; // 710
+        let expanded_start_x = 190.0 + 800.0;
+        let expanded_current_x = 190.0 + 850.0;
         let width_expanded =
-            compute_splitter_width(460.0, expanded_start_x, expanded_current_x, 1280.0);
+            compute_splitter_width(800.0, expanded_start_x, expanded_current_x, 1280.0);
 
-        assert_eq!(width_collapsed, 520.0);
-        assert_eq!(width_expanded, 520.0);
+        assert_eq!(width_collapsed, 850.0);
+        assert_eq!(width_expanded, 850.0);
         assert_eq!(
             width_collapsed, width_expanded,
             "Splitter width calculation must be completely independent of sidebar width"
@@ -987,39 +1156,25 @@ mod tests {
     }
 
     #[test]
-    fn test_splitter_guarantees_inspector_minimum_across_reference_viewports() {
-        // Reference size 1: 1024x680
-        // max list = (1024 - 190 - 5 - 320).min(700) = 509
-        let width_1024 = compute_splitter_width(460.0, 650.0, 1200.0, 1024.0);
-        assert_eq!(width_1024, 509.0);
-        let inspector_1024 =
-            1024.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1024;
-        assert!(
-            inspector_1024 >= UiMetrics::INSPECTOR_MIN_WIDTH,
-            "Inspector must have at least 320px at 1024px viewport (got {})",
-            inspector_1024
-        );
+    fn test_splitter_guarantees_inspector_bounds_across_reference_viewports() {
+        for content_w in [750.0, 900.0, 1024.0, 1280.0, 1600.0, 1920.0] {
+            let (list_min, list_max) = compute_splitter_bounds(content_w);
+            let insp_at_min = content_w - UiMetrics::SPLITTER_WIDTH - list_min;
+            let insp_at_max = content_w - UiMetrics::SPLITTER_WIDTH - list_max;
 
-        // Reference size 2: 1280x840
-        let width_1280 = compute_splitter_width(460.0, 650.0, 1200.0, 1280.0);
-        assert_eq!(width_1280, 700.0);
-        let inspector_1280 =
-            1280.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1280;
-        assert!(
-            inspector_1280 >= UiMetrics::INSPECTOR_MIN_WIDTH,
-            "Inspector must have at least 320px at 1280px viewport (got {})",
-            inspector_1280
-        );
+            // Inspector must never exceed min(520, content_w * 3/7)
+            let max_allowed =
+                (content_w * UiMetrics::INSPECTOR_MAX_RATIO).min(UiMetrics::INSPECTOR_MAX_WIDTH);
+            assert!(
+                insp_at_min <= max_allowed + 0.01,
+                "Inspector at min list ({insp_at_min}) must not exceed {max_allowed} at content_w={content_w}"
+            );
 
-        // Reference size 3: 1600x1000
-        let width_1600 = compute_splitter_width(460.0, 650.0, 1200.0, 1600.0);
-        assert_eq!(width_1600, 700.0);
-        let inspector_1600 =
-            1600.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1600;
-        assert!(
-            inspector_1600 >= UiMetrics::INSPECTOR_MIN_WIDTH,
-            "Inspector must have at least 320px at 1600px viewport (got {})",
-            inspector_1600
-        );
+            // Inspector must never drop below 320
+            assert!(
+                insp_at_max >= UiMetrics::INSPECTOR_MIN_USABLE - 0.01,
+                "Inspector at max list ({insp_at_max}) must be at least 320 at content_w={content_w}"
+            );
+        }
     }
 }
