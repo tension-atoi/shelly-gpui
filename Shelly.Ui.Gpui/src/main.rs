@@ -32,6 +32,7 @@ fn main() {
                 appears_transparent: false,
                 traffic_light_position: None,
             }),
+            app_id: Some("shelly-gpui".into()),
             ..Default::default()
         };
 

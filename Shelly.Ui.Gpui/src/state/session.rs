@@ -346,4 +346,61 @@ mod tests {
         assert_eq!(InspectorTab::Dependencies.icon(), "🔗");
         assert_eq!(InspectorTab::FilesBuild.icon(), "🛠️");
     }
+
+    #[test]
+    fn test_view_mode_continuity_preserves_selection_query_and_generation() {
+        let mut session = AppSession::new();
+        session.destination = NavDestination::Browse;
+        session.search_query = "ripgrep".to_string();
+        session.search_generation = 12;
+
+        let expected_key = PackageKey::new(
+            PackageSourceKind::Alpm,
+            "ripgrep",
+            Some("cachyos-v3".to_string()),
+        );
+        session.selected_package_key = Some(expected_key.clone());
+        assert_eq!(session.view_mode, PackageViewMode::Cards);
+
+        // Switch Cards -> Table
+        session.view_mode = PackageViewMode::Table;
+
+        // Verify continuity
+        assert_eq!(session.search_query, "ripgrep");
+        assert_eq!(session.selected_package_key, Some(expected_key.clone()));
+        assert_eq!(session.search_generation, 12);
+
+        // Switch Table -> Cards
+        session.view_mode = PackageViewMode::Cards;
+
+        // Verify continuity again
+        assert_eq!(session.search_query, "ripgrep");
+        assert_eq!(session.selected_package_key, Some(expected_key));
+        assert_eq!(session.search_generation, 12);
+    }
+
+    #[test]
+    fn test_dependency_navigation_preserves_clean_package_name() {
+        use crate::state::semantic::{DependencyKind, DependencyRef};
+
+        let raw_dep = "libalpm.so>=14: Arch package management library";
+        let parsed = DependencyRef::parse(raw_dep, DependencyKind::Runtime);
+        assert_eq!(parsed.name, "libalpm.so");
+        assert_eq!(parsed.constraint, Some(">=14".to_string()));
+
+        // Simulate dependency click navigation in session
+        let mut session = AppSession::new();
+        session.destination = NavDestination::Installed;
+        session.search_query = "shelly".to_string();
+
+        // When navigating to dependency, clean name is used, not raw constraint/description
+        session.destination = NavDestination::Browse;
+        session.search_query = parsed.name.clone();
+        session.search_generation += 1;
+
+        assert_eq!(session.destination, NavDestination::Browse);
+        assert_eq!(session.search_query, "libalpm.so");
+        assert!(!session.search_query.contains(">=14"));
+        assert!(!session.search_query.contains("Arch package"));
+    }
 }

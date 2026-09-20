@@ -202,10 +202,34 @@ impl WorkspaceView {
         // Chargement initial asynchrone non-bloquant
         view.trigger_initial_load(cx);
 
+        if let Ok(sf) = std::env::var("SHELLY_SOURCE_FILTER") {
+            let filter = match sf.to_ascii_lowercase().as_str() {
+                "alpm" => Some(SourceFilter::Alpm),
+                "aur" => Some(SourceFilter::Aur),
+                "flatpak" => Some(SourceFilter::Flatpak),
+                "appimage" => Some(SourceFilter::AppImage),
+                "all" => Some(SourceFilter::All),
+                _ => None,
+            };
+            if let Some(f) = filter {
+                view.session.update(cx, |s, cx| s.set_source_filter(f, cx));
+            }
+        }
+
         if let Ok(query) = std::env::var("SHELLY_SEARCH_QUERY") {
             if !query.trim().is_empty() {
                 view.search_input_buffer = query.clone();
                 view.execute_search(query, cx);
+            }
+        }
+
+        if let Ok(cmd_to_copy) = std::env::var("SHELLY_TEST_COPY_CMD") {
+            view.copy_install_command(cmd_to_copy, cx);
+        }
+
+        if let Ok(scroll_idx_str) = std::env::var("SHELLY_TEST_SCROLL_INDEX") {
+            if let Ok(idx) = scroll_idx_str.parse::<usize>() {
+                view.scroll_handle.scroll_to_item(idx, ScrollStrategy::Top);
             }
         }
 
@@ -608,7 +632,24 @@ impl WorkspaceView {
                             s.select_package(Some(k), cx);
                         }
                     });
-                    view.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
+                    if let Ok(scroll_idx_str) = std::env::var("SHELLY_TEST_SCROLL_INDEX") {
+                        if let Ok(idx) = scroll_idx_str.parse::<usize>() {
+                            cx.spawn(async move |this, cx| {
+                                cx.background_executor()
+                                    .timer(std::time::Duration::from_millis(200))
+                                    .await;
+                                let _ = this.update(cx, |view, cx| {
+                                    view.scroll_handle.scroll_to_item(idx, ScrollStrategy::Top);
+                                    cx.notify();
+                                });
+                            })
+                            .detach();
+                        } else {
+                            view.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
+                        }
+                    } else {
+                        view.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
+                    }
                 }
             });
         })
