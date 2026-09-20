@@ -1,5 +1,5 @@
 name: "🐛 Bug Report"
-description: Report a bug to help us improve Shelly
+description: Report a bug to help us improve Shelly GPUI
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -11,36 +11,42 @@ body:
       options:
         - label: I have searched existing issues and this is not a duplicate.
           required: true
-        - label: I have verified the issue is reproducible with the latest available Shelly version.
+        - label: I have verified the issue is reproducible on the latest commit/release of Shelly GPUI.
           required: true
-        - label: I have/will fill this template with the required information to the best of my ability.
-          required: false
-        - label: I have checked whether the issue occurs across different network conditions or devices.
-          required: false
+
   - type: input
-    id: firmware
+    id: version
     attributes:
-      label: Shelly version
+      label: Shelly GPUI version or commit
+      placeholder: e.g. v0.1.0 or git commit hash
     validations:
       required: true
+
   - type: checkboxes
-    id: application
+    id: component
     attributes:
-      label: Shelly Application
+      label: Affected Component
       options:
-        - label: Shelly UI (GTK4)
-        - label: Shelly Tray Notification Service
-        - label: Shelly CLI
+        - label: Shelly UI (GPUI Rust Frontend)
+        - label: Shelly CLI (Zig Backend)
+        - label: Package Inspector / Details View
+        - label: Live Search / Input
+        - label: Terminal Log Drawer
+        - label: Packaging (PKGBUILD / AUR)
+
   - type: textarea
-    id: device-info
+    id: system-info
     attributes:
-      label: Device Information
-      description: Desktop (please complete the following information)
+      label: System & Graphics Information
+      description: Distribution, Desktop Environment, Display Server, GPU
       placeholder: |
-        - Distribution : [e.g. CachyOS, Garuda]
-        - Version [e.g. v1.2.8]
+        - OS / Distribution: [e.g. Arch Linux, EndeavourOS, CachyOS]
+        - Display Server: [Wayland or X11]
+        - Desktop Environment: [e.g. Hyprland, GNOME 47, KDE Plasma 6]
+        - GPU / Drivers: [e.g. AMD Radeon RX 7900 (Mesa RADV), NVIDIA 560 Proprietary, Intel Xe]
     validations:
       required: true
+
   - type: textarea
     id: description
     attributes:
@@ -48,39 +54,23 @@ body:
       description: A clear and concise description of what the bug is.
     validations:
       required: true
+
   - type: textarea
     id: steps
     attributes:
       label: Steps to Reproduce
       description: Minimal steps needed to trigger the issue.
       placeholder: |
-        1.
-        2.
-        3.
+        1. Open Shelly GPUI
+        2. Click on ...
+        3. Type ...
+        4. See error
     validations:
       required: true
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected Behavior
-      description: What did you expect to happen?
-    validations:
-      required: true
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual Behavior
-      description: What actually happened?
-    validations:
-      required: true
+
   - type: textarea
     id: logs
     attributes:
-      label: Logs / Additional Output
-      description: Paste relevant logs here (app logs, MQTT messages, HTTP responses, Home Assistant logs, etc.). Wrap large outputs in a <details> block if needed.
+      label: Logs / Terminal Output
+      description: Run `RUST_LOG=debug shelly-gpui` or paste logs from the terminal drawer.
       render: shell
-  - type: textarea
-    id: additional
-    attributes:
-      label: Additional Information
-      description: Any other relevant info — screenshots, videos, frequency of the issue, whether it affects multiple devices, etc.

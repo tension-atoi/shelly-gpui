@@ -1,9 +1,5 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: Shelly Fluxer
-    url: https://fluxer.gg/vOjrMXcE
-    about: Chat with the community for general questions and support.
-  - name: Shelly's Site
-    url: https://www.seafoam-labs.org/
-    about: Our site with documentation and more.
- 
+  - name: GitHub Discussions
+    url: https://github.com/tension-atoi/shelly-gpui/discussions
+    about: Ask questions, discuss design ideas, and connect with other users.

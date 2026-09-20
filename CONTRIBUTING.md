@@ -1,173 +1,85 @@
-# Contributing to Shelly
+# Contributing to Shelly GPUI
 
-Thank you for your interest in contributing to Shelly! This guide explains the project structure and how the components
-interact.
+Thank you for your interest in contributing to **Shelly GPUI**!  
+We welcome bug reports, feature suggestions, documentation improvements, and code contributions.
 
-## Project Structure
+---
 
-Shelly is organized into several interconnected projects:
+## 🏛 Project Architecture
 
-### Core Components
+Shelly GPUI is built as a modular system separating high-performance GUI rendering from system transaction logic:
 
-| Project                             | Description                                                                                           |
-|-------------------------------------|-------------------------------------------------------------------------------------------------------|
-| **Shelly.UI.GTK**                   | GTK UI Frontend                                                                                       |
-| **Shelly.CLI.Zig**                  | Command-line interface for terminal-based package management                                          |
-| **Shelly-Notifications**            | Application to handle tray services and notifications.                                                |
-| **Shelly.Http**                     | Standalone HTTP client and compatibility TLS implementation                                           |
-| **Shelly.PackageManager**           | Core libalpm/AUR/AppImage library and backend-neutral Flatpak facade                                  |
-| **Shelly.Flatpak.Backend**          | Optional ABI-versioned shared library containing generated libflatpak bindings and native operations  |
-| **Shelly.Utilities**                | Shared utility classes and extensions used across projects                                            |
+- **`Shelly.Ui.Gpui/` (Rust)**:
+  - Frontend built on [GPUI 0.2](https://github.com/zed-industries/zed/tree/main/crates/gpui) (the GPU framework powering the Zed editor).
+  - Handles vector GPU rendering via Vulkan/Wayland/X11, layout, keyboard events, and asynchronous UI state.
+  - Implements the interactive live search with non-blocking debounce, collapsible log drawer, and rich package inspector.
 
-## How Components Interact
+- **`Shelly.Cli.Zig/` (Zig)**:
+  - High-performance CLI backend interacting with `libalpm.so` (Arch Linux Package Management), AUR RPC, Flatpaks, and AppImages.
+  - Generates structured JSON (`-j`) for queries and framed streams (`--ui-mode`) for live operation logging.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                  USER                                       │
-└──────────┬──────────────────────────┬────────────────────────────┬──────────┘
-           │                          │                            │           
-           ▼                          │                            ▼           
-    ┌──────────────┐                  │                    ┌────────────────┐  
-    │              │ ─────────────────┼─────────────────►  │                │  
-    │ Shelly-Notif │                  ▼                    │   Shelly-CLI   │  
-    │              │  ◄─┐     ┌────────────────┐   sudo    │   (Terminal)   │  
-    │              │    │d-bus│                │ ────────► │                │  
-    └───────┬──────┘    └─────┤   Shelly-UI    │           └──────┬─────────┘  
-            │    d-bus        │     (GTK)      │                  │            
-            └───────────────► │                │                  │            
-                              └────────────────┘                  │            
-                                                                  │                            
-                                       ┌──────────────────────────┘                                                                                                                          
-                                       ▼                                       
-                             ┌───────────────────┐                                                              
-                             │   PackageManager  │                             
-                             │      (core)       │                                                                         
-                             └─────────┬─────────┘                                                                      
-                            ┌──────────┼───────────┐                           
-                            │          │           │                           
-                            ▼          ▼           ▼                           
-                       ┌─────────┐ ┌────────┐  ┌─────────┐                     
-                       │ libalpm │ │  AUR   │  │ flatpak │                     
-                       │ Backend │ │  API   │  │ Backend │                     
-                       └─────────┘ └────────┘  └─────────┘                                    
-```
+- **`packaging/`**:
+  - Contains Arch Linux `PKGBUILD` scripts for local building and AUR deployment (`shelly-gpui-git`).
 
-### Key Interactions
+---
 
-1. **Shelly-UI ↔ Shelly-CLI**: The UI launches the CLI via `sudo` with `--ui-mode` flag for privileged operations (
-   install, remove, upgrade). The CLI outputs structured frames that the UI parses for progress updates.
+## 🛠 Local Development Setup
 
-2. **Shelly-CLI uses the PackageManager library for:
-    - ALPM operation
-    - AUR package management (
-    - Flatpak operations
-    - AppImage Operations
-   
-3. **Shelly-Notifications** uses the d-bus to communicate with the UI process, tray icon, and notifications.
+### Prerequisites
 
-4. **PackageManager → System**:
-    - Directly interfaces with `libalpm` for native package operations
-    - Calls AUR API for package searches and metadata
-    - Lazily loads `/usr/lib/shelly/libshelly-flatpak-backend.so.1` for
-      Flatpak operations; PackageManager itself does not link libflatpak
-
-5. Shelly-UI should never directly interact with the PackageManager library. All operations should be performed via the
-   CLI.
-
-## Building the Project
+On Arch Linux or an Arch-based distribution:
 
 ```bash
-# Exercise the optional-backend boundary, CLI, and core-only smoke tests
-scripts/test-flatpak-separation.sh
-
-# Build individual native projects
-(cd Shelly.Flatpak.Backend && zig build)
-(cd Shelly.Http && zig build)
-(cd Shelly.PackageManager && zig build)
-(cd Shelly.Cli.Zig && zig build)
-(cd Shelly.Ui.Gtk && zig build)
+sudo pacman -S --needed base-devel git rust cargo zig pacman libglvnd fontconfig freetype2 wayland mesa vulkan-icd-loader polkit
 ```
 
-## Running Tests
+### Development Workflow
 
-```bash
-(cd Shelly.Flatpak.Backend && zig build test)
-(cd Shelly.Flatpak.Backend && zig build abi-test)
-(cd Shelly.Flatpak.Backend && zig build parity-test)
-(cd Shelly.Flatpak.Backend && zig build integration-test)
-(cd Shelly.Http && zig build test)
-(cd Shelly.PackageManager && zig build test)
-(cd Shelly.PackageManager && zig build flatpak-test)
-(cd Shelly.Cli.Zig && zig build test)
-```
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/tension-atoi/shelly-gpui.git
+   cd shelly-gpui
+   ```
 
-## Flatpak backend contributions
+2. **Run in development mode:**
+   ```bash
+   make run
+   ```
+   This compiles the Zig CLI backend automatically (if not already compiled) and executes `cargo run` pointing to the local backend.
 
-All generated libflatpak declarations, GObject pointers, and native Flatpak
-calls must remain under `Shelly.Flatpak.Backend`. Consumers use owned records
-from `Shelly.PackageManager/src/flatpak/types.zig`; never expose a generated
-binding type in a public PackageManager declaration.
+3. **Check compilation without linking (fast check):**
+   ```bash
+   make check
+   ```
 
-Protocol schema 2 rejects unknown and duplicate fields. Add a new operation by
-updating the wire inventory, backend dispatch, PackageManager facade, fake
-backend coverage, and parity tests together. Run
-`scripts/check-flatpak-separation.sh` before submitting a change.
+4. **Build an optimized release binary:**
+   ```bash
+   make build
+   ```
 
-An incompatible C table change requires an ABI version and SONAME bump. An
-incompatible JSON change requires a schema bump. Update the exact
-base/backend package dependency in the same release. The complete ownership,
-threading, discovery, and bump procedure is in
-[`docs/flatpak-backend-abi.md`](docs/flatpak-backend-abi.md).
+5. **Test the package build:**
+   ```bash
+   make package
+   ```
 
-## Development Guidelines
+---
 
-1. **Code Style**: Follow the existing code style in each project
-2. **Testing**: Add tests for new functionality in the appropriate test project
-3. **Documentation**: Update relevant documentation when adding features
-4. **Commits**: Use clear, descriptive commit messages
+## 📐 Code Guidelines & Quality Standards
 
-## Localization Guidelines
+- **Zero Compiler Warnings**: All Rust code must compile with **0 warnings** (`cargo check`). No `#[allow(dead_code)]` or quick hacks are accepted without an explicit, documented reason.
+- **Idiomatic Rust**: Follow standard Rust formatting (`cargo fmt`) and clippy recommendations (`cargo clippy`).
+- **Non-blocking UI**: Never run synchronous blocking I/O, heavy process calls, or network requests on the main GPUI render thread. Use `ProcessRunner::run_json_command` (Tokio background workers) and GPUI's `cx.spawn(...)` with `cx.background_executor().timer(...)`.
+- **Consistent Visual Design**: All UI elements should follow the Catppuccin Mocha palette defined in `Shelly.Ui.Gpui/src/theme.rs`.
+- **Commit Messages**: Write concise, conventional commit messages (e.g. `feat: ...`, `fix: ...`, `docs: ...`, `refactor: ...`).
 
-If you're interested in helping localize Shelly into your language, please follow the steps below
+---
 
-### Locate the resource folder:
+## 📬 Submitting Changes
 
-Navigate to:
-
-```
-├── Shelly-UI/               
-│   ├── po/ 
-```
-
-This folder contains the localization  files used by the application.
-
-### Desktop entries
-
-The application menu strings live outside the `po/` catalogs, in the desktop
-entries that the packages install:
-
-```
-├── com.shellyorg.shelly.desktop
-├── com.shellyorg.shelly-notifications.desktop
-├── shelly-flatpak-integrate
-```
-
-To translate them, add `Name[xx]=`, `Comment[xx]=` and `Keywords[xx]=` lines
-next to the English ones, where `xx` is your locale code. Keep the English
-words in `Keywords[xx]` so searches in either language still match. The
-PKGBUILDs install these files as-is, so a new language never adds lines to
-them; only run `updpkgsums` on `PKGBUILD`, `PKGBUILD-bin` and `PKGBUILD-git`
-afterwards so the recorded checksums match. Run `desktop-file-validate` on the
-two `.desktop` files before submitting.
-
-### Build and Test
-
-1. Build the application
-2. Verify that the application builds and starts correctly
-3. Confirm that all UI elements are translated and that no unexpected fallback to English occurs
-
-Once these steps are validated, please submit a pull request.
-  
-## Getting Help
-
-If you have questions or need help, please open an issue on the GitHub repository or join or community https://fluxer.gg/hAxUFvJP
+1. Fork the repository and create your feature branch:
+   ```bash
+   git checkout -b feature/my-new-feature
+   ```
+2. Commit your changes and ensure `make check` passes cleanly.
+3. Push to your branch and open a Pull Request against `main`.
+4. Provide a clear description of the problem solved or feature implemented.
