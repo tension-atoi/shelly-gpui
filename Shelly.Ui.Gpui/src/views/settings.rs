@@ -63,10 +63,26 @@ impl SettingsView {
                     .mb_3()
                     .child("SOURCES DE PAQUETS"),
             )
-            .child(Self::toggle_row("Support AUR (Arch User Repository)", s.aur_enabled, theme))
-            .child(Self::toggle_row("Support Flatpak (Flathub & remotes)", s.flat_pack_enabled, theme))
-            .child(Self::toggle_row("Support AppImage (Applications portables)", s.app_image_enabled, theme))
-            .child(Self::toggle_row("Recherche Shelly unifiée activée", s.shelly_search_enabled, theme));
+            .child(Self::toggle_row(
+                "Support AUR (Arch User Repository)",
+                s.aur_enabled,
+                theme,
+            ))
+            .child(Self::toggle_row(
+                "Support Flatpak (Flathub & remotes)",
+                s.flat_pack_enabled,
+                theme,
+            ))
+            .child(Self::toggle_row(
+                "Support AppImage (Applications portables)",
+                s.app_image_enabled,
+                theme,
+            ))
+            .child(Self::toggle_row(
+                "Recherche Shelly unifiée activée",
+                s.shelly_search_enabled,
+                theme,
+            ));
 
         root = root.child(sources_section);
 
@@ -88,9 +104,21 @@ impl SettingsView {
                     .mb_3()
                     .child("MAINTENANCE ET SUPPRESSION"),
             )
-            .child(Self::toggle_row("Suppression en cascade des dépendances orphelines", s.package_management_cascade_delete, theme))
-            .child(Self::toggle_row("Nettoyage automatique des fichiers de configuration", s.package_management_remove_configs, theme))
-            .child(Self::toggle_row("Mode sans confirmation automatique (--no-confirm)", s.no_confirm, theme));
+            .child(Self::toggle_row(
+                "Suppression en cascade des dépendances orphelines",
+                s.package_management_cascade_delete,
+                theme,
+            ))
+            .child(Self::toggle_row(
+                "Nettoyage automatique des fichiers de configuration",
+                s.package_management_remove_configs,
+                theme,
+            ))
+            .child(Self::toggle_row(
+                "Mode sans confirmation automatique (--no-confirm)",
+                s.no_confirm,
+                theme,
+            ));
 
         root = root.child(maintenance_section);
 
@@ -111,29 +139,37 @@ impl SettingsView {
                     .mb_3()
                     .child("PRÉFÉRENCES D'AFFICHAGE GPUI (ZED-STYLE)"),
             )
-            .child(Self::toggle_row("Thème Sombre haute performance (Dark Mode)", g.dark_theme, theme))
-            .child(Self::toggle_row("Affichage compact de la liste de paquets", g.compact_view, theme))
-            .child(Self::toggle_row("Ouvrir automatiquement le tiroir de logs lors d'une action", g.log_drawer_open, theme));
+            .child(Self::toggle_row(
+                "Thème Sombre haute performance (Dark Mode)",
+                g.dark_theme,
+                theme,
+            ))
+            .child(Self::toggle_row(
+                "Affichage compact de la liste de paquets",
+                g.compact_view,
+                theme,
+            ))
+            .child(Self::toggle_row(
+                "Ouvrir automatiquement le tiroir de logs lors d'une action",
+                g.log_drawer_open,
+                theme,
+            ));
 
         root = root.child(ui_section);
 
         // Bouton de sauvegarde — appelle ConfigManager::save_shelly_settings
-        let save_btn = div()
-            .flex()
-            .justify_end()
-            .mt_6()
-            .child(
-                div()
-                    .px_6()
-                    .py_2()
-                    .rounded_md()
-                    .bg(theme.accent)
-                    .text_sm()
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(theme.bg_app)
-                    .cursor_pointer()
-                    .child("Enregistrer les paramètres"),
-            );
+        let save_btn = div().flex().justify_end().mt_6().child(
+            div()
+                .px_6()
+                .py_2()
+                .rounded_md()
+                .bg(theme.accent)
+                .text_sm()
+                .font_weight(FontWeight::BOLD)
+                .text_color(theme.bg_app)
+                .cursor_pointer()
+                .child("Enregistrer les paramètres"),
+        );
 
         // Effectue la sauvegarde au moment du rendu si les paramètres ont été modifiés.
         // Dans une UI réactive complète, ce bouton serait lié à un handler de clic ;
@@ -154,12 +190,7 @@ impl SettingsView {
             .py_2()
             .border_b_1()
             .border_color(theme.border)
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.text_primary)
-                    .child(label),
-            )
+            .child(div().text_xs().text_color(theme.text_primary).child(label))
             .child(
                 div()
                     .px_3()
@@ -168,7 +199,11 @@ impl SettingsView {
                     .bg(if active { theme.success } else { theme.border })
                     .text_xs()
                     .font_weight(FontWeight::BOLD)
-                    .text_color(if active { theme.bg_app } else { theme.text_muted })
+                    .text_color(if active {
+                        theme.bg_app
+                    } else {
+                        theme.text_muted
+                    })
                     .child(if active { "Activé" } else { "Désactivé" }),
             )
     }

@@ -41,6 +41,7 @@ pub struct LogDrawerProps<'a> {
     pub auto_scroll: bool,
     pub height: f32,
     pub copied_feedback: bool,
+    pub scroll_handle: &'a ScrollHandle,
     pub theme: &'a Theme,
     pub on_toggle: Option<MouseHandler>,
     pub on_copy: Option<MouseHandler>,
@@ -106,13 +107,25 @@ impl LogDrawer {
                 .rounded_sm()
                 .border_1()
                 .border_color(theme.border)
-                .bg(if copied_feedback { theme.success } else { theme.bg_surface })
+                .bg(if copied_feedback {
+                    theme.success
+                } else {
+                    theme.bg_surface
+                })
                 .text_xs()
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(if copied_feedback { theme.bg_app } else { theme.text_primary })
+                .text_color(if copied_feedback {
+                    theme.bg_app
+                } else {
+                    theme.text_primary
+                })
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg).border_color(border_focus))
-                .child(if copied_feedback { "✓ Copié !" } else { "📋 Copier les logs" });
+                .child(if copied_feedback {
+                    "✓ Copié !"
+                } else {
+                    "📋 Copier les logs"
+                });
 
             if let Some(handler) = on_copy {
                 btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));
@@ -155,14 +168,30 @@ impl LogDrawer {
                 .py_1()
                 .rounded_sm()
                 .border_1()
-                .border_color(if auto_scroll { theme.accent } else { theme.border })
-                .bg(if auto_scroll { theme.bg_surface_active } else { theme.bg_surface })
+                .border_color(if auto_scroll {
+                    theme.accent
+                } else {
+                    theme.border
+                })
+                .bg(if auto_scroll {
+                    theme.bg_surface_active
+                } else {
+                    theme.bg_surface
+                })
                 .text_xs()
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(if auto_scroll { theme.accent } else { theme.text_muted })
+                .text_color(if auto_scroll {
+                    theme.accent
+                } else {
+                    theme.text_muted
+                })
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg).border_color(border_focus))
-                .child(if auto_scroll { "⤓ Auto-scroll : ACTIF" } else { "⤓ Auto-scroll : PAUSE" });
+                .child(if auto_scroll {
+                    "⤓ Auto-scroll : ACTIF"
+                } else {
+                    "⤓ Auto-scroll : PAUSE"
+                });
 
             if let Some(handler) = on_toggle_autoscroll {
                 btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));
@@ -185,7 +214,11 @@ impl LogDrawer {
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(theme.text_secondary)
                 .hover(|s| s.text_color(theme.accent))
-                .child(if is_open { "▲ Masquer" } else { "▼ Afficher" });
+                .child(if is_open {
+                    "▲ Masquer"
+                } else {
+                    "▼ Afficher"
+                });
 
             if let Some(handler) = on_toggle {
                 btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));
@@ -228,19 +261,22 @@ impl LogDrawer {
                     .child(toggle_btn),
             );
 
-        let mut container = div()
-            .flex()
-            .flex_col()
-            .bg(theme.bg_sidebar)
-            .child(header);
+        let mut container = div().flex().flex_col().bg(theme.bg_sidebar).child(header);
 
         if is_open {
+            if auto_scroll && !props.logs.is_empty() {
+                props
+                    .scroll_handle
+                    .scroll_to_item(props.logs.len().saturating_sub(1));
+            }
+
             let mut log_content = div()
                 .id("log_drawer_scroll")
                 .flex()
                 .flex_col()
                 .h(px(props.height))
                 .overflow_scroll()
+                .track_scroll(props.scroll_handle)
                 .p_3()
                 .bg(theme.bg_sidebar)
                 .text_xs();

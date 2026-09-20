@@ -108,12 +108,11 @@ impl NewsView {
                             "Arch Linux Team".to_string()
                         }),
                 )
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.text_primary)
-                        .child(item.summary.clone().unwrap_or_else(|| "Cliquez pour lire l'annonce complète sur archlinux.org".to_string())),
-                );
+                .child(div().text_sm().text_color(theme.text_primary).child(
+                    item.summary.clone().unwrap_or_else(|| {
+                        "Cliquez pour lire l'annonce complète sur archlinux.org".to_string()
+                    }),
+                ));
 
             root = root.child(card);
         }

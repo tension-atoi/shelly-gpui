@@ -2,11 +2,12 @@
 #![deny(unused_variables)]
 #![deny(unused_imports)]
 #![deny(unused_must_use)]
+#![recursion_limit = "512"]
 
 mod backend;
 mod components;
 mod config;
-mod models;
+mod state;
 mod theme;
 mod views;
 
@@ -34,8 +35,6 @@ fn main() {
             ..Default::default()
         };
 
-        let _ = cx.open_window(options, |_, cx| {
-            cx.new(|cx| WorkspaceView::new(cx))
-        });
+        let _ = cx.open_window(options, |_, cx| cx.new(WorkspaceView::new));
     });
 }

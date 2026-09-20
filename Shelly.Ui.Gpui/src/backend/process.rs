@@ -40,14 +40,21 @@ impl ProcessRunner {
             cmd.stderr(Stdio::piped());
 
             let output_res = cmd.output().await.with_context(|| {
-                format!("Échec de l'exécution de {} avec les arguments {:?}", bin, owned_args)
+                format!(
+                    "Échec de l'exécution de {} avec les arguments {:?}",
+                    bin, owned_args
+                )
             });
 
             let res = match output_res {
                 Ok(output) => {
                     if !output.status.success() {
                         let err_str = String::from_utf8_lossy(&output.stderr);
-                        log::warn!("La commande a retourné une erreur (code {:?}): {}", output.status.code(), err_str);
+                        log::warn!(
+                            "La commande a retourné une erreur (code {:?}): {}",
+                            output.status.code(),
+                            err_str
+                        );
                     }
                     String::from_utf8(output.stdout)
                         .context("Sortie stdout non-UTF8 lors de l'exécution de la commande")
@@ -82,7 +89,10 @@ impl ProcessRunner {
             let mut child = match cmd.spawn() {
                 Ok(child) => child,
                 Err(e) => {
-                    let _ = tx.send(LogStreamEvent::ErrorLine(format!("Erreur au lancement du processus : {}", e)));
+                    let _ = tx.send(LogStreamEvent::ErrorLine(format!(
+                        "Erreur au lancement du processus : {}",
+                        e
+                    )));
                     let _ = tx.send(LogStreamEvent::Finished(false, None));
                     return;
                 }
@@ -124,7 +134,10 @@ impl ProcessRunner {
                     let _ = tx.send(LogStreamEvent::Finished(success, code));
                 }
                 Err(e) => {
-                    let _ = tx.send(LogStreamEvent::ErrorLine(format!("Erreur lors de l'attente du processus : {}", e)));
+                    let _ = tx.send(LogStreamEvent::ErrorLine(format!(
+                        "Erreur lors de l'attente du processus : {}",
+                        e
+                    )));
                     let _ = tx.send(LogStreamEvent::Finished(false, None));
                 }
             }

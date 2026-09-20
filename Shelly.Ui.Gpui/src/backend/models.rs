@@ -125,8 +125,6 @@ pub struct FlatpakSearchResult {
     pub total_hits: usize,
 }
 
-
-
 /// Représente un élément d'actualité Arch Linux
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "PascalCase")]
@@ -182,7 +180,10 @@ pub struct UnifiedPackage {
 
 impl UnifiedPackage {
     pub fn from_alpm(pkg: AlpmPackage, is_installed: bool) -> Self {
-        let repo = pkg.repository.clone().unwrap_or_else(|| "repos".to_string());
+        let repo = pkg
+            .repository
+            .clone()
+            .unwrap_or_else(|| "repos".to_string());
         Self {
             name: pkg.name.clone(),
             version: pkg.version.clone(),
@@ -223,5 +224,23 @@ impl UnifiedPackage {
             new_version: None,
             inner: UnifiedPackageSource::Flatpak(hit),
         }
+    }
+
+    pub fn from_update(u: PackageUpdateItem) -> Self {
+        Self {
+            name: u.name,
+            version: u.old_version,
+            description: format!("Mise à jour disponible vers {}", u.new_version),
+            source_type: u.package_type.unwrap_or_else(|| "ALPM".to_string()),
+            repository_or_remote: u.repository.unwrap_or_else(|| "repos".to_string()),
+            is_installed: true,
+            has_update: true,
+            new_version: Some(u.new_version),
+            inner: UnifiedPackageSource::Standard(Default::default()),
+        }
+    }
+
+    pub fn key(&self) -> crate::state::PackageKey {
+        crate::state::PackageKey::from_unified(self)
     }
 }

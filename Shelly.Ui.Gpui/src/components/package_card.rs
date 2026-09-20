@@ -30,7 +30,7 @@ impl PackageCard {
             theme.border
         };
 
-        let card = div()
+        div()
             .h(px(72.0))
             .w_full()
             .flex()
@@ -45,9 +45,7 @@ impl PackageCard {
             .cursor_pointer()
             .overflow_hidden()
             // Barre d'accentuation latérale pour le paquet sélectionné
-            .when(is_selected, |el| {
-                el.border_l_4().border_color(theme.accent)
-            })
+            .when(is_selected, |el| el.border_l_4().border_color(theme.accent))
             // Rétroaction immédiate au survol de la souris
             .when(!is_selected, |el| {
                 let hover_bg = theme.bg_surface_hover;
@@ -65,7 +63,11 @@ impl PackageCard {
                         div()
                             .font_weight(FontWeight::BOLD)
                             .text_sm()
-                            .text_color(if is_selected { theme.accent } else { theme.text_primary })
+                            .text_color(if is_selected {
+                                theme.accent
+                            } else {
+                                theme.text_primary
+                            })
                             .overflow_hidden()
                             .text_ellipsis()
                             .child(pkg.name.clone()),
@@ -100,8 +102,6 @@ impl PackageCard {
                     } else {
                         pkg.description.clone()
                     }),
-            );
-
-        card
+            )
     }
 }

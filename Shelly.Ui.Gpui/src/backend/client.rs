@@ -87,11 +87,9 @@ impl ShellyClient {
             return Ok(Vec::new());
         }
 
-        let raw = ProcessRunner::run_json_command(
-            &self.binary_path,
-            &["search", "aur", query, "-j"],
-        )
-        .await?;
+        let raw =
+            ProcessRunner::run_json_command(&self.binary_path, &["search", "aur", query, "-j"])
+                .await?;
 
         if raw.trim().starts_with('[') {
             serde_json::from_str::<Vec<AurPackage>>(&raw)
@@ -110,11 +108,9 @@ impl ShellyClient {
             return Ok(Vec::new());
         }
 
-        let raw = ProcessRunner::run_json_command(
-            &self.binary_path,
-            &["search", "flatpak", query, "-j"],
-        )
-        .await?;
+        let raw =
+            ProcessRunner::run_json_command(&self.binary_path, &["search", "flatpak", query, "-j"])
+                .await?;
 
         if let Ok(res) = serde_json::from_str::<FlatpakSearchResult>(&raw) {
             Ok(res.hits)
@@ -125,11 +121,9 @@ impl ShellyClient {
 
     /// Liste des mises à jour disponibles pour tous les backends
     pub async fn list_updates(&self) -> Result<Vec<PackageUpdateItem>> {
-        let raw = ProcessRunner::run_json_command(
-            &self.binary_path,
-            &["list-updates", "all", "-j"],
-        )
-        .await?;
+        let raw =
+            ProcessRunner::run_json_command(&self.binary_path, &["list-updates", "all", "-j"])
+                .await?;
 
         if raw.trim().starts_with('[') {
             serde_json::from_str::<Vec<PackageUpdateItem>>(&raw)
@@ -149,8 +143,6 @@ impl ShellyClient {
             Ok(Vec::new())
         }
     }
-
-
 
     /// Récupère la fiche détaillée d'un paquet ALPM
     pub async fn get_package_details(&self, name: &str) -> Result<Option<AlpmPackage>> {
@@ -219,7 +211,7 @@ impl ShellyClient {
     pub fn upgrade_system(&self, tx: mpsc::UnboundedSender<LogStreamEvent>) {
         let args = vec![
             "upgrade".to_string(),
-            "all".to_string(),   // sous-commande "all" obligatoire
+            "all".to_string(), // sous-commande "all" obligatoire
             "--ui-mode".to_string(),
             "--no-confirm".to_string(),
         ];
@@ -233,32 +225,11 @@ impl ShellyClient {
             serde_json::from_str::<Vec<AlpmPackage>>(trimmed)
                 .context("Désérialisation du tableau JSON ALPM")
         } else if trimmed.starts_with('{') {
-            let pkg: AlpmPackage = serde_json::from_str(trimmed)
-                .context("Désérialisation de l'objet JSON ALPM")?;
+            let pkg: AlpmPackage =
+                serde_json::from_str(trimmed).context("Désérialisation de l'objet JSON ALPM")?;
             Ok(vec![pkg])
         } else {
             Ok(Vec::new())
         }
-    }
-
-    /// Liste les fichiers installés par un paquet via `pacman -Ql`
-    pub async fn list_package_files(&self, name: &str) -> Vec<String> {
-        if let Ok(output) = tokio::process::Command::new("pacman")
-            .args(["-Ql", name])
-            .output()
-            .await
-        {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                return text
-                    .lines()
-                    .filter_map(|line| {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        parts.get(1).map(|s| s.to_string())
-                    })
-                    .collect();
-            }
-        }
-        Vec::new()
     }
 }
