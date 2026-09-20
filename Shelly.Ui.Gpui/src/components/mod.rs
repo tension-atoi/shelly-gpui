@@ -2,6 +2,7 @@ pub mod inspector_header;
 pub mod log_drawer;
 pub mod package_card;
 pub mod package_table;
+pub mod query_workbench;
 pub mod search_input;
 pub mod semantic_value;
 pub mod sidebar;

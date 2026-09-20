@@ -80,6 +80,10 @@ impl WorkspaceView {
         let flatpak_enabled = shelly_settings.flat_pack_enabled;
         let appimage_enabled = shelly_settings.app_image_enabled;
 
+        session.update(cx, |s, cx| {
+            s.clamp_source_scope(aur_enabled, flatpak_enabled, appimage_enabled, cx);
+        });
+
         let workstation = cx.new(|cx| {
             PackageWorkstationView::new(
                 session.clone(),
@@ -176,6 +180,11 @@ impl WorkspaceView {
                         }
                     }
                 }
+                cx.notify();
+            }
+            SessionEvent::SourceScopeChanged(_)
+            | SessionEvent::StateFilterChanged(_)
+            | SessionEvent::SortModeChanged(_) => {
                 cx.notify();
             }
         })
@@ -866,6 +875,12 @@ impl WorkspaceView {
                     ws.set_compact(self.gpui_config.compact_view, cx);
                     ws.set_sources_enabled(draft_aur, draft_flatpak, draft_appimage, cx);
                 });
+
+                if sources_changed {
+                    self.session.update(cx, |s, cx| {
+                        s.clamp_source_scope(draft_aur, draft_flatpak, draft_appimage, cx);
+                    });
+                }
 
                 self.sidebar.update(cx, |sb, cx| {
                     sb.set_theme(theme, cx);

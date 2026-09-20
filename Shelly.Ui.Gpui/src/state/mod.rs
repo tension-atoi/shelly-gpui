@@ -1,6 +1,7 @@
 pub mod console;
 pub mod motion;
 pub mod package_store;
+pub mod query;
 pub mod semantic;
 pub mod session;
 pub mod toast;

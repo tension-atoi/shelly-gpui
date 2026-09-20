@@ -4,6 +4,7 @@ use crate::components::package_table::PackageTable;
 use crate::components::search_input::SearchInputView;
 use crate::components::unified_search::UnifiedSearch;
 use crate::state::console::{ConsoleEvent, ConsoleModel};
+use crate::state::query::{PackageStateFilter, SortMode};
 use crate::state::{
     canonical_install_command, AppSession, NavDestination, PackageStore, PackageViewMode,
     SourceFilter, ToastCenter, ToastKind,
@@ -38,11 +39,11 @@ pub fn compute_splitter_width(
     let dynamic_list_max = (window_width
         - UiMetrics::SIDEBAR_EXPANDED
         - UiMetrics::SPLITTER_WIDTH
-        - UiMetrics::INSPECTOR_MIN_WIDTH)
+        - UiMetrics::INSPECTOR_MIN_USABLE)
         .min(700.0);
     requested_width.clamp(
-        UiMetrics::LIST_MIN_WIDTH,
-        dynamic_list_max.max(UiMetrics::LIST_MIN_WIDTH),
+        UiMetrics::LIST_MIN_USABLE,
+        dynamic_list_max.max(UiMetrics::LIST_MIN_USABLE),
     )
 }
 
@@ -237,13 +238,38 @@ impl Render for PackageWorkstationView {
             )
         };
 
-        let packages: std::sync::Arc<[UnifiedPackage]> = {
+        let (source_scope, state_filter, sort_mode) = {
+            let s = self.session.read(cx);
+            (s.source_scope, s.state_filter, s.sort_mode)
+        };
+
+        let raw_packages: std::sync::Arc<[UnifiedPackage]> = {
             let store = self.store.read(cx);
             match destination {
                 NavDestination::Browse => std::sync::Arc::clone(&store.active_results),
                 NavDestination::Installed => std::sync::Arc::clone(&store.installed_packages),
                 NavDestination::Updates => std::sync::Arc::clone(&store.updates_packages),
                 _ => std::sync::Arc::from([]),
+            }
+        };
+
+        let packages: std::sync::Arc<[UnifiedPackage]> = {
+            if source_scope.is_all()
+                && state_filter == PackageStateFilter::All
+                && sort_mode == SortMode::Relevance
+            {
+                raw_packages
+            } else {
+                let mut filtered: Vec<UnifiedPackage> = raw_packages
+                    .iter()
+                    .filter(|p| {
+                        source_scope.contains_str(&p.source_type)
+                            && state_filter.matches(p.is_installed, p.has_update)
+                    })
+                    .cloned()
+                    .collect();
+                sort_mode.sort_packages(&mut filtered);
+                std::sync::Arc::from(filtered)
             }
         };
 
@@ -257,40 +283,6 @@ impl Render for PackageWorkstationView {
         let entity_split = entity.clone();
         let entity_move = entity.clone();
         let entity_up = entity.clone();
-
-        // ── 1. Top bar de filtrage et de vue ────────────────────────────────
-        let filter_bar = UnifiedSearch::render_filter_bar(
-            &crate::components::unified_search::UnifiedSearchProps {
-                active_filter: source_filter,
-                is_searching,
-                total_count: packages.len(),
-                view_mode,
-                aur_enabled: self.aur_enabled,
-                flatpak_enabled: self.flatpak_enabled,
-                appimage_enabled: self.appimage_enabled,
-                theme: &theme,
-                on_select_filter: {
-                    let on_filter = entity_filter.clone();
-                    Rc::new(move |filter, _w, cx| {
-                        on_filter.update(cx, |view, cx| {
-                            view.session.update(cx, |s, cx| {
-                                s.set_source_filter(filter, cx);
-                            });
-                        });
-                    })
-                },
-                on_select_view_mode: {
-                    let on_mode = entity_mode.clone();
-                    Rc::new(move |mode, _w, cx| {
-                        on_mode.update(cx, |view, cx| {
-                            view.session.update(cx, |s, cx| {
-                                s.set_view_mode(mode, cx);
-                            });
-                        });
-                    })
-                },
-            },
-        );
 
         let mode_switcher = {
             let on_mode = entity_mode.clone();
@@ -310,16 +302,67 @@ impl Render for PackageWorkstationView {
         };
 
         let top_bar = match destination {
-            crate::state::NavDestination::Browse => div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .p_2()
-                .bg(theme.bg_sidebar)
-                .border_b_1()
-                .border_color(theme.border)
-                .child(self.search_input.clone())
-                .child(filter_bar),
+            crate::state::NavDestination::Browse => {
+                let on_filter = entity_filter.clone();
+                let on_sort = entity.clone();
+                let on_state = entity.clone();
+                let on_mode = entity_mode.clone();
+                let on_reset = entity.clone();
+
+                crate::components::query_workbench::QueryWorkbench::render(
+                    &crate::components::query_workbench::QueryWorkbenchProps {
+                        search_input: self.search_input.clone(),
+                        list_pane_width: self.list_pane_width,
+                        source_filter,
+                        source_scope,
+                        state_filter,
+                        sort_mode,
+                        view_mode,
+                        is_searching,
+                        total_count: packages.len(),
+                        aur_enabled: self.aur_enabled,
+                        flatpak_enabled: self.flatpak_enabled,
+                        appimage_enabled: self.appimage_enabled,
+                        theme: &theme,
+                        on_select_filter: Rc::new(move |filter, _w, cx| {
+                            on_filter.update(cx, |view, cx| {
+                                view.session.update(cx, |s, cx| {
+                                    s.set_source_filter(filter, cx);
+                                });
+                            });
+                        }),
+                        on_cycle_sort: Rc::new(move |_w, cx| {
+                            on_sort.update(cx, |view, cx| {
+                                view.session.update(cx, |s, cx| {
+                                    s.cycle_sort_mode(cx);
+                                });
+                            });
+                        }),
+                        on_cycle_state_filter: Rc::new(move |_w, cx| {
+                            on_state.update(cx, |view, cx| {
+                                view.session.update(cx, |s, cx| {
+                                    s.cycle_state_filter(cx);
+                                });
+                            });
+                        }),
+                        on_select_view_mode: Rc::new(move |mode, _w, cx| {
+                            on_mode.update(cx, |view, cx| {
+                                view.session.update(cx, |s, cx| {
+                                    s.set_view_mode(mode, cx);
+                                });
+                            });
+                        }),
+                        on_reset_query: Rc::new(move |_w, cx| {
+                            on_reset.update(cx, |view, cx| {
+                                view.session.update(cx, |s, cx| {
+                                    s.reset_query_filters(cx);
+                                });
+                            });
+                        }),
+                    },
+                )
+                .into_any_element()
+            }
             crate::state::NavDestination::Installed => div()
                 .flex()
                 .items_center()
@@ -357,7 +400,8 @@ impl Render for PackageWorkstationView {
                                 .child(format!("{} packages", packages.len())),
                         )
                         .child(mode_switcher),
-                ),
+                )
+                .into_any_element(),
             crate::state::NavDestination::Updates => {
                 let on_upgrade_cb = self.on_upgrade_all.clone();
                 div()
@@ -439,8 +483,9 @@ impl Render for PackageWorkstationView {
                             })
                             .child(mode_switcher),
                     )
+                    .into_any_element()
             }
-            _ => div(),
+            _ => div().into_any_element(),
         };
 
         // ── 2. Corps de la liste (Cards vs Table) ───────────────────────────
@@ -773,7 +818,17 @@ mod tests {
     #[test]
     fn test_splitter_clamp_minimum() {
         let width = compute_splitter_width(460.0, 650.0, 100.0, 1280.0);
-        assert_eq!(width, 280.0, "Must clamp to 280 minimum");
+        assert_eq!(width, 340.0, "Must clamp to 340 minimum");
+    }
+
+    #[test]
+    fn test_dual_usable_splitter_clamp_invariants() {
+        let width = compute_splitter_width(460.0, 650.0, 1000.0, 900.0);
+        assert_eq!(width, 385.0);
+        assert!(width >= UiMetrics::LIST_MIN_USABLE);
+        let inspector_remains =
+            900.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width;
+        assert!(inspector_remains >= UiMetrics::INSPECTOR_MIN_USABLE);
     }
 
     #[test]

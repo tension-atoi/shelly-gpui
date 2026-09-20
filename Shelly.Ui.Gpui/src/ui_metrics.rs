@@ -14,8 +14,14 @@ impl UiMetrics {
 
     // ── Workspace Splitter & Pane Limits ─────────────────────────────────────
     pub const SPLITTER_WIDTH: f32 = 5.0;
-    pub const LIST_MIN_WIDTH: f32 = 280.0;
+    pub const LIST_MIN_WIDTH: f32 = 340.0;
+    pub const LIST_MIN_USABLE: f32 = 340.0;
     pub const INSPECTOR_MIN_WIDTH: f32 = 320.0;
+    pub const INSPECTOR_MIN_USABLE: f32 = 320.0;
+
+    // ── Workbench Dimensions ─────────────────────────────────────────────────
+    pub const SEARCH_INPUT_HEIGHT: f32 = 40.0;
+    pub const QUERY_CONTROLS_HEIGHT: f32 = 34.0;
 
     // ── Sidebar Geometry ─────────────────────────────────────────────────────
     pub const SIDEBAR_EXPANDED: f32 = 190.0;
@@ -25,6 +31,7 @@ impl UiMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::prelude::v1::test;
 
     #[test]
     fn test_card_wrapper_vs_content_height_invariants() {

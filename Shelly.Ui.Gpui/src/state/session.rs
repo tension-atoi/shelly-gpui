@@ -1,4 +1,5 @@
 use crate::backend::models::UnifiedPackage;
+use crate::state::query::{PackageStateFilter, SortMode, SourceScope};
 use gpui::*;
 use serde::{Deserialize, Serialize};
 
@@ -200,6 +201,9 @@ pub enum SessionEvent {
     ViewModeChanged(PackageViewMode),
     InspectorTabChanged(InspectorTab),
     SearchingStateChanged(bool),
+    SourceScopeChanged(SourceScope),
+    StateFilterChanged(PackageStateFilter),
+    SortModeChanged(SortMode),
 }
 
 /// Entité GPUI gérant l'état de navigation et d'intention de l'utilisateur
@@ -207,6 +211,9 @@ pub struct AppSession {
     pub destination: NavDestination,
     pub last_workspace_destination: NavDestination,
     pub source_filter: SourceFilter,
+    pub source_scope: SourceScope,
+    pub state_filter: PackageStateFilter,
+    pub sort_mode: SortMode,
     pub search_query: String,
     pub selected_package_key: Option<PackageKey>,
     pub search_generation: usize,
@@ -231,6 +238,9 @@ impl AppSession {
             destination: initial_dest,
             last_workspace_destination: initial_dest,
             source_filter: SourceFilter::All,
+            source_scope: SourceScope::all(),
+            state_filter: PackageStateFilter::All,
+            sort_mode: SortMode::Relevance,
             search_query: String::new(),
             selected_package_key: None,
             search_generation: 0,
@@ -258,9 +268,62 @@ impl AppSession {
     pub fn set_source_filter(&mut self, filter: SourceFilter, cx: &mut Context<Self>) {
         if self.source_filter != filter {
             self.source_filter = filter;
+            self.source_scope = SourceScope::from_filter(filter);
             cx.emit(SessionEvent::SourceFilterChanged(filter));
+            cx.emit(SessionEvent::SourceScopeChanged(self.source_scope));
             cx.notify();
         }
+    }
+
+    pub fn clamp_source_scope(
+        &mut self,
+        aur_enabled: bool,
+        flatpak_enabled: bool,
+        appimage_enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.source_scope
+            .clamp_to_enabled(aur_enabled, flatpak_enabled, appimage_enabled);
+        cx.emit(SessionEvent::SourceScopeChanged(self.source_scope));
+        cx.notify();
+    }
+
+    pub fn set_state_filter(&mut self, filter: PackageStateFilter, cx: &mut Context<Self>) {
+        if self.state_filter != filter {
+            self.state_filter = filter;
+            cx.emit(SessionEvent::StateFilterChanged(filter));
+            cx.notify();
+        }
+    }
+
+    pub fn cycle_state_filter(&mut self, cx: &mut Context<Self>) {
+        let next = self.state_filter.cycle_next();
+        self.set_state_filter(next, cx);
+    }
+
+    pub fn set_sort_mode(&mut self, mode: SortMode, cx: &mut Context<Self>) {
+        if self.sort_mode != mode {
+            self.sort_mode = mode;
+            cx.emit(SessionEvent::SortModeChanged(mode));
+            cx.notify();
+        }
+    }
+
+    pub fn cycle_sort_mode(&mut self, cx: &mut Context<Self>) {
+        let next = self.sort_mode.cycle_next();
+        self.set_sort_mode(next, cx);
+    }
+
+    pub fn reset_query_filters(&mut self, cx: &mut Context<Self>) {
+        self.source_filter = SourceFilter::All;
+        self.source_scope = SourceScope::all();
+        self.state_filter = PackageStateFilter::All;
+        self.sort_mode = SortMode::Relevance;
+        cx.emit(SessionEvent::SourceFilterChanged(SourceFilter::All));
+        cx.emit(SessionEvent::SourceScopeChanged(SourceScope::all()));
+        cx.emit(SessionEvent::StateFilterChanged(PackageStateFilter::All));
+        cx.emit(SessionEvent::SortModeChanged(SortMode::Relevance));
+        cx.notify();
     }
 
     pub fn set_search_query(&mut self, query: String, cx: &mut Context<Self>) {
