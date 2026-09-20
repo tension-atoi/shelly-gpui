@@ -31,15 +31,19 @@ impl PackageCard {
         };
 
         let card = div()
+            .h(px(72.0))
+            .w_full()
             .flex()
             .flex_col()
-            .p_3()
-            .mb_2()
+            .justify_between()
+            .px_3()
+            .py_2()
             .rounded_md()
             .border_1()
             .border_color(border_color)
             .bg(bg_color)
             .cursor_pointer()
+            .overflow_hidden()
             // Barre d'accentuation latérale pour le paquet sélectionné
             .when(is_selected, |el| {
                 el.border_l_4().border_color(theme.accent)
@@ -54,19 +58,21 @@ impl PackageCard {
             .child(
                 div()
                     .flex()
-                    .items_baseline()
+                    .items_center()
                     .justify_between()
                     .gap_2()
-                    .mb_1p5()
                     .child(
                         div()
                             .font_weight(FontWeight::BOLD)
                             .text_sm()
                             .text_color(if is_selected { theme.accent } else { theme.text_primary })
+                            .overflow_hidden()
+                            .text_ellipsis()
                             .child(pkg.name.clone()),
                     )
                     .child(
                         div()
+                            .flex_shrink_0()
                             .text_xs()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(theme.text_muted)
@@ -79,16 +85,16 @@ impl PackageCard {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .mb_2()
                     .child(StatusPill::source_badge(&pkg.source_type, theme))
                     .child(StatusPill::installed_pill(pkg.is_installed, theme)),
             )
-            // Ligne 3 : Description aérée sans tronquage brutal
+            // Ligne 3 : Description aérée tronquée proprement à 1 ligne pour uniformité stricte
             .child(
                 div()
                     .text_xs()
                     .text_color(theme.text_secondary)
-                    .line_clamp(2)
+                    .overflow_hidden()
+                    .text_ellipsis()
                     .child(if pkg.description.is_empty() {
                         "Aucune description disponible pour ce paquet.".to_string()
                     } else {

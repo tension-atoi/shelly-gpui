@@ -1,7 +1,7 @@
 use crate::backend::client::ShellyClient;
 use crate::backend::models::{AlpmPackage, ArchNewsItem, UnifiedPackage};
 use crate::backend::process::LogStreamEvent;
-use crate::components::log_drawer::{LogDrawer, LogDrawerProps, OperationStatus};
+use crate::components::log_drawer::{LogDrawer, LogDrawerProps, LogEntry, OperationStatus};
 use crate::components::package_card::{PackageCard, PackageCardProps};
 use crate::components::status_pill::StatusPill;
 use crate::config::{ConfigManager, GpuiUiConfig, ShellySettings};
@@ -10,7 +10,9 @@ use crate::views::details::{PackageDetailsProps, PackageDetailsView};
 use crate::views::news::{NewsView, NewsViewProps};
 use crate::views::settings::{SettingsView, SettingsViewProps};
 use gpui::prelude::FluentBuilder;
+use gpui::{uniform_list, ScrollStrategy, UniformListScrollHandle};
 use gpui::*;
+use std::collections::HashMap;
 use std::rc::Rc;
 use tokio::sync::mpsc;
 
@@ -41,14 +43,20 @@ pub struct WorkspaceView {
     pub news: Vec<ArchNewsItem>,
     pub is_searching: bool,
     pub is_loading_news: bool,
-    pub operation_logs: Vec<String>,
+    pub operation_logs: Vec<LogEntry>,
     pub operation_status: OperationStatus,
     pub log_drawer_open: bool,
+    pub auto_scroll_logs: bool,
+    pub logs_copied_feedback: bool,
     pub updates_count: usize,
     /// Largeur en pixels du volet de gauche (liste des paquets), ajustable à la souris
     pub list_pane_width: f32,
     /// Indicateur actif pendant le glisser-déposer de redimensionnement
     pub is_resizing_pane: bool,
+    /// Handle de défilement pour la liste virtualisée
+    pub scroll_handle: UniformListScrollHandle,
+    /// Cache en mémoire pour éviter les requêtes subprocess redondantes lors de l'inspection des paquets
+    pub package_detail_cache: HashMap<String, AlpmPackage>,
 }
 
 impl WorkspaceView {
@@ -82,9 +90,13 @@ impl WorkspaceView {
             operation_logs: Vec::new(),
             operation_status: OperationStatus::Idle,
             log_drawer_open,
+            auto_scroll_logs: true,
+            logs_copied_feedback: false,
             updates_count: 0,
             list_pane_width: 440.0,
             is_resizing_pane: false,
+            scroll_handle: UniformListScrollHandle::new(),
+            package_detail_cache: HashMap::new(),
         };
 
         view.load_initial_data(cx);
@@ -149,10 +161,19 @@ impl WorkspaceView {
         if let Some(pkg) = self.packages.get(idx) {
             if pkg.source_type == "ALPM" {
                 let name = pkg.name.clone();
+
+                // 1. Vérifier d'abord le cache de présentation en mémoire
+                if let Some(cached) = self.package_detail_cache.get(&name) {
+                    self.selected_alpm_details = Some(cached.clone());
+                    cx.notify();
+                    return;
+                }
+
                 let client = self.client.clone();
                 cx.spawn(async move |this, cx| {
                     if let Ok(Some(details)) = client.get_package_details(&name).await {
                         let _ = this.update(cx, |view, cx| {
+                            view.package_detail_cache.insert(name.clone(), details.clone());
                             if view.selected_index == Some(idx) {
                                 view.selected_alpm_details = Some(details);
                                 cx.notify();
@@ -341,6 +362,34 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    pub fn copy_logs_to_clipboard(&mut self, cx: &mut Context<Self>) {
+        let text = self
+            .operation_logs
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        self.logs_copied_feedback = true;
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(2000))
+                .await;
+            let _ = this.update(cx, |view, cx| {
+                view.logs_copied_feedback = false;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub fn clear_logs(&mut self, cx: &mut Context<Self>) {
+        self.operation_logs.clear();
+        cx.notify();
+    }
+
     pub fn install_selected(&mut self, cx: &mut Context<Self>) {
         let Some(index) = self.selected_index else {
             return;
@@ -355,7 +404,7 @@ impl WorkspaceView {
 
         self.operation_logs.clear();
         self.operation_logs
-            .push(format!(">>> Lancement de l'installation de {}...", name));
+            .push(LogEntry::stdout(format!(">>> Lancement de l'installation de {}...", name)));
         self.operation_status =
             OperationStatus::Running(format!("Installation de {}", name));
         self.log_drawer_open = true;
@@ -369,13 +418,13 @@ impl WorkspaceView {
                 match event {
                     LogStreamEvent::Line(line) => {
                         let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(line);
+                            view.operation_logs.push(LogEntry::stdout(line));
                             cx.notify();
                         });
                     }
                     LogStreamEvent::ErrorLine(err) => {
                         let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(format!("ERR: {}", err));
+                            view.operation_logs.push(LogEntry::stderr(err));
                             cx.notify();
                         });
                     }
@@ -386,16 +435,26 @@ impl WorkspaceView {
                                     format!("{} installé avec succès", name),
                                 );
                                 view.operation_logs
-                                    .push(">>> Opération terminée avec succès.".to_string());
+                                    .push(LogEntry::stdout(">>> Opération terminée avec succès."));
                                 view.refresh_after_operation(cx);
                             } else {
-                                view.operation_status = OperationStatus::Error(
-                                    format!("Échec (code {:?})", code),
-                                );
-                                view.operation_logs.push(format!(
-                                    ">>> Échec de l'opération (code {:?})",
-                                    code
-                                ));
+                                view.log_drawer_open = true;
+                                if code == Some(126) || code == Some(127) {
+                                    view.operation_status = OperationStatus::Error(
+                                        "Authentification Polkit annulée".to_string(),
+                                    );
+                                    view.operation_logs.push(LogEntry::stderr(
+                                        ">>> Opération annulée : invite d'authentification Polkit fermée ou refusée."
+                                    ));
+                                } else {
+                                    let last_err = view.operation_logs.iter().rev().find(|l| l.is_stderr).map(|l| l.text.clone());
+                                    let err_desc = last_err.unwrap_or_else(|| format!("Échec (code {:?})", code));
+                                    view.operation_status = OperationStatus::Error(err_desc);
+                                    view.operation_logs.push(LogEntry::stderr(format!(
+                                        ">>> Échec de l'opération (code {:?})",
+                                        code
+                                    )));
+                                }
                             }
                             cx.notify();
                         });
@@ -420,7 +479,7 @@ impl WorkspaceView {
 
         self.operation_logs.clear();
         self.operation_logs
-            .push(format!(">>> Suppression du paquet {}...", name));
+            .push(LogEntry::stdout(format!(">>> Suppression du paquet {}...", name)));
         self.operation_status =
             OperationStatus::Running(format!("Suppression de {}", name));
         self.log_drawer_open = true;
@@ -434,13 +493,13 @@ impl WorkspaceView {
                 match event {
                     LogStreamEvent::Line(line) => {
                         let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(line);
+                            view.operation_logs.push(LogEntry::stdout(line));
                             cx.notify();
                         });
                     }
                     LogStreamEvent::ErrorLine(err) => {
                         let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(format!("ERR: {}", err));
+                            view.operation_logs.push(LogEntry::stderr(err));
                             cx.notify();
                         });
                     }
@@ -450,16 +509,26 @@ impl WorkspaceView {
                                 view.operation_status =
                                     OperationStatus::Success(format!("{} désinstallé", name));
                                 view.operation_logs
-                                    .push(">>> Désinstallation terminée avec succès.".to_string());
+                                    .push(LogEntry::stdout(">>> Désinstallation terminée avec succès."));
                                 view.refresh_after_operation(cx);
                             } else {
-                                view.operation_status = OperationStatus::Error(
-                                    format!("Échec (code {:?})", code),
-                                );
-                                view.operation_logs.push(format!(
-                                    ">>> Échec de la suppression (code {:?})",
-                                    code
-                                ));
+                                view.log_drawer_open = true;
+                                if code == Some(126) || code == Some(127) {
+                                    view.operation_status = OperationStatus::Error(
+                                        "Authentification Polkit annulée".to_string(),
+                                    );
+                                    view.operation_logs.push(LogEntry::stderr(
+                                        ">>> Opération annulée : invite d'authentification Polkit fermée ou refusée."
+                                    ));
+                                } else {
+                                    let last_err = view.operation_logs.iter().rev().find(|l| l.is_stderr).map(|l| l.text.clone());
+                                    let err_desc = last_err.unwrap_or_else(|| format!("Échec (code {:?})", code));
+                                    view.operation_status = OperationStatus::Error(err_desc);
+                                    view.operation_logs.push(LogEntry::stderr(format!(
+                                        ">>> Échec de la suppression (code {:?})",
+                                        code
+                                    )));
+                                }
                             }
                             cx.notify();
                         });
@@ -474,7 +543,7 @@ impl WorkspaceView {
     pub fn upgrade_all(&mut self, cx: &mut Context<Self>) {
         self.operation_logs.clear();
         self.operation_logs
-            .push(">>> Démarrage de la mise à niveau globale du système...".to_string());
+            .push(LogEntry::stdout(">>> Démarrage de la mise à niveau globale du système...".to_string()));
         self.operation_status = OperationStatus::Running("Mise à niveau globale".to_string());
         self.log_drawer_open = true;
         cx.notify();
@@ -487,13 +556,13 @@ impl WorkspaceView {
                 match event {
                     LogStreamEvent::Line(line) => {
                         let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(line);
+                            view.operation_logs.push(LogEntry::stdout(line));
                             cx.notify();
                         });
                     }
                     LogStreamEvent::ErrorLine(err) => {
                         let _ = this.update(cx, |view, cx| {
-                            view.operation_logs.push(format!("ERR: {}", err));
+                            view.operation_logs.push(LogEntry::stderr(err));
                             cx.notify();
                         });
                     }
@@ -503,18 +572,27 @@ impl WorkspaceView {
                                 view.operation_status =
                                     OperationStatus::Success("Système à jour".to_string());
                                 view.operation_logs
-                                    .push(">>> Mise à niveau terminée avec succès.".to_string());
+                                    .push(LogEntry::stdout(">>> Mise à niveau terminée avec succès."));
                                 view.updates_count = 0;
                                 view.refresh_after_operation(cx);
                             } else {
-                                view.operation_status = OperationStatus::Error(format!(
-                                    "Erreur lors de la mise à niveau (code {:?})",
-                                    code
-                                ));
-                                view.operation_logs.push(format!(
-                                    ">>> Erreur lors de la mise à niveau (code {:?})",
-                                    code
-                                ));
+                                view.log_drawer_open = true;
+                                if code == Some(126) || code == Some(127) {
+                                    view.operation_status = OperationStatus::Error(
+                                        "Authentification Polkit annulée".to_string(),
+                                    );
+                                    view.operation_logs.push(LogEntry::stderr(
+                                        ">>> Opération annulée : invite d'authentification Polkit fermée ou refusée."
+                                    ));
+                                } else {
+                                    let last_err = view.operation_logs.iter().rev().find(|l| l.is_stderr).map(|l| l.text.clone());
+                                    let err_desc = last_err.unwrap_or_else(|| format!("Erreur (code {:?})", code));
+                                    view.operation_status = OperationStatus::Error(err_desc);
+                                    view.operation_logs.push(LogEntry::stderr(format!(
+                                        ">>> Erreur lors de la mise à niveau (code {:?})",
+                                        code
+                                    )));
+                                }
                             }
                             cx.notify();
                         });
@@ -528,6 +606,7 @@ impl WorkspaceView {
 
     /// Rafraîchit les paquets et le compteur de mises à jour après une opération réussie
     pub fn refresh_after_operation(&mut self, cx: &mut Context<Self>) {
+        self.package_detail_cache.clear();
         let client = self.client.clone();
         cx.spawn(async move |this, cx| {
             if let Ok(updates) = client.list_updates().await {
@@ -573,20 +652,26 @@ impl WorkspaceView {
         if key == "down" || key == "arrowdown" {
             if let Some(idx) = self.selected_index {
                 if idx + 1 < self.packages.len() {
-                    self.select_package(idx + 1, cx);
+                    let next = idx + 1;
+                    self.select_package(next, cx);
+                    self.scroll_handle.scroll_to_item(next, ScrollStrategy::Top);
                 }
             } else if !self.packages.is_empty() {
                 self.select_package(0, cx);
+                self.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
             }
             return;
         }
         if key == "up" || key == "arrowup" {
             if let Some(idx) = self.selected_index {
                 if idx > 0 {
-                    self.select_package(idx - 1, cx);
+                    let prev = idx - 1;
+                    self.select_package(prev, cx);
+                    self.scroll_handle.scroll_to_item(prev, ScrollStrategy::Top);
                 }
             } else if !self.packages.is_empty() {
                 self.select_package(0, cx);
+                self.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
             }
             return;
         }
@@ -867,54 +952,76 @@ impl Render for WorkspaceView {
 
             list_pane = list_pane.child(search_bar);
 
-            let mut scroll_list = div()
-                .id("packages_scroll_list")
-                .flex()
-                .flex_col()
-                .flex_grow()
-                .overflow_scroll()
-                .p_2();
-
-            if self.is_searching {
-                scroll_list = scroll_list.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .h(px(100.0))
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child("Recherche des paquets en cours..."),
-                );
+            let scroll_list = if self.is_searching {
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .h(px(100.0))
+                    .text_xs()
+                    .text_color(theme.text_muted)
+                    .child("Recherche des paquets en cours...")
+                    .into_any_element()
             } else if self.packages.is_empty() {
-                scroll_list = scroll_list.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .h(px(100.0))
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child("Aucun paquet correspondant trouvé."),
-                );
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .h(px(100.0))
+                    .text_xs()
+                    .text_color(theme.text_muted)
+                    .child("Aucun paquet correspondant trouvé.")
+                    .into_any_element()
             } else {
-                for (idx, pkg) in self.packages.iter().enumerate() {
-                    let is_selected = self.selected_index == Some(idx);
-                    let card = div()
-                        .child(PackageCard::render(PackageCardProps {
-                            package: pkg,
-                            is_selected,
-                            theme: &theme,
-                        }))
-                        .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| {
-                            this.select_package(idx, cx);
-                        }));
+                let entity = cx.entity().clone();
+                let selected_index = self.selected_index;
+                let package_count = self.packages.len();
+                let scroll_handle = self.scroll_handle.clone();
 
-                    scroll_list = scroll_list.child(card);
-                }
-            }
+                uniform_list(
+                    "packages_uniform_list",
+                    package_count,
+                    cx.processor(move |this, range: std::ops::Range<usize>, _window, _cx| {
+                        let theme = this.theme;
+                        let mut items = Vec::with_capacity(range.end - range.start);
+                        for idx in range {
+                            if let Some(pkg) = this.packages.get(idx) {
+                                let is_selected = selected_index == Some(idx);
+                                let card_entity = entity.clone();
+                                let item = div()
+                                    .id(idx)
+                                    .h(px(78.0))
+                                    .px_2()
+                                    .pb_1p5()
+                                    .child(PackageCard::render(PackageCardProps {
+                                        package: pkg,
+                                        is_selected,
+                                        theme: &theme,
+                                    }))
+                                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                        card_entity.update(cx, |view, cx| {
+                                            view.select_package(idx, cx);
+                                        });
+                                    });
+                                items.push(item);
+                            }
+                        }
+                        items
+                    }),
+                )
+                .size_full()
+                .track_scroll(scroll_handle)
+                .into_any_element()
+            };
 
-            list_pane = list_pane.child(scroll_list);
+            list_pane = list_pane.child(
+                div()
+                    .id("packages_scroll_container")
+                    .flex_grow()
+                    .h_full()
+                    .overflow_hidden()
+                    .child(scroll_list),
+            );
 
             let details_pane = div()
                 .flex_grow()
@@ -956,9 +1063,11 @@ impl Render for WorkspaceView {
                 }))
                 .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
                     if this.is_resizing_pane {
-                        let new_w: f32 = event.position.x / px(1.0);
-                        this.list_pane_width = new_w.clamp(300.0, 750.0);
-                        cx.notify();
+                        let new_w: f32 = (event.position.x / px(1.0)).clamp(300.0, 750.0);
+                        if (new_w - this.list_pane_width).abs() >= 1.0 {
+                            this.list_pane_width = new_w;
+                            cx.notify();
+                        }
                     }
                 }))
                 .child(list_pane)
@@ -967,16 +1076,27 @@ impl Render for WorkspaceView {
         };
 
         // ── Tiroir de logs ───────────────────────────────────────────────────
-        let log_drawer = div()
-            .child(LogDrawer::render(LogDrawerProps {
-                logs: &self.operation_logs,
-                status: &self.operation_status,
-                is_open: self.log_drawer_open,
-                theme: &theme,
-            }))
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+        let log_drawer = div().child(LogDrawer::render(LogDrawerProps {
+            logs: &self.operation_logs,
+            status: &self.operation_status,
+            is_open: self.log_drawer_open,
+            auto_scroll: self.auto_scroll_logs,
+            copied_feedback: self.logs_copied_feedback,
+            theme: &theme,
+            on_toggle: Some(Rc::new(cx.listener(|this, _, _, cx| {
                 this.toggle_log_drawer(cx);
-            }));
+            }))),
+            on_copy: Some(Rc::new(cx.listener(|this, _, _window, cx| {
+                this.copy_logs_to_clipboard(cx);
+            }))),
+            on_clear: Some(Rc::new(cx.listener(|this, _, _, cx| {
+                this.clear_logs(cx);
+            }))),
+            on_toggle_autoscroll: Some(Rc::new(cx.listener(|this, _, _, cx| {
+                this.auto_scroll_logs = !this.auto_scroll_logs;
+                cx.notify();
+            }))),
+        }));
 
         div()
             .flex()
