@@ -779,7 +779,6 @@ impl Render for SearchInputView {
             .h(px(40.0))
             .w_full()
             .flex()
-            .flex_1()
             .items_center()
             .gap(px(8.0))
             .px(px(12.0))

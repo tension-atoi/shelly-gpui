@@ -113,11 +113,12 @@ impl QueryWorkbench {
         let breakpoint = WorkbenchBreakpoint::from_width(props.list_pane_width);
 
         // ── 1. Row 1: Dominant Full-Width Search Input ────────────────────────
+        let input_width = (props.list_pane_width - 16.0).max(200.0);
         let row1 = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .child(div().w_full().flex_1().child(props.search_input.clone()));
+            .id("workbench_row1_search")
+            .w(px(input_width))
+            .h(px(40.0))
+            .child(props.search_input.clone());
 
         // ── 2. Filters Popover Setup ──────────────────────────────────────────
         let on_toggle_menu = props.on_toggle_menu.clone();
@@ -974,6 +975,8 @@ impl QueryWorkbench {
         // ── 9. Final Container Assembly ───────────────────────────────────────
         div()
             .id("query_workbench_container")
+            .w(px(props.list_pane_width))
+            .w_full()
             .flex()
             .flex_col()
             .gap(px(6.0))
