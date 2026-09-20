@@ -3,10 +3,11 @@ use crate::backend::models::{ArchNewsItem, UnifiedPackage};
 use crate::backend::process::LogStreamEvent;
 use crate::components::toast_overlay::{ToastOverlay, ToastOverlayProps};
 use crate::config::{ConfigManager, GpuiUiConfig, ShellySettings};
+use crate::state::package_store::SourceHealth;
 use crate::state::{
     AppSession, ConsoleEvent, ConsoleModel, InspectorTab, MotionDurations, NavDestination,
-    PackageKey, PackageSourceKind, PackageStore, PackageStoreEvent, SessionEvent, SourceFilter,
-    ToastAction, ToastCenter, ToastKind,
+    PackageKey, PackageSourceKind, PackageStore, PackageStoreEvent, SessionEvent, ToastAction,
+    ToastCenter, ToastKind,
 };
 use crate::theme::Theme;
 use crate::views::news::{NewsView, NewsViewProps};
@@ -125,12 +126,15 @@ impl WorkspaceView {
                 this.on_destination_changed(*dest, cx);
                 cx.notify();
             }
-            SessionEvent::SourceFilterChanged(filter) => {
-                log::debug!("Changement de filtre de source : {:?}", filter);
+            SessionEvent::SourceScopeChanged(scope) => {
+                log::debug!("Changement de scope de source : {:?}", scope);
                 let query = this.session.read(cx).search_query.clone();
                 if !query.trim().is_empty() {
                     this.execute_search(query, cx);
                 }
+                cx.notify();
+            }
+            SessionEvent::StateFilterChanged(_) | SessionEvent::SortModeChanged(_) => {
                 cx.notify();
             }
             SessionEvent::SearchQueryChanged(q) => {
@@ -180,11 +184,6 @@ impl WorkspaceView {
                         }
                     }
                 }
-                cx.notify();
-            }
-            SessionEvent::SourceScopeChanged(_)
-            | SessionEvent::StateFilterChanged(_)
-            | SessionEvent::SortModeChanged(_) => {
                 cx.notify();
             }
         })
@@ -309,6 +308,30 @@ impl WorkspaceView {
                     );
                 });
             }));
+            let entity_retry = entity_ws.clone();
+            ws.on_retry_source = Some(Rc::new(move |kind, _w, cx| {
+                entity_retry.update(cx, |view, cx| {
+                    view.retry_source_search(kind, cx);
+                });
+            }));
+            let entity_rel_inst = entity_ws.clone();
+            ws.on_reload_installed = Some(Rc::new(move |_w, cx| {
+                entity_rel_inst.update(cx, |view, cx| {
+                    view.load_installed_packages(cx);
+                });
+            }));
+            let entity_rel_upd = entity_ws.clone();
+            ws.on_reload_updates = Some(Rc::new(move |_w, cx| {
+                entity_rel_upd.update(cx, |view, cx| {
+                    view.load_updates(cx);
+                });
+            }));
+            let entity_rel_det = entity_ws.clone();
+            ws.on_retry_details = Some(Rc::new(move |key, _w, cx| {
+                entity_rel_det.update(cx, |view, cx| {
+                    view.ensure_package_details(key.clone(), cx);
+                });
+            }));
         });
 
         // Chargement initial asynchrone non-bloquant
@@ -321,33 +344,45 @@ impl WorkspaceView {
     fn trigger_initial_load(&self, cx: &mut Context<Self>) {
         let client = self.store.read(cx).client.clone();
         cx.spawn(async move |this, cx| {
-            if let Ok(updates) = client.list_updates().await {
-                let unified: Vec<UnifiedPackage> = updates
-                    .into_iter()
-                    .map(UnifiedPackage::from_update)
-                    .collect();
-                let _ = this.update(cx, |view, cx| {
-                    view.store.update(cx, |st, cx| {
+            let res = client.list_updates().await;
+            let _ = this.update(cx, |view, cx| {
+                view.store.update(cx, |st, cx| match res {
+                    Ok(updates) => {
+                        let unified: Vec<UnifiedPackage> = updates
+                            .into_iter()
+                            .map(UnifiedPackage::from_update)
+                            .collect();
+                        st.updates_error = None;
                         st.set_updates_packages(unified, cx);
-                    });
+                    }
+                    Err(e) => {
+                        log::warn!("Initial updates check failed: {:?}", e);
+                        st.updates_error = Some(e.to_string());
+                    }
                 });
-            }
+            });
         })
         .detach();
 
         let client = self.store.read(cx).client.clone();
         cx.spawn(async move |this, cx| {
-            if let Ok(installed) = client.search_installed("").await {
-                let unified: Vec<UnifiedPackage> = installed
-                    .into_iter()
-                    .map(|p| UnifiedPackage::from_alpm(p, true))
-                    .collect();
-                let _ = this.update(cx, |view, cx| {
-                    view.store.update(cx, |st, cx| {
+            let res = client.search_installed("").await;
+            let _ = this.update(cx, |view, cx| {
+                view.store.update(cx, |st, cx| match res {
+                    Ok(installed) => {
+                        let unified: Vec<UnifiedPackage> = installed
+                            .into_iter()
+                            .map(|p| UnifiedPackage::from_alpm(p, true))
+                            .collect();
+                        st.installed_error = None;
                         st.set_installed_packages(unified, cx);
-                    });
+                    }
+                    Err(e) => {
+                        log::warn!("Initial installed packages check failed: {:?}", e);
+                        st.installed_error = Some(e.to_string());
+                    }
                 });
-            }
+            });
         })
         .detach();
     }
@@ -390,18 +425,25 @@ impl WorkspaceView {
     fn load_installed_packages(&mut self, cx: &mut Context<Self>) {
         let client = self.store.read(cx).client.clone();
         cx.spawn(async move |this, cx| {
-            if let Ok(packages) = client.search_installed("").await {
-                let unified: Vec<UnifiedPackage> = packages
-                    .into_iter()
-                    .map(|p| UnifiedPackage::from_alpm(p, true))
-                    .collect();
-                let _ = this.update(cx, |view, cx| {
-                    view.store.update(cx, |st, cx| {
+            let res = client.search_installed("").await;
+            let _ = this.update(cx, |view, cx| {
+                view.store.update(cx, |st, cx| match res {
+                    Ok(packages) => {
+                        let unified: Vec<UnifiedPackage> = packages
+                            .into_iter()
+                            .map(|p| UnifiedPackage::from_alpm(p, true))
+                            .collect();
+                        st.installed_error = None;
                         st.set_installed_packages(unified, cx);
-                    });
-                    cx.notify();
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load installed packages: {:?}", e);
+                        st.installed_error = Some(e.to_string());
+                        st.set_installed_packages(Vec::new(), cx);
+                    }
                 });
-            }
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -410,18 +452,25 @@ impl WorkspaceView {
     fn load_updates(&mut self, cx: &mut Context<Self>) {
         let client = self.store.read(cx).client.clone();
         cx.spawn(async move |this, cx| {
-            if let Ok(packages) = client.list_updates().await {
-                let unified: Vec<UnifiedPackage> = packages
-                    .into_iter()
-                    .map(UnifiedPackage::from_update)
-                    .collect();
-                let _ = this.update(cx, |view, cx| {
-                    view.store.update(cx, |st, cx| {
+            let res = client.list_updates().await;
+            let _ = this.update(cx, |view, cx| {
+                view.store.update(cx, |st, cx| match res {
+                    Ok(packages) => {
+                        let unified: Vec<UnifiedPackage> = packages
+                            .into_iter()
+                            .map(UnifiedPackage::from_update)
+                            .collect();
+                        st.updates_error = None;
                         st.set_updates_packages(unified, cx);
-                    });
-                    cx.notify();
+                    }
+                    Err(e) => {
+                        log::error!("Failed to list updates: {:?}", e);
+                        st.updates_error = Some(e.to_string());
+                        st.set_updates_packages(Vec::new(), cx);
+                    }
                 });
-            }
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -432,10 +481,24 @@ impl WorkspaceView {
         let client = self.store.read(cx).client.clone();
 
         cx.spawn(async move |this, cx| {
-            let news_items = client.list_news().await.unwrap_or_default();
+            let res = client.list_news().await;
             let _ = this.update(cx, |view, cx| {
-                view.news = news_items;
                 view.is_loading_news = false;
+                match res {
+                    Ok(news_items) => {
+                        view.news = news_items;
+                        view.store.update(cx, |st, _cx| {
+                            st.news_error = None;
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("Failed to list news: {:?}", e);
+                        view.news = Vec::new();
+                        view.store.update(cx, |st, _cx| {
+                            st.news_error = Some(e.to_string());
+                        });
+                    }
+                }
                 cx.notify();
             });
         })
@@ -454,14 +517,21 @@ impl WorkspaceView {
             let key_clone = key.clone();
 
             cx.spawn(async move |this, cx| {
-                if let Ok(Some(details)) = client.get_package_details(&pkg_name).await {
-                    let _ = this.update(cx, |view, cx| {
-                        view.store.update(cx, |st, _cx| {
+                let res = client.get_package_details(&pkg_name).await;
+                let _ = this.update(cx, |view, cx| {
+                    view.store.update(cx, |st, _cx| match res {
+                        Ok(Some(details)) => {
                             st.cache_details(key_clone, details);
-                        });
-                        cx.notify();
+                        }
+                        Ok(None) => {
+                            st.set_detail_error(key_clone, "Package details not found".to_string());
+                        }
+                        Err(e) => {
+                            st.set_detail_error(key_clone, e.to_string());
+                        }
                     });
-                }
+                    cx.notify();
+                });
             })
             .detach();
         }
@@ -539,6 +609,130 @@ impl WorkspaceView {
         }));
     }
 
+    /// Réessaye la recherche pour une source spécifique après échec
+    fn retry_source_search(&mut self, kind: PackageSourceKind, cx: &mut Context<Self>) {
+        let query = self.session.read(cx).search_query.trim().to_string();
+        if query.is_empty() {
+            return;
+        }
+
+        let aur_enabled = self.shelly_settings.aur_enabled;
+        let flatpak_enabled = self.shelly_settings.flat_pack_enabled;
+        let appimage_enabled = self.shelly_settings.app_image_enabled;
+        let client = self.store.read(cx).client.clone();
+        let query_clone = query.clone();
+
+        cx.spawn(async move |this, cx| {
+            let res: Result<Vec<UnifiedPackage>, String> = match kind {
+                PackageSourceKind::Alpm => client
+                    .search_standard(&query_clone)
+                    .await
+                    .map(|pkgs| {
+                        pkgs.into_iter()
+                            .map(|p| UnifiedPackage::from_alpm(p, false))
+                            .collect()
+                    })
+                    .map_err(|e| e.to_string()),
+                PackageSourceKind::Aur => {
+                    if aur_enabled {
+                        client
+                            .search_aur(&query_clone)
+                            .await
+                            .map(|pkgs| {
+                                pkgs.into_iter()
+                                    .map(|p| UnifiedPackage::from_aur(p, false))
+                                    .collect()
+                            })
+                            .map_err(|e| e.to_string())
+                    } else {
+                        Ok(Vec::new())
+                    }
+                }
+                PackageSourceKind::Flatpak => {
+                    if flatpak_enabled {
+                        client
+                            .search_flatpak(&query_clone)
+                            .await
+                            .map(|pkgs| {
+                                pkgs.into_iter()
+                                    .map(|p| UnifiedPackage::from_flatpak(p, false))
+                                    .collect()
+                            })
+                            .map_err(|e| e.to_string())
+                    } else {
+                        Ok(Vec::new())
+                    }
+                }
+                PackageSourceKind::AppImage => {
+                    if appimage_enabled {
+                        client
+                            .list_appimages()
+                            .await
+                            .map(|appimages| {
+                                let q_lower = query_clone.to_lowercase();
+                                appimages
+                                    .into_iter()
+                                    .filter(|ai| {
+                                        ai.name.to_lowercase().contains(&q_lower)
+                                            || ai
+                                                .desktop_name
+                                                .as_ref()
+                                                .map(|d| d.to_lowercase().contains(&q_lower))
+                                                .unwrap_or(false)
+                                            || ai
+                                                .description
+                                                .as_ref()
+                                                .map(|d| d.to_lowercase().contains(&q_lower))
+                                                .unwrap_or(false)
+                                    })
+                                    .map(UnifiedPackage::from_appimage)
+                                    .collect()
+                            })
+                            .map_err(|e| e.to_string())
+                    } else {
+                        Ok(Vec::new())
+                    }
+                }
+            };
+
+            let _ = this.update(cx, |view, cx| {
+                view.store.update(cx, |st, cx| match res {
+                    Ok(new_pkgs) => {
+                        st.update_source_health(kind, SourceHealth::ready());
+                        let mut current: Vec<UnifiedPackage> = st
+                            .active_results
+                            .iter()
+                            .filter(|p| p.key().source != kind)
+                            .cloned()
+                            .collect();
+                        current.extend(new_pkgs);
+                        let gen = view.session.read(cx).search_generation;
+                        st.set_active_results(current, gen, cx);
+
+                        let scope = view.session.read(cx).source_scope;
+                        let all_healthy = scope
+                            .enabled_sources(aur_enabled, flatpak_enabled, appimage_enabled)
+                            .iter()
+                            .all(|src| {
+                                st.source_health
+                                    .get(src)
+                                    .map(|h| !h.is_failed())
+                                    .unwrap_or(true)
+                            });
+                        if all_healthy {
+                            st.cache_search(&query_clone, scope, st.active_results.to_vec());
+                        }
+                    }
+                    Err(err) => {
+                        st.update_source_health(kind, SourceHealth::failed(err));
+                    }
+                });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Exécute la recherche unifiée multi-sources avec cache de session et protection contre les requêtes obsolètes
     fn execute_search(&mut self, query: String, cx: &mut Context<Self>) {
         let trimmed = query.trim().to_string();
@@ -556,13 +750,13 @@ impl WorkspaceView {
             return;
         }
 
-        let filter = self.session.read(cx).source_filter;
+        let source_scope = self.session.read(cx).source_scope;
 
         // 1. Vérification du cache de session
         if let Some(cached) = self
             .store
             .read(cx)
-            .get_cached_search(&trimmed, filter)
+            .get_cached_search(&trimmed, source_scope)
             .cloned()
         {
             let gen = self.session.update(cx, |s, _cx| {
@@ -594,146 +788,159 @@ impl WorkspaceView {
         let query_clone = trimmed.clone();
 
         cx.spawn(async move |this, cx| {
-            let results: Vec<UnifiedPackage> = match filter {
-                SourceFilter::All => {
-                    let (alpm_res, aur_res, flatpak_res, appimage_res) = tokio::join!(
-                        client.search_standard(&query_clone),
-                        async {
-                            if aur_enabled {
-                                client.search_aur(&query_clone).await.ok()
-                            } else {
-                                None
-                            }
-                        },
-                        async {
-                            if flatpak_enabled {
-                                client.search_flatpak(&query_clone).await.ok()
-                            } else {
-                                None
-                            }
-                        },
-                        async {
-                            if appimage_enabled {
-                                client.list_appimages().await.ok()
-                            } else {
-                                None
-                            }
-                        }
-                    );
-
-                    let mut combined = Vec::new();
-
-                    if let Ok(pkgs) = alpm_res {
-                        for p in pkgs {
-                            combined.push(UnifiedPackage::from_alpm(p, false));
-                        }
-                    }
-                    if let Some(pkgs) = aur_res {
-                        for p in pkgs {
-                            combined.push(UnifiedPackage::from_aur(p, false));
-                        }
-                    }
-                    if let Some(pkgs) = flatpak_res {
-                        for p in pkgs {
-                            combined.push(UnifiedPackage::from_flatpak(p, false));
-                        }
-                    }
-                    if let Some(appimages) = appimage_res {
-                        let q_lower = query_clone.to_lowercase();
-                        for ai in appimages {
-                            let matches = ai.name.to_lowercase().contains(&q_lower)
-                                || ai
-                                    .desktop_name
-                                    .as_ref()
-                                    .map(|d| d.to_lowercase().contains(&q_lower))
-                                    .unwrap_or(false)
-                                || ai
-                                    .description
-                                    .as_ref()
-                                    .map(|d| d.to_lowercase().contains(&q_lower))
-                                    .unwrap_or(false);
-                            if matches {
-                                combined.push(UnifiedPackage::from_appimage(ai));
-                            }
-                        }
-                    }
-                    combined
-                }
-                SourceFilter::Alpm => client
-                    .search_standard(&query_clone)
-                    .await
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|p| UnifiedPackage::from_alpm(p, false))
-                    .collect(),
-                SourceFilter::Aur => {
-                    if aur_enabled {
-                        client
-                            .search_aur(&query_clone)
-                            .await
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|p| UnifiedPackage::from_aur(p, false))
-                            .collect()
+            let (alpm_res, aur_res, flatpak_res, appimage_res) = tokio::join!(
+                async {
+                    if source_scope.alpm {
+                        Some(client.search_standard(&query_clone).await)
                     } else {
-                        Vec::new()
+                        None
                     }
-                }
-                SourceFilter::Flatpak => {
-                    if flatpak_enabled {
-                        client
-                            .search_flatpak(&query_clone)
-                            .await
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|p| UnifiedPackage::from_flatpak(p, false))
-                            .collect()
+                },
+                async {
+                    if source_scope.aur && aur_enabled {
+                        Some(client.search_aur(&query_clone).await)
                     } else {
-                        Vec::new()
+                        None
                     }
-                }
-                SourceFilter::AppImage => {
-                    if appimage_enabled {
-                        let appimages = client.list_appimages().await.unwrap_or_default();
-                        let q_lower = query_clone.to_lowercase();
-                        appimages
-                            .into_iter()
-                            .filter(|ai| {
-                                ai.name.to_lowercase().contains(&q_lower)
-                                    || ai
-                                        .desktop_name
-                                        .as_ref()
-                                        .map(|d| d.to_lowercase().contains(&q_lower))
-                                        .unwrap_or(false)
-                                    || ai
-                                        .description
-                                        .as_ref()
-                                        .map(|d| d.to_lowercase().contains(&q_lower))
-                                        .unwrap_or(false)
-                            })
-                            .map(UnifiedPackage::from_appimage)
-                            .collect()
+                },
+                async {
+                    if source_scope.flatpak && flatpak_enabled {
+                        Some(client.search_flatpak(&query_clone).await)
                     } else {
-                        Vec::new()
+                        None
+                    }
+                },
+                async {
+                    if source_scope.appimage && appimage_enabled {
+                        Some(client.list_appimages().await)
+                    } else {
+                        None
                     }
                 }
-            };
+            );
 
             let _ = this.update(cx, |view, cx| {
                 let current_gen = view.session.read(cx).search_generation;
-                if current_gen == gen {
-                    view.store.update(cx, |st, cx| {
-                        st.cache_search(&query_clone, filter, results.clone());
-                        st.set_active_results(results, gen, cx);
-                    });
-                    view.session.update(cx, |s, cx| {
-                        s.set_searching(false, cx);
-                    });
-                    view.workstation.update(cx, |ws, _cx| {
-                        ws.scroll_handle.scroll_to_item(0, ScrollStrategy::Top)
-                    });
-                    cx.notify();
+                if current_gen != gen {
+                    return;
                 }
+
+                let mut combined = Vec::new();
+                let mut all_succeeded = true;
+
+                view.store.update(cx, |st, cx| {
+                    if let Some(res) = alpm_res {
+                        match res {
+                            Ok(pkgs) => {
+                                st.update_source_health(
+                                    PackageSourceKind::Alpm,
+                                    SourceHealth::ready(),
+                                );
+                                for p in pkgs {
+                                    combined.push(UnifiedPackage::from_alpm(p, false));
+                                }
+                            }
+                            Err(e) => {
+                                all_succeeded = false;
+                                st.update_source_health(
+                                    PackageSourceKind::Alpm,
+                                    SourceHealth::failed(e.to_string()),
+                                );
+                            }
+                        }
+                    }
+
+                    if let Some(res) = aur_res {
+                        match res {
+                            Ok(pkgs) => {
+                                st.update_source_health(
+                                    PackageSourceKind::Aur,
+                                    SourceHealth::ready(),
+                                );
+                                for p in pkgs {
+                                    combined.push(UnifiedPackage::from_aur(p, false));
+                                }
+                            }
+                            Err(e) => {
+                                all_succeeded = false;
+                                st.update_source_health(
+                                    PackageSourceKind::Aur,
+                                    SourceHealth::failed(e.to_string()),
+                                );
+                            }
+                        }
+                    }
+
+                    if let Some(res) = flatpak_res {
+                        match res {
+                            Ok(pkgs) => {
+                                st.update_source_health(
+                                    PackageSourceKind::Flatpak,
+                                    SourceHealth::ready(),
+                                );
+                                for p in pkgs {
+                                    combined.push(UnifiedPackage::from_flatpak(p, false));
+                                }
+                            }
+                            Err(e) => {
+                                all_succeeded = false;
+                                st.update_source_health(
+                                    PackageSourceKind::Flatpak,
+                                    SourceHealth::failed(e.to_string()),
+                                );
+                            }
+                        }
+                    }
+
+                    if let Some(res) = appimage_res {
+                        match res {
+                            Ok(appimages) => {
+                                st.update_source_health(
+                                    PackageSourceKind::AppImage,
+                                    SourceHealth::ready(),
+                                );
+                                let q_lower = query_clone.to_lowercase();
+                                for ai in appimages {
+                                    let matches = ai.name.to_lowercase().contains(&q_lower)
+                                        || ai
+                                            .desktop_name
+                                            .as_ref()
+                                            .map(|d| d.to_lowercase().contains(&q_lower))
+                                            .unwrap_or(false)
+                                        || ai
+                                            .description
+                                            .as_ref()
+                                            .map(|d| d.to_lowercase().contains(&q_lower))
+                                            .unwrap_or(false);
+                                    if matches {
+                                        combined.push(UnifiedPackage::from_appimage(ai));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                all_succeeded = false;
+                                st.update_source_health(
+                                    PackageSourceKind::AppImage,
+                                    SourceHealth::failed(e.to_string()),
+                                );
+                            }
+                        }
+                    }
+
+                    if all_succeeded {
+                        st.cache_search(&query_clone, source_scope, combined.clone());
+                    }
+
+                    st.set_active_results(combined, gen, cx);
+                });
+
+                view.session.update(cx, |s, cx| {
+                    s.set_searching(false, cx);
+                });
+                view.workstation.update(cx, |ws, _cx| {
+                    ws.scroll_handle.scroll_to_item(0, ScrollStrategy::Top)
+                });
+                cx.notify();
             });
         })
         .detach();
@@ -846,17 +1053,24 @@ impl WorkspaceView {
         let draft_flatpak = self.settings.draft_shelly.flat_pack_enabled;
         let draft_appimage = self.settings.draft_shelly.app_image_enabled;
 
-        let current_filter = self.session.read(cx).source_filter;
-        let filter_invalidated = match current_filter {
-            SourceFilter::Aur if !draft_aur => true,
-            SourceFilter::Flatpak if !draft_flatpak => true,
-            SourceFilter::AppImage if !draft_appimage => true,
-            _ => false,
-        };
+        let mut scope = self.session.read(cx).source_scope;
+        let mut scope_changed = false;
+        if !draft_aur && scope.aur {
+            scope.aur = false;
+            scope_changed = true;
+        }
+        if !draft_flatpak && scope.flatpak {
+            scope.flatpak = false;
+            scope_changed = true;
+        }
+        if !draft_appimage && scope.appimage {
+            scope.appimage = false;
+            scope_changed = true;
+        }
 
-        if filter_invalidated {
+        if scope_changed {
             self.session.update(cx, |s, cx| {
-                s.set_source_filter(SourceFilter::All, cx);
+                s.set_source_scope(scope, cx);
             });
         }
 
@@ -1053,11 +1267,21 @@ impl Render for WorkspaceView {
             NavDestination::Browse | NavDestination::Installed | NavDestination::Updates => {
                 div().size_full().child(self.workstation.clone())
             }
-            NavDestination::News => div().size_full().child(NewsView::render(NewsViewProps {
-                news: &self.news,
-                is_loading: self.is_loading_news,
-                theme: &theme,
-            })),
+            NavDestination::News => {
+                let entity_retry = entity.clone();
+                let store = self.store.read(cx);
+                div().size_full().child(NewsView::render(NewsViewProps {
+                    news: &self.news,
+                    error: store.news_error.as_deref(),
+                    is_loading: self.is_loading_news,
+                    theme: &theme,
+                    on_retry: Some(Rc::new(move |_w, cx| {
+                        entity_retry.update(cx, |view, cx| {
+                            view.load_news(cx);
+                        });
+                    })),
+                }))
+            }
             NavDestination::Settings => {
                 let entity_st = entity.clone();
                 let theme_ref = &theme;

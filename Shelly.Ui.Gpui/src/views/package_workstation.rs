@@ -1,13 +1,14 @@
 use crate::backend::models::UnifiedPackage;
 use crate::components::package_card::{PackageCard, PackageCardProps};
 use crate::components::package_table::PackageTable;
+use crate::components::query_workbench::{QueryWorkbench, QueryWorkbenchProps, WorkbenchMenu};
 use crate::components::search_input::SearchInputView;
 use crate::components::unified_search::UnifiedSearch;
 use crate::state::console::{ConsoleEvent, ConsoleModel};
-use crate::state::query::{PackageStateFilter, SortMode};
+use crate::state::query::{PackageStateFilter, SortMode, SourceScope};
 use crate::state::{
-    canonical_install_command, AppSession, NavDestination, PackageStore, PackageViewMode,
-    SourceFilter, ToastCenter, ToastKind,
+    canonical_install_command, AppSession, NavDestination, PackageKey, PackageSourceKind,
+    PackageStore, PackageViewMode, ToastCenter, ToastKind,
 };
 use crate::theme::Theme;
 use crate::ui_metrics::UiMetrics;
@@ -19,6 +20,9 @@ use std::rc::Rc;
 pub type PackageMutationHandler =
     Rc<dyn Fn(&UnifiedPackage, bool /* is_install */, &mut Window, &mut App) + 'static>;
 pub type SystemUpgradeHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
+pub type SourceRetryHandler = Rc<dyn Fn(PackageSourceKind, &mut Window, &mut App) + 'static>;
+pub type ActionReloadHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
+pub type DetailsRetryHandler = Rc<dyn Fn(&PackageKey, &mut Window, &mut App) + 'static>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SplitterDragState {
@@ -57,6 +61,10 @@ pub struct PackageWorkstationView {
     pub scroll_handle: UniformListScrollHandle,
     pub on_mutation: Option<PackageMutationHandler>,
     pub on_upgrade_all: Option<SystemUpgradeHandler>,
+    pub on_retry_source: Option<SourceRetryHandler>,
+    pub on_reload_installed: Option<ActionReloadHandler>,
+    pub on_reload_updates: Option<ActionReloadHandler>,
+    pub on_retry_details: Option<DetailsRetryHandler>,
     pub copy_cmd_feedback: bool,
     pub is_loading_pkgbuild: bool,
     pub reduce_motion: bool,
@@ -66,6 +74,7 @@ pub struct PackageWorkstationView {
     pub flatpak_enabled: bool,
     pub appimage_enabled: bool,
     pub search_input: Entity<SearchInputView>,
+    pub active_menu: Option<WorkbenchMenu>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -124,6 +133,10 @@ impl PackageWorkstationView {
             scroll_handle: UniformListScrollHandle::new(),
             on_mutation: None,
             on_upgrade_all: None,
+            on_retry_source: None,
+            on_reload_installed: None,
+            on_reload_updates: None,
+            on_retry_details: None,
             copy_cmd_feedback: false,
             is_loading_pkgbuild: false,
             reduce_motion: config.reduce_motion,
@@ -133,6 +146,7 @@ impl PackageWorkstationView {
             flatpak_enabled: config.flatpak_enabled,
             appimage_enabled: config.appimage_enabled,
             search_input,
+            active_menu: None,
         }
     }
 
@@ -215,7 +229,6 @@ impl Render for PackageWorkstationView {
 
         let (
             destination,
-            source_filter,
             is_searching,
             selected_key,
             view_mode,
@@ -227,7 +240,6 @@ impl Render for PackageWorkstationView {
             let s = self.session.read(cx);
             (
                 s.destination,
-                s.source_filter,
                 s.is_searching,
                 s.selected_package_key.clone(),
                 s.view_mode,
@@ -277,7 +289,6 @@ impl Render for PackageWorkstationView {
             .as_ref()
             .and_then(|key| packages.iter().find(|p| &p.key() == key).cloned());
 
-        let entity_filter = entity.clone();
         let entity_mode = entity.clone();
         let entity_select = entity.clone();
         let entity_split = entity.clone();
@@ -303,64 +314,81 @@ impl Render for PackageWorkstationView {
 
         let top_bar = match destination {
             crate::state::NavDestination::Browse => {
-                let on_filter = entity_filter.clone();
-                let on_sort = entity.clone();
+                let on_toggle_source = entity.clone();
                 let on_state = entity.clone();
+                let on_sort = entity.clone();
                 let on_mode = entity_mode.clone();
-                let on_reset = entity.clone();
+                let on_menu = entity.clone();
+                let on_retry = entity.clone();
+                let on_clear = entity.clone();
+                let aur_enabled = self.aur_enabled;
+                let flatpak_enabled = self.flatpak_enabled;
+                let appimage_enabled = self.appimage_enabled;
+                let store = self.store.read(cx);
 
-                crate::components::query_workbench::QueryWorkbench::render(
-                    &crate::components::query_workbench::QueryWorkbenchProps {
-                        search_input: self.search_input.clone(),
-                        list_pane_width: self.list_pane_width,
-                        source_filter,
-                        source_scope,
-                        state_filter,
-                        sort_mode,
-                        view_mode,
-                        is_searching,
-                        total_count: packages.len(),
-                        aur_enabled: self.aur_enabled,
-                        flatpak_enabled: self.flatpak_enabled,
-                        appimage_enabled: self.appimage_enabled,
-                        theme: &theme,
-                        on_select_filter: Rc::new(move |filter, _w, cx| {
-                            on_filter.update(cx, |view, cx| {
-                                view.session.update(cx, |s, cx| {
-                                    s.set_source_filter(filter, cx);
-                                });
+                QueryWorkbench::render(&QueryWorkbenchProps {
+                    search_input: self.search_input.clone(),
+                    list_pane_width: self.list_pane_width,
+                    source_scope,
+                    state_filter,
+                    sort_mode,
+                    view_mode,
+                    active_menu: self.active_menu,
+                    is_searching,
+                    total_count: packages.len(),
+                    aur_enabled: self.aur_enabled,
+                    flatpak_enabled: self.flatpak_enabled,
+                    appimage_enabled: self.appimage_enabled,
+                    source_health: &store.source_health,
+                    theme: &theme,
+                    on_toggle_source: Rc::new(move |kind, _w, cx| {
+                        on_toggle_source.update(cx, |view, cx| {
+                            view.session.update(cx, |s, cx| {
+                                s.toggle_source(kind, cx);
                             });
-                        }),
-                        on_cycle_sort: Rc::new(move |_w, cx| {
-                            on_sort.update(cx, |view, cx| {
-                                view.session.update(cx, |s, cx| {
-                                    s.cycle_sort_mode(cx);
-                                });
+                        });
+                    }),
+                    on_select_state: Rc::new(move |state, _w, cx| {
+                        on_state.update(cx, |view, cx| {
+                            view.session.update(cx, |s, cx| {
+                                s.set_state_filter(state, cx);
                             });
-                        }),
-                        on_cycle_state_filter: Rc::new(move |_w, cx| {
-                            on_state.update(cx, |view, cx| {
-                                view.session.update(cx, |s, cx| {
-                                    s.cycle_state_filter(cx);
-                                });
+                        });
+                    }),
+                    on_select_sort: Rc::new(move |sort, _w, cx| {
+                        on_sort.update(cx, |view, cx| {
+                            view.session.update(cx, |s, cx| {
+                                s.set_sort_mode(sort, cx);
                             });
-                        }),
-                        on_select_view_mode: Rc::new(move |mode, _w, cx| {
-                            on_mode.update(cx, |view, cx| {
-                                view.session.update(cx, |s, cx| {
-                                    s.set_view_mode(mode, cx);
-                                });
+                        });
+                    }),
+                    on_select_view_mode: Rc::new(move |mode, _w, cx| {
+                        on_mode.update(cx, |view, cx| {
+                            view.session.update(cx, |s, cx| {
+                                s.set_view_mode(mode, cx);
                             });
-                        }),
-                        on_reset_query: Rc::new(move |_w, cx| {
-                            on_reset.update(cx, |view, cx| {
-                                view.session.update(cx, |s, cx| {
-                                    s.reset_query_filters(cx);
-                                });
+                        });
+                    }),
+                    on_toggle_menu: Rc::new(move |menu, _w, cx| {
+                        on_menu.update(cx, |view, cx| {
+                            view.active_menu = menu;
+                            cx.notify();
+                        });
+                    }),
+                    on_retry_source: Rc::new(move |kind, w, cx| {
+                        let cb = on_retry.read(cx).on_retry_source.clone();
+                        if let Some(cb) = cb {
+                            cb(kind, w, cx);
+                        }
+                    }),
+                    on_clear_filters: Rc::new(move |_w, cx| {
+                        on_clear.update(cx, |view, cx| {
+                            view.session.update(cx, |s, cx| {
+                                s.clear_filters(aur_enabled, flatpak_enabled, appimage_enabled, cx);
                             });
-                        }),
-                    },
-                )
+                        });
+                    }),
+                })
                 .into_any_element()
             }
             crate::state::NavDestination::Installed => div()
@@ -489,10 +517,90 @@ impl Render for PackageWorkstationView {
         };
 
         // ── 2. Corps de la liste (Cards vs Table) ───────────────────────────
+        let (installed_err, updates_err) = {
+            let st = self.store.read(cx);
+            (st.installed_error.clone(), st.updates_error.clone())
+        };
+
         let is_browse_empty =
             destination == crate::state::NavDestination::Browse && search_query.trim().is_empty();
 
-        let list_body = if is_browse_empty {
+        let list_body = if let (NavDestination::Installed, Some(err)) = (destination, installed_err)
+        {
+            let on_reload_installed_cb = self.on_reload_installed.clone();
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .size_full()
+                .p_8()
+                .gap_4()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(theme.danger)
+                        .child(format!("Failed to load installed packages: {err}")),
+                )
+                .child(
+                    div()
+                        .id("retry_load_installed_btn")
+                        .px_3()
+                        .py_1p5()
+                        .rounded_md()
+                        .bg(theme.accent)
+                        .text_xs()
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(theme.bg_app)
+                        .cursor_pointer()
+                        .hover(|s| s.bg(theme.accent_hover))
+                        .child("Retry")
+                        .on_mouse_down(MouseButton::Left, move |_ev, w, cx| {
+                            if let Some(ref cb) = on_reload_installed_cb {
+                                cb(w, cx);
+                            }
+                        }),
+                )
+                .into_any_element()
+        } else if let (NavDestination::Updates, Some(err)) = (destination, updates_err) {
+            let on_reload_updates_cb = self.on_reload_updates.clone();
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .size_full()
+                .p_8()
+                .gap_4()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(theme.danger)
+                        .child(format!("Failed to check for updates: {err}")),
+                )
+                .child(
+                    div()
+                        .id("retry_load_updates_btn")
+                        .px_3()
+                        .py_1p5()
+                        .rounded_md()
+                        .bg(theme.accent)
+                        .text_xs()
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(theme.bg_app)
+                        .cursor_pointer()
+                        .hover(|s| s.bg(theme.accent_hover))
+                        .child("Retry")
+                        .on_mouse_down(MouseButton::Left, move |_ev, w, cx| {
+                            if let Some(ref cb) = on_reload_updates_cb {
+                                cb(w, cx);
+                            }
+                        }),
+                )
+                .into_any_element()
+        } else if is_browse_empty {
             div()
                 .flex_1()
                 .child(UnifiedSearch::render_empty_discovery(&theme))
@@ -670,6 +778,9 @@ impl Render for PackageWorkstationView {
         let alpm_details = selected_key
             .as_ref()
             .and_then(|k| self.store.read(cx).get_cached_details(k).cloned());
+        let detail_error = selected_key
+            .as_ref()
+            .and_then(|k| self.store.read(cx).get_detail_error(k).cloned());
 
         let cached_pkgbuild = selected_pkg.as_ref().and_then(|p| {
             if p.source_type == "AUR" {
@@ -678,6 +789,20 @@ impl Render for PackageWorkstationView {
                 None
             }
         });
+
+        let on_retry_details = if detail_error.is_some() {
+            if let Some(key) = selected_key.clone() {
+                self.on_retry_details.clone().map(|cb| {
+                    Rc::new(move |w: &mut Window, cx: &mut App| {
+                        cb(&key, w, cx);
+                    }) as Rc<dyn Fn(&mut Window, &mut App)>
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let selected_pkg_clone = selected_pkg.clone();
         let on_mutation_cb = self.on_mutation.clone();
@@ -691,6 +816,7 @@ impl Render for PackageWorkstationView {
                 PackageInspectorProps {
                     package: selected_pkg.as_ref(),
                     alpm_details: alpm_details.as_ref(),
+                    detail_error: detail_error.as_deref(),
                     pkgbuild: cached_pkgbuild,
                     is_loading_pkgbuild: self.is_loading_pkgbuild,
                     active_tab,
@@ -762,12 +888,14 @@ impl Render for PackageWorkstationView {
                         entity_nav_dep.update(cx, |view, cx| {
                             view.session.update(cx, |s, cx| {
                                 s.set_destination(crate::state::NavDestination::Browse, cx);
-                                s.set_source_filter(SourceFilter::All, cx);
+                                s.set_source_scope(SourceScope::all(), cx);
+                                s.set_state_filter(PackageStateFilter::All, cx);
                                 s.set_search_query(pkg_name.clone(), cx);
                                 s.select_package(None, cx);
                             });
                         });
                     })),
+                    on_retry_details,
                 },
                 reduce_motion,
                 inspector_tab_epoch,

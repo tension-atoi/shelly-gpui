@@ -1,5 +1,5 @@
 use crate::backend::models::UnifiedPackage;
-use crate::state::session::SourceFilter;
+use crate::state::session::PackageSourceKind;
 use serde::{Deserialize, Serialize};
 
 /// Portée de filtrage des sources (sélection multiple ou unitaire de dépôts)
@@ -27,38 +27,55 @@ impl SourceScope {
         }
     }
 
-    pub fn from_filter(filter: SourceFilter) -> Self {
-        match filter {
-            SourceFilter::All => Self::all(),
-            SourceFilter::Alpm => Self {
-                alpm: true,
-                aur: false,
-                flatpak: false,
-                appimage: false,
-            },
-            SourceFilter::Aur => Self {
-                alpm: false,
-                aur: true,
-                flatpak: false,
-                appimage: false,
-            },
-            SourceFilter::Flatpak => Self {
-                alpm: false,
-                aur: false,
-                flatpak: true,
-                appimage: false,
-            },
-            SourceFilter::AppImage => Self {
-                alpm: false,
-                aur: false,
-                flatpak: false,
-                appimage: true,
-            },
-        }
+    pub fn all_enabled(aur_enabled: bool, flatpak_enabled: bool, appimage_enabled: bool) -> Self {
+        let mut s = Self::all();
+        s.clamp_to_enabled(aur_enabled, flatpak_enabled, appimage_enabled);
+        s
     }
 
     pub fn is_all(&self) -> bool {
         self.alpm && self.aur && self.flatpak && self.appimage
+    }
+
+    pub fn is_all_enabled(
+        &self,
+        aur_enabled: bool,
+        flatpak_enabled: bool,
+        appimage_enabled: bool,
+    ) -> bool {
+        self.alpm
+            && (!aur_enabled || self.aur)
+            && (!flatpak_enabled || self.flatpak)
+            && (!appimage_enabled || self.appimage)
+    }
+
+    pub fn toggle_source(&mut self, source: PackageSourceKind) {
+        match source {
+            PackageSourceKind::Alpm => {
+                if !self.alpm || (self.aur || self.flatpak || self.appimage) {
+                    self.alpm = !self.alpm;
+                }
+            }
+            PackageSourceKind::Aur => {
+                if !self.aur || (self.alpm || self.flatpak || self.appimage) {
+                    self.aur = !self.aur;
+                }
+            }
+            PackageSourceKind::Flatpak => {
+                if !self.flatpak || (self.alpm || self.aur || self.appimage) {
+                    self.flatpak = !self.flatpak;
+                }
+            }
+            PackageSourceKind::AppImage => {
+                if !self.appimage || (self.alpm || self.aur || self.flatpak) {
+                    self.appimage = !self.appimage;
+                }
+            }
+        }
+        // Invariant strict : interdiction absolue d'avoir zéro source sélectionnée
+        if !self.alpm && !self.aur && !self.flatpak && !self.appimage {
+            self.alpm = true;
+        }
     }
 
     pub fn contains_str(&self, source_type: &str) -> bool {
@@ -91,28 +108,26 @@ impl SourceScope {
         }
     }
 
-    pub fn summary_label(&self) -> String {
-        if self.is_all() {
-            return "All Sources".to_string();
-        }
-        let mut active = Vec::new();
+    pub fn enabled_sources(
+        &self,
+        aur_enabled: bool,
+        flatpak_enabled: bool,
+        appimage_enabled: bool,
+    ) -> Vec<PackageSourceKind> {
+        let mut list = Vec::new();
         if self.alpm {
-            active.push("Official");
+            list.push(PackageSourceKind::Alpm);
         }
-        if self.aur {
-            active.push("AUR");
+        if self.aur && aur_enabled {
+            list.push(PackageSourceKind::Aur);
         }
-        if self.flatpak {
-            active.push("Flatpak");
+        if self.flatpak && flatpak_enabled {
+            list.push(PackageSourceKind::Flatpak);
         }
-        if self.appimage {
-            active.push("AppImage");
+        if self.appimage && appimage_enabled {
+            list.push(PackageSourceKind::AppImage);
         }
-        if active.is_empty() {
-            "Official".to_string()
-        } else {
-            active.join(" + ")
-        }
+        list
     }
 }
 
@@ -144,15 +159,6 @@ impl PackageStateFilter {
             PackageStateFilter::UpdatesAvailable => has_update,
         }
     }
-
-    pub fn cycle_next(&self) -> Self {
-        match self {
-            PackageStateFilter::All => PackageStateFilter::Installed,
-            PackageStateFilter::Installed => PackageStateFilter::NotInstalled,
-            PackageStateFilter::NotInstalled => PackageStateFilter::UpdatesAvailable,
-            PackageStateFilter::UpdatesAvailable => PackageStateFilter::All,
-        }
-    }
 }
 
 /// Mode de tri déterministe côté client (zéro ré-interrogation backend)
@@ -176,17 +182,6 @@ impl SortMode {
             SortMode::Source => "Source Backend",
             SortMode::InstalledFirst => "Installed First",
             SortMode::UpdatesFirst => "Updates First",
-        }
-    }
-
-    pub fn cycle_next(&self) -> Self {
-        match self {
-            SortMode::Relevance => SortMode::NameAsc,
-            SortMode::NameAsc => SortMode::NameDesc,
-            SortMode::NameDesc => SortMode::Source,
-            SortMode::Source => SortMode::InstalledFirst,
-            SortMode::InstalledFirst => SortMode::UpdatesFirst,
-            SortMode::UpdatesFirst => SortMode::Relevance,
         }
     }
 
@@ -257,16 +252,16 @@ impl SortMode {
 /// Point de rupture adaptatif de la géométrie de l'établi de recherche
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WorkbenchBreakpoint {
-    Wide,   // >= 540px
-    Medium, // 380px .. 540px
-    Narrow, // < 380px
+    Wide,   // >= 640px : puces rapides + popover filtres + tri + vue
+    Medium, // 460px .. 640px : popover filtres + état + tri + vue
+    Narrow, // < 460px : popover filtres compact + tri compact + vue
 }
 
 impl WorkbenchBreakpoint {
     pub fn from_width(width: f32) -> Self {
-        if width >= 540.0 {
+        if width >= 640.0 {
             WorkbenchBreakpoint::Wide
-        } else if width >= 380.0 {
+        } else if width >= 460.0 {
             WorkbenchBreakpoint::Medium
         } else {
             WorkbenchBreakpoint::Narrow
@@ -381,7 +376,7 @@ mod tests {
     fn test_multi_source_scope_selection_and_disabled_exclusion() {
         let mut scope = SourceScope::all();
         assert!(scope.is_all());
-        assert_eq!(scope.summary_label(), "All Sources");
+        assert_eq!(scope.enabled_sources(true, true, true).len(), 4);
         assert!(scope.contains_str("Standard"));
         assert!(scope.contains_str("AUR"));
         assert!(scope.contains_str("Flatpak"));
@@ -393,44 +388,56 @@ mod tests {
         assert!(!scope.appimage);
         assert!(scope.alpm);
         assert!(scope.flatpak);
-        assert_eq!(scope.summary_label(), "Official + Flatpak");
+        assert_eq!(scope.enabled_sources(false, true, false).len(), 2);
         assert!(scope.contains_str("Standard"));
         assert!(!scope.contains_str("AUR"));
         assert!(scope.contains_str("Flatpak"));
         assert!(!scope.contains_str("AppImage"));
 
-        // From filter
-        let alpm_scope = SourceScope::from_filter(SourceFilter::Alpm);
-        assert!(!alpm_scope.is_all());
-        assert_eq!(alpm_scope.summary_label(), "Official");
-        assert!(alpm_scope.contains_str("Official"));
-        assert!(!alpm_scope.contains_str("Flatpak"));
+        // Toggle source
+        let mut scope = SourceScope::all();
+        scope.toggle_source(PackageSourceKind::Aur);
+        assert!(!scope.aur);
+        assert!(scope.alpm);
+        assert!(scope.flatpak);
+        assert!(scope.appimage);
+        assert_eq!(scope.enabled_sources(true, true, true).len(), 3);
+
+        // Cannot deselect all sources down to 0
+        scope.toggle_source(PackageSourceKind::Alpm);
+        scope.toggle_source(PackageSourceKind::Flatpak);
+        assert_eq!(scope.enabled_sources(true, true, true).len(), 1);
+        assert!(scope.appimage);
+        // Attempting to deselect the last remaining source (AppImage) is refused (never 0 sources)
+        scope.toggle_source(PackageSourceKind::AppImage);
+        assert_eq!(scope.enabled_sources(true, true, true).len(), 1);
+        assert!(scope.appimage);
     }
 
     #[test]
     fn test_query_workbench_breakpoints_wide_medium_narrow() {
         assert_eq!(
-            WorkbenchBreakpoint::from_width(600.0),
+            WorkbenchBreakpoint::from_width(800.0),
             WorkbenchBreakpoint::Wide
         );
         assert_eq!(
-            WorkbenchBreakpoint::from_width(540.0),
+            WorkbenchBreakpoint::from_width(640.0),
             WorkbenchBreakpoint::Wide
         );
         assert_eq!(
-            WorkbenchBreakpoint::from_width(539.0),
+            WorkbenchBreakpoint::from_width(639.0),
             WorkbenchBreakpoint::Medium
         );
         assert_eq!(
-            WorkbenchBreakpoint::from_width(380.0),
+            WorkbenchBreakpoint::from_width(460.0),
             WorkbenchBreakpoint::Medium
         );
         assert_eq!(
-            WorkbenchBreakpoint::from_width(379.0),
+            WorkbenchBreakpoint::from_width(459.0),
             WorkbenchBreakpoint::Narrow
         );
         assert_eq!(
-            WorkbenchBreakpoint::from_width(200.0),
+            WorkbenchBreakpoint::from_width(340.0),
             WorkbenchBreakpoint::Narrow
         );
     }

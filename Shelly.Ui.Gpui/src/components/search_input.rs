@@ -717,6 +717,7 @@ impl Render for SearchInputView {
             Some(
                 div()
                     .id("search_clear_button")
+                    .flex_none()
                     .cursor_pointer()
                     .p(px(4.0))
                     .rounded_sm()
@@ -742,6 +743,7 @@ impl Render for SearchInputView {
             if reduce_motion {
                 Some(
                     div()
+                        .flex_none()
                         .text_xs()
                         .text_color(theme.accent)
                         .child("Searching...")
@@ -751,6 +753,7 @@ impl Render for SearchInputView {
                 Some(
                     div()
                         .id("searching_indicator")
+                        .flex_none()
                         .text_xs()
                         .text_color(theme.accent)
                         .child("Searching...")
@@ -776,6 +779,7 @@ impl Render for SearchInputView {
             .h(px(40.0))
             .w_full()
             .flex()
+            .flex_1()
             .items_center()
             .gap(px(8.0))
             .px(px(12.0))
@@ -815,6 +819,7 @@ impl Render for SearchInputView {
                 svg()
                     .path(AppIcon::Search.path())
                     .size(px(16.0))
+                    .flex_none()
                     .text_color(if is_focused {
                         theme.accent
                     } else {

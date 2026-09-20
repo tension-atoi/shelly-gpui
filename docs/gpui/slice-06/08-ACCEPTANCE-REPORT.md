@@ -1,14 +1,14 @@
-# Shelly GPUI — Slice-06 Acceptance Report
+# Shelly GPUI — Slice-06R Acceptance Report
 
 ## Execution Summary
 
-- **Slice**: `SLICE-06 — Search Correctness, Query Workbench & Privileged Operations`
+- **Slice**: `SLICE-06R — Query Workbench UX, Real Menus & Failure Truth Closure`
 - **Date**: September 20, 2026
-- **Baseline SHA**: `4923dcdf06b72aeed7842d31f1c0442b099e03d3`
+- **Baseline SHA**: `88f903e843e90ec7632ba5cf01309322ba81516e`
 - **Compiler Standards**: `#![deny(dead_code)]`, `#![deny(unused_variables)]`, `#![deny(unused_imports)]`, `#![deny(unused_must_use)]`
 - **Warning Suppressions**: ZERO (`#[allow(...)]` strictly forbidden)
 - **Unit Test Coverage**:
-  - `Shelly.Ui.Gpui`: 88 tests passing (100% pass rate in debug & release profiles)
+  - `Shelly.Ui.Gpui`: 90 tests passing (100% pass rate in release locked profile)
   - `Shelly.Cli.Zig`: all tests passing
 
 ---
@@ -26,7 +26,7 @@ cargo clippy --release --locked -- -D warnings
 
 ### 2. Full Test Suite Execution
 ```text
-running 88 tests
+running 90 tests
 test backend::client::tests::test_build_remove_args_flatpak_no_flags ... ok
 test backend::client::tests::test_build_remove_args_flatpak_remove_configs_no_cascade ... ok
 test backend::client::tests::test_build_remove_args_standard_cascade_and_remove_configs ... ok

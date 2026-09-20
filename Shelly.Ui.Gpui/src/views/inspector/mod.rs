@@ -17,6 +17,7 @@ use gpui::*;
 pub struct PackageInspectorProps<'a> {
     pub package: Option<&'a UnifiedPackage>,
     pub alpm_details: Option<&'a AlpmPackage>,
+    pub detail_error: Option<&'a str>,
     pub pkgbuild: Option<&'a String>,
     pub is_loading_pkgbuild: bool,
     pub active_tab: InspectorTab,
@@ -29,6 +30,7 @@ pub struct PackageInspectorProps<'a> {
     pub on_copy_install_cmd: Option<WindowActionHandler>,
     pub on_copy_pkgbuild: Option<WindowActionHandler>,
     pub on_navigate_package: Option<StringActionHandler>,
+    pub on_retry_details: Option<WindowActionHandler>,
 }
 
 pub struct PackageInspectorView;
@@ -116,6 +118,48 @@ impl PackageInspectorView {
                 .into_any_element()
         };
 
+        let error_banner = if let Some(err) = props.detail_error {
+            let on_retry = props.on_retry_details.clone();
+            Some(
+                div()
+                    .id("detail_error_banner")
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .p_3()
+                    .mb_4()
+                    .rounded_md()
+                    .bg(theme.bg_surface)
+                    .border_1()
+                    .border_color(theme.danger)
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.danger)
+                            .child(format!("Failed to load complete package details: {err}")),
+                    )
+                    .children(on_retry.map(|retry_cb| {
+                        div()
+                            .id("retry_details_btn")
+                            .px_2p5()
+                            .py_1()
+                            .rounded_sm()
+                            .bg(theme.accent)
+                            .text_xs()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.bg_app)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme.accent_hover))
+                            .child("Retry")
+                            .on_mouse_down(MouseButton::Left, move |_ev, w, cx| {
+                                retry_cb(w, cx);
+                            })
+                    })),
+            )
+        } else {
+            None
+        };
+
         div()
             .id("inspector_scroll")
             .flex()
@@ -125,6 +169,7 @@ impl PackageInspectorView {
             .p_6()
             .overflow_scroll()
             .child(header)
+            .children(error_banner)
             .child(animated_body)
             .into_any_element()
     }

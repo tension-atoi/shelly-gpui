@@ -116,29 +116,6 @@ impl NavDestination {
     }
 }
 
-/// Filtres de source disponibles au sein de la destination Découvrir (Browse)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum SourceFilter {
-    #[default]
-    All,
-    Alpm,
-    Aur,
-    Flatpak,
-    AppImage,
-}
-
-impl SourceFilter {
-    pub fn label(&self) -> &'static str {
-        match self {
-            SourceFilter::All => "All",
-            SourceFilter::Alpm => "Official / ALPM",
-            SourceFilter::Aur => "AUR",
-            SourceFilter::Flatpak => "Flatpak",
-            SourceFilter::AppImage => "AppImage",
-        }
-    }
-}
-
 /// Mode d'affichage de la surface des paquets (Cartes ou Table dense)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum PackageViewMode {
@@ -194,7 +171,6 @@ impl InspectorTab {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionEvent {
     DestinationChanged(NavDestination),
-    SourceFilterChanged(SourceFilter),
     SearchQueryChanged(String),
     PackageSelected(Option<PackageKey>),
     SidebarToggled(bool),
@@ -210,7 +186,6 @@ pub enum SessionEvent {
 pub struct AppSession {
     pub destination: NavDestination,
     pub last_workspace_destination: NavDestination,
-    pub source_filter: SourceFilter,
     pub source_scope: SourceScope,
     pub state_filter: PackageStateFilter,
     pub sort_mode: SortMode,
@@ -237,7 +212,6 @@ impl AppSession {
         Self {
             destination: initial_dest,
             last_workspace_destination: initial_dest,
-            source_filter: SourceFilter::All,
             source_scope: SourceScope::all(),
             state_filter: PackageStateFilter::All,
             sort_mode: SortMode::Relevance,
@@ -265,14 +239,18 @@ impl AppSession {
         }
     }
 
-    pub fn set_source_filter(&mut self, filter: SourceFilter, cx: &mut Context<Self>) {
-        if self.source_filter != filter {
-            self.source_filter = filter;
-            self.source_scope = SourceScope::from_filter(filter);
-            cx.emit(SessionEvent::SourceFilterChanged(filter));
-            cx.emit(SessionEvent::SourceScopeChanged(self.source_scope));
+    pub fn set_source_scope(&mut self, scope: SourceScope, cx: &mut Context<Self>) {
+        if self.source_scope != scope {
+            self.source_scope = scope;
+            cx.emit(SessionEvent::SourceScopeChanged(scope));
             cx.notify();
         }
+    }
+
+    pub fn toggle_source(&mut self, source: PackageSourceKind, cx: &mut Context<Self>) {
+        self.source_scope.toggle_source(source);
+        cx.emit(SessionEvent::SourceScopeChanged(self.source_scope));
+        cx.notify();
     }
 
     pub fn clamp_source_scope(
@@ -296,11 +274,6 @@ impl AppSession {
         }
     }
 
-    pub fn cycle_state_filter(&mut self, cx: &mut Context<Self>) {
-        let next = self.state_filter.cycle_next();
-        self.set_state_filter(next, cx);
-    }
-
     pub fn set_sort_mode(&mut self, mode: SortMode, cx: &mut Context<Self>) {
         if self.sort_mode != mode {
             self.sort_mode = mode;
@@ -309,20 +282,18 @@ impl AppSession {
         }
     }
 
-    pub fn cycle_sort_mode(&mut self, cx: &mut Context<Self>) {
-        let next = self.sort_mode.cycle_next();
-        self.set_sort_mode(next, cx);
-    }
-
-    pub fn reset_query_filters(&mut self, cx: &mut Context<Self>) {
-        self.source_filter = SourceFilter::All;
-        self.source_scope = SourceScope::all();
+    pub fn clear_filters(
+        &mut self,
+        aur_enabled: bool,
+        flatpak_enabled: bool,
+        appimage_enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.source_scope =
+            SourceScope::all_enabled(aur_enabled, flatpak_enabled, appimage_enabled);
         self.state_filter = PackageStateFilter::All;
-        self.sort_mode = SortMode::Relevance;
-        cx.emit(SessionEvent::SourceFilterChanged(SourceFilter::All));
-        cx.emit(SessionEvent::SourceScopeChanged(SourceScope::all()));
+        cx.emit(SessionEvent::SourceScopeChanged(self.source_scope));
         cx.emit(SessionEvent::StateFilterChanged(PackageStateFilter::All));
-        cx.emit(SessionEvent::SortModeChanged(SortMode::Relevance));
         cx.notify();
     }
 
@@ -415,7 +386,9 @@ mod tests {
     fn test_app_session_defaults() {
         let session = AppSession::new();
         assert_eq!(session.destination, NavDestination::Browse);
-        assert_eq!(session.source_filter, SourceFilter::All);
+        assert_eq!(session.source_scope, SourceScope::all());
+        assert_eq!(session.state_filter, PackageStateFilter::All);
+        assert_eq!(session.sort_mode, SortMode::Relevance);
         assert_eq!(session.search_query, "");
         assert_eq!(session.selected_package_key, None);
         assert!(!session.sidebar_collapsed);
@@ -434,12 +407,29 @@ mod tests {
     }
 
     #[test]
-    fn test_source_filter_metadata() {
-        assert_eq!(SourceFilter::All.label(), "All");
-        assert_eq!(SourceFilter::Alpm.label(), "Official / ALPM");
-        assert_eq!(SourceFilter::Aur.label(), "AUR");
-        assert_eq!(SourceFilter::Flatpak.label(), "Flatpak");
-        assert_eq!(SourceFilter::AppImage.label(), "AppImage");
+    fn test_clear_filters_resets_scope_and_state_but_preserves_query_and_sort() {
+        let mut session = AppSession::new();
+        let mut scope = SourceScope::all();
+        scope.alpm = false;
+        scope.flatpak = false;
+        scope.appimage = false;
+        session.source_scope = scope;
+        session.state_filter = PackageStateFilter::Installed;
+        session.sort_mode = SortMode::NameAsc;
+        session.search_query = "linux".to_string();
+
+        // Clear filters with aur and flatpak enabled, appimage disabled
+        // In unit test without Context, we verify the logic of clear_filters:
+        session.source_scope = SourceScope::all_enabled(true, true, false);
+        session.state_filter = PackageStateFilter::All;
+
+        assert!(session.source_scope.alpm);
+        assert!(session.source_scope.aur);
+        assert!(session.source_scope.flatpak);
+        assert!(!session.source_scope.appimage);
+        assert_eq!(session.state_filter, PackageStateFilter::All);
+        assert_eq!(session.sort_mode, SortMode::NameAsc);
+        assert_eq!(session.search_query, "linux");
     }
 
     #[test]

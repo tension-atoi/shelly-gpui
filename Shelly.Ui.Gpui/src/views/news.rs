@@ -2,11 +2,16 @@ use crate::backend::models::ArchNewsItem;
 use crate::icons::AppIcon;
 use crate::theme::Theme;
 use gpui::*;
+use std::rc::Rc;
+
+pub type NewsRetryHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 
 pub struct NewsViewProps<'a> {
     pub news: &'a [ArchNewsItem],
+    pub error: Option<&'a str>,
     pub theme: &'a Theme,
     pub is_loading: bool,
+    pub on_retry: Option<NewsRetryHandler>,
 }
 
 pub struct NewsView;
@@ -53,6 +58,43 @@ impl NewsView {
                     .h(px(200.0))
                     .text_color(theme.text_muted)
                     .child("Loading Arch Linux news..."),
+            );
+        }
+
+        if let Some(err) = props.error {
+            let on_retry = props.on_retry.clone();
+            return root.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .h(px(200.0))
+                    .gap_3()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.danger)
+                            .child(format!("Failed to load Arch Linux news: {err}")),
+                    )
+                    .children(on_retry.map(|cb| {
+                        div()
+                            .id("retry_news_btn")
+                            .px_3()
+                            .py_1p5()
+                            .rounded_md()
+                            .bg(theme.accent)
+                            .text_xs()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.bg_app)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme.accent_hover))
+                            .child("Retry")
+                            .on_mouse_down(MouseButton::Left, move |_ev, w, cx| {
+                                cb(w, cx);
+                            })
+                    })),
             );
         }
 

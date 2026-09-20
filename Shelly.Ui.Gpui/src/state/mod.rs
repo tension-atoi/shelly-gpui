@@ -14,6 +14,6 @@ pub use semantic::{
 };
 pub use session::{
     AppSession, InspectorTab, NavDestination, PackageKey, PackageSourceKind, PackageViewMode,
-    SessionEvent, SourceFilter,
+    SessionEvent,
 };
 pub use toast::{Toast, ToastAction, ToastCenter, ToastKind, ToastLifecycle};

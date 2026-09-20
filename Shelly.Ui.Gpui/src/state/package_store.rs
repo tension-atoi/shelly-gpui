@@ -1,7 +1,9 @@
 use crate::backend::client::ShellyClient;
 use crate::backend::models::{AlpmPackage, UnifiedPackage};
-use crate::state::session::{PackageKey, SourceFilter};
+use crate::state::query::SourceScope;
+use crate::state::session::{PackageKey, PackageSourceKind};
 use gpui::*;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,14 +11,98 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SearchKey {
     pub query: String,
-    pub source_filter: SourceFilter,
+    pub source_scope: SourceScope,
 }
 
 impl SearchKey {
-    pub fn new(query: impl Into<String>, source_filter: SourceFilter) -> Self {
+    pub fn new(query: impl Into<String>, source_scope: SourceScope) -> Self {
         Self {
             query: query.into().trim().to_lowercase(),
-            source_filter,
+            source_scope,
+        }
+    }
+}
+
+/// Statut de santé d'une source de distribution backend
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceHealthStatus {
+    Disabled,
+    Loading,
+    Ready,
+    Failed,
+}
+
+/// Métadonnées d'état de santé par source
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceHealth {
+    pub status: SourceHealthStatus,
+    pub error_message: Option<String>,
+}
+
+impl SourceHealth {
+    pub fn ready() -> Self {
+        Self {
+            status: SourceHealthStatus::Ready,
+            error_message: None,
+        }
+    }
+
+    pub fn failed(msg: impl Into<String>) -> Self {
+        Self {
+            status: SourceHealthStatus::Failed,
+            error_message: Some(msg.into()),
+        }
+    }
+
+    pub fn is_failed(&self) -> bool {
+        self.status == SourceHealthStatus::Failed
+    }
+}
+
+/// Carte des états de santé pour l'ensemble des sources supportées
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceHealthMap {
+    pub alpm: SourceHealth,
+    pub aur: SourceHealth,
+    pub flatpak: SourceHealth,
+    pub appimage: SourceHealth,
+}
+
+impl Default for SourceHealthMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SourceHealthMap {
+    pub fn new() -> Self {
+        Self {
+            alpm: SourceHealth::ready(),
+            aur: SourceHealth::ready(),
+            flatpak: SourceHealth::ready(),
+            appimage: SourceHealth::ready(),
+        }
+    }
+
+    pub fn for_source(&self, source: PackageSourceKind) -> &SourceHealth {
+        match source {
+            PackageSourceKind::Alpm => &self.alpm,
+            PackageSourceKind::Aur => &self.aur,
+            PackageSourceKind::Flatpak => &self.flatpak,
+            PackageSourceKind::AppImage => &self.appimage,
+        }
+    }
+
+    pub fn get(&self, source: &PackageSourceKind) -> Option<&SourceHealth> {
+        Some(self.for_source(*source))
+    }
+
+    pub fn set_source(&mut self, source: PackageSourceKind, health: SourceHealth) {
+        match source {
+            PackageSourceKind::Alpm => self.alpm = health,
+            PackageSourceKind::Aur => self.aur = health,
+            PackageSourceKind::Flatpak => self.flatpak = health,
+            PackageSourceKind::AppImage => self.appimage = health,
         }
     }
 }
@@ -41,6 +127,11 @@ pub struct PackageStore {
     pub search_cache: HashMap<SearchKey, Vec<UnifiedPackage>>,
     pub pkgbuild_cache: HashMap<String, String>,
     pub in_flight_generation: usize,
+    pub source_health: SourceHealthMap,
+    pub installed_error: Option<String>,
+    pub updates_error: Option<String>,
+    pub news_error: Option<String>,
+    pub detail_errors: HashMap<PackageKey, String>,
 }
 
 impl EventEmitter<PackageStoreEvent> for PackageStore {}
@@ -57,6 +148,11 @@ impl PackageStore {
             search_cache: HashMap::new(),
             pkgbuild_cache: HashMap::new(),
             in_flight_generation: 0,
+            source_health: SourceHealthMap::new(),
+            installed_error: None,
+            updates_error: None,
+            news_error: None,
+            detail_errors: HashMap::new(),
         }
     }
 
@@ -64,20 +160,20 @@ impl PackageStore {
     pub fn get_cached_search(
         &self,
         query: &str,
-        filter: SourceFilter,
+        source_scope: SourceScope,
     ) -> Option<&Vec<UnifiedPackage>> {
-        let key = SearchKey::new(query, filter);
+        let key = SearchKey::new(query, source_scope);
         self.search_cache.get(&key)
     }
 
-    /// Enregistre des résultats dans le cache de recherche de session
+    /// Enregistre des résultats dans le cache de recherche de session (succès complets uniquement)
     pub fn cache_search(
         &mut self,
         query: &str,
-        filter: SourceFilter,
+        source_scope: SourceScope,
         results: Vec<UnifiedPackage>,
     ) {
-        let key = SearchKey::new(query, filter);
+        let key = SearchKey::new(query, source_scope);
         self.search_cache.insert(key, results);
     }
 
@@ -100,6 +196,7 @@ impl PackageStore {
     pub fn set_installed_packages(&mut self, pkgs: Vec<UnifiedPackage>, cx: &mut Context<Self>) {
         let count = pkgs.len();
         self.installed_packages = Arc::from(pkgs);
+        self.installed_error = None;
         cx.emit(PackageStoreEvent::InstalledChanged(count));
         cx.notify();
     }
@@ -108,55 +205,70 @@ impl PackageStore {
     pub fn set_updates_packages(&mut self, pkgs: Vec<UnifiedPackage>, cx: &mut Context<Self>) {
         self.updates_count = pkgs.len();
         self.updates_packages = Arc::from(pkgs);
+        self.updates_error = None;
         cx.emit(PackageStoreEvent::UpdatesChanged(self.updates_count));
         cx.notify();
     }
 
-    /// Récupère la fiche détaillée d'un paquet depuis le cache
+    /// Tente de récupérer les détails d'un paquet depuis le cache
     pub fn get_cached_details(&self, key: &PackageKey) -> Option<&AlpmPackage> {
         self.detail_cache.get(key)
     }
 
-    /// Enregistre une fiche détaillée dans le cache
+    /// Enregistre les détails d'un paquet dans le cache
     pub fn cache_details(&mut self, key: PackageKey, details: AlpmPackage) {
+        self.detail_errors.remove(&key);
         self.detail_cache.insert(key, details);
     }
 
-    /// Récupère le PKGBUILD mis en cache pour un paquet AUR
-    pub fn get_cached_pkgbuild(&self, name: &str) -> Option<&String> {
-        self.pkgbuild_cache.get(name)
+    /// Enregistre une erreur de récupération des détails d'un paquet
+    pub fn set_detail_error(&mut self, key: PackageKey, error: String) {
+        self.detail_errors.insert(key, error);
     }
 
-    /// Met en cache le contenu d'un PKGBUILD
-    pub fn cache_pkgbuild(&mut self, name: String, content: String) {
-        self.pkgbuild_cache.insert(name, content);
+    /// Récupère l'erreur éventuelle de récupération des détails d'un paquet
+    pub fn get_detail_error(&self, key: &PackageKey) -> Option<&String> {
+        self.detail_errors.get(key)
     }
 
-    /// Invalide un paquet spécifique suite à une mutation (install/remove/update)
+    /// Tente de récupérer la recette PKGBUILD depuis le cache
+    pub fn get_cached_pkgbuild(&self, pkg_name: &str) -> Option<&String> {
+        self.pkgbuild_cache.get(pkg_name)
+    }
+
+    /// Enregistre une recette PKGBUILD dans le cache
+    pub fn cache_pkgbuild(&mut self, pkg_name: String, content: String) {
+        self.pkgbuild_cache.insert(pkg_name, content);
+    }
+
+    /// Invalide un paquet précis et nettoie les entrées correspondantes dans les caches
     pub fn invalidate_package(&mut self, key: &PackageKey, cx: &mut Context<Self>) {
         self.detail_cache.remove(key);
         self.pkgbuild_cache.remove(&key.name);
-        // Supprime les entrées de cache de recherche contenant ce paquet pour éviter les incohérences d'état
         self.search_cache
-            .retain(|_, list| !list.iter().any(|p| p.name == key.name));
+            .retain(|_, pkgs| !pkgs.iter().any(|p| &p.key() == key));
+
         cx.emit(PackageStoreEvent::PackageInvalidated(key.clone()));
         cx.notify();
     }
 
-    /// Invalide le cache des paquets installés
+    /// Invalide la liste des paquets installés
     pub fn invalidate_installed(&mut self, cx: &mut Context<Self>) {
         self.installed_packages = Arc::from([]);
-        self.search_cache.clear();
-        cx.emit(PackageStoreEvent::InstalledChanged(0));
+        self.installed_error = None;
         cx.notify();
     }
 
-    /// Invalide le cache des mises à jour
+    /// Invalide la liste des mises à jour disponibles
     pub fn invalidate_updates(&mut self, cx: &mut Context<Self>) {
         self.updates_packages = Arc::from([]);
-        self.updates_count = 0;
-        cx.emit(PackageStoreEvent::UpdatesChanged(0));
+        self.updates_error = None;
         cx.notify();
+    }
+
+    /// Met à jour la santé d'une source spécifique
+    pub fn update_source_health(&mut self, source: PackageSourceKind, health: SourceHealth) {
+        self.source_health.set_source(source, health);
     }
 }
 
@@ -168,9 +280,15 @@ mod tests {
 
     #[test]
     fn test_search_key_normalization() {
-        let k1 = SearchKey::new("  RipGrep  ", SourceFilter::All);
-        let k2 = SearchKey::new("ripgrep", SourceFilter::All);
-        let k3 = SearchKey::new("ripgrep", SourceFilter::Aur);
+        let s_all = SourceScope::all();
+        let mut s_alpm = SourceScope::all();
+        s_alpm.aur = false;
+        s_alpm.flatpak = false;
+        s_alpm.appimage = false;
+
+        let k1 = SearchKey::new("  RipGrep  ", s_all);
+        let k2 = SearchKey::new("ripgrep", s_all);
+        let k3 = SearchKey::new("ripgrep", s_alpm);
 
         assert_eq!(k1, k2);
         assert_ne!(k1, k3);
@@ -200,9 +318,9 @@ mod tests {
         let mut store = PackageStore::new(client);
 
         let query = "firefox";
-        let filter = SourceFilter::Alpm;
+        let scope = SourceScope::all();
 
-        assert!(store.get_cached_search(query, filter).is_none());
+        assert!(store.get_cached_search(query, scope).is_none());
 
         let pkg = UnifiedPackage {
             name: "firefox".into(),
@@ -216,11 +334,39 @@ mod tests {
             inner: crate::backend::models::UnifiedPackageSource::Standard(AlpmPackage::default()),
         };
 
-        store.cache_search(query, filter, vec![pkg]);
-        let cached = store.get_cached_search(query, filter);
+        store.cache_search(query, scope, vec![pkg]);
+        let cached = store.get_cached_search(query, scope);
         assert!(cached.is_some());
         assert_eq!(cached.unwrap().len(), 1);
         assert_eq!(cached.unwrap()[0].name, "firefox");
+    }
+
+    #[test]
+    fn test_source_health_and_outcome_transitions() {
+        let mut health = SourceHealthMap::new();
+        assert!(!health.alpm.is_failed());
+        assert!(!health.aur.is_failed());
+
+        health.set_source(
+            PackageSourceKind::Aur,
+            SourceHealth::failed("AUR timed out"),
+        );
+        assert!(health.aur.is_failed());
+        assert_eq!(health.aur.error_message.as_deref(), Some("AUR timed out"));
+        assert!(!health.alpm.is_failed());
+
+        health.set_source(PackageSourceKind::Aur, SourceHealth::ready());
+        assert!(!health.aur.is_failed());
+    }
+
+    #[test]
+    fn test_failure_truth_partial_and_failed_not_cached() {
+        let client = ShellyClient::new(None);
+        let store = PackageStore::new(client);
+        let scope = SourceScope::all();
+
+        // If search returned empty due to partial failure, it must not be in cache
+        assert!(store.get_cached_search("something_failed", scope).is_none());
     }
 
     #[test]
@@ -248,7 +394,6 @@ mod tests {
         assert_eq!(pkg.key().source, PackageSourceKind::AppImage);
         assert_eq!(pkg.key().name, "Obsidian");
 
-        // Test metadata filtering logic for non-empty queries
         let q1 = "obsidian";
         let q2 = "knowledge";
         let q3 = "vlc";
@@ -276,11 +421,16 @@ mod tests {
         assert!(matches_q2);
         assert!(!matches_q3);
 
-        // Test storing and retrieving in search cache
         let client = ShellyClient::new(None);
         let mut store = PackageStore::new(client);
-        store.cache_search("obsidian", SourceFilter::AppImage, vec![pkg.clone()]);
-        let cached = store.get_cached_search("obsidian", SourceFilter::AppImage);
+        let scope = SourceScope {
+            alpm: false,
+            aur: false,
+            flatpak: false,
+            appimage: true,
+        };
+        store.cache_search("obsidian", scope, vec![pkg.clone()]);
+        let cached = store.get_cached_search("obsidian", scope);
         assert!(cached.is_some());
         assert_eq!(cached.unwrap()[0].name, "Obsidian");
         assert_eq!(cached.unwrap()[0].source_type, "AppImage");
@@ -315,7 +465,6 @@ mod tests {
         let mut store = PackageStore::new(client);
         assert_eq!(store.in_flight_generation, 0);
 
-        // Generation 1 results arrived
         let item1 = UnifiedPackage::from_appimage(AppImageItem {
             name: "App1".into(),
             desktop_name: None,
@@ -335,7 +484,6 @@ mod tests {
         assert_eq!(store.active_results.len(), 1);
         assert_eq!(store.in_flight_generation, 1);
 
-        // User clears search: generation monotonically increments to 2
         let clear_gen = 2;
         if clear_gen >= store.in_flight_generation {
             store.in_flight_generation = clear_gen;
@@ -344,7 +492,7 @@ mod tests {
         assert_eq!(store.active_results.len(), 0);
         assert_eq!(store.in_flight_generation, 2);
 
-        // Stale async query from generation 1 arrives late -> discarded!
+        // Stale generation 1 arrives late -> discarded!
         if 1 >= store.in_flight_generation {
             store.in_flight_generation = 1;
             store.active_results = std::sync::Arc::from(vec![item1.clone()]);
@@ -356,7 +504,7 @@ mod tests {
         );
         assert_eq!(store.in_flight_generation, 2);
 
-        // Subsequent query generation 3 arrives -> accepted!
+        // Fresh generation 3 arrives -> accepted!
         let item2 = UnifiedPackage::from_appimage(AppImageItem {
             name: "App2".into(),
             desktop_name: None,
