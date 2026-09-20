@@ -786,6 +786,13 @@ impl Render for SearchInputView {
             .border_1()
             .border_color(border_color)
             .rounded_md()
+            .hover(move |s| {
+                if is_focused {
+                    s
+                } else {
+                    s.border_color(theme.text_muted)
+                }
+            })
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
             .on_action(cx.listener(Self::left))

@@ -1,5 +1,5 @@
 use crate::components::menu::{
-    MenuCheckItem, MenuCheckItemProps, MenuRadioItem, MenuSection, MenuSurface,
+    MenuCheckItem, MenuCheckItemProps, MenuDivider, MenuRadioItem, MenuSection, MenuSurface,
 };
 use crate::components::search_input::SearchInputView;
 use crate::components::view_mode_switcher::{ViewModeSwitcher, ViewModeSwitcherProps};
@@ -36,6 +36,7 @@ pub struct QueryWorkbenchProps<'a> {
     pub active_menu: Option<WorkbenchMenu>,
     pub is_searching: bool,
     pub total_count: usize,
+    pub reduce_motion: bool,
     pub aur_enabled: bool,
     pub flatpak_enabled: bool,
     pub appimage_enabled: bool,
@@ -50,73 +51,92 @@ pub struct QueryWorkbenchProps<'a> {
     pub on_clear_filters: ActionHandler,
 }
 
+/// Computes the active filter badge count (non-default sources or state).
+pub fn compute_filter_badge_count(
+    source_scope: &SourceScope,
+    state_filter: PackageStateFilter,
+    aur_enabled: bool,
+    flatpak_enabled: bool,
+    appimage_enabled: bool,
+) -> usize {
+    let mut count = 0;
+    if !source_scope.is_all_enabled(aur_enabled, flatpak_enabled, appimage_enabled) {
+        count += 1;
+    }
+    if state_filter != PackageStateFilter::All {
+        count += 1;
+    }
+    count
+}
+
+/// Formats the single clean textual summary for active filters, replacing the former chip pile.
+pub fn format_active_filter_summary(
+    total_count: usize,
+    is_searching: bool,
+    source_scope: &SourceScope,
+    state_filter: PackageStateFilter,
+    aur_enabled: bool,
+    flatpak_enabled: bool,
+    appimage_enabled: bool,
+) -> Option<String> {
+    let is_all_sources =
+        source_scope.is_all_enabled(aur_enabled, flatpak_enabled, appimage_enabled);
+    let is_all_states = state_filter == PackageStateFilter::All;
+    if is_all_sources && is_all_states {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+    if is_searching {
+        parts.push("Searching...".to_string());
+    } else {
+        let plural = if total_count == 1 {
+            "package"
+        } else {
+            "packages"
+        };
+        parts.push(format!("Showing {} {}", total_count, plural));
+    }
+
+    if !is_all_sources {
+        let mut active_srcs = Vec::new();
+        if source_scope.alpm {
+            active_srcs.push("Arch");
+        }
+        if aur_enabled && source_scope.aur {
+            active_srcs.push("AUR");
+        }
+        if flatpak_enabled && source_scope.flatpak {
+            active_srcs.push("Flatpak");
+        }
+        if appimage_enabled && source_scope.appimage {
+            active_srcs.push("AppImage");
+        }
+        if active_srcs.is_empty() {
+            parts.push("Sources: None".to_string());
+        } else {
+            parts.push(format!("Sources: {}", active_srcs.join(", ")));
+        }
+    }
+
+    if !is_all_states {
+        parts.push(format!("State: {}", state_filter.label()));
+    }
+
+    Some(parts.join("  •  "))
+}
+
 pub struct QueryWorkbench;
 
 impl QueryWorkbench {
-    fn render_quick_pill(
-        kind: PackageSourceKind,
-        label: &'static str,
-        id_str: &'static str,
-        is_selected: bool,
-        accent_color: Option<Rgba>,
-        theme: &Theme,
-        on_toggle: SourceToggleHandler,
-    ) -> impl IntoElement {
-        let focus_border = theme.border_focus;
-        let on_toggle_key = on_toggle.clone();
-
-        let base = div()
-            .id(id_str)
-            .focusable()
-            .tab_stop(true)
-            .focus(move |s| s.border_1().border_color(focus_border))
-            .on_key_down(move |event, window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    on_toggle_key(kind, window, cx);
-                }
-            })
-            .px(px(8.0))
-            .py(px(2.5))
-            .rounded_md()
-            .cursor_pointer()
-            .text_xs()
-            .font_weight(if is_selected {
-                FontWeight::BOLD
-            } else {
-                FontWeight::NORMAL
-            });
-
-        let pill = if is_selected {
-            let color = accent_color.unwrap_or(theme.accent);
-            base.bg(color)
-                .text_color(theme.bg_app)
-                .border_1()
-                .border_color(color)
-        } else {
-            let hover_bg = theme.bg_surface_hover;
-            base.bg(theme.bg_surface)
-                .text_color(theme.text_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .hover(move |s| s.bg(hover_bg).text_color(theme.text_primary))
-        };
-
-        pill.child(label)
-            .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                on_toggle(kind, window, cx);
-            })
-    }
-
     pub fn render(props: &QueryWorkbenchProps) -> impl IntoElement {
         let theme = props.theme;
         let breakpoint = WorkbenchBreakpoint::from_width(props.list_pane_width);
 
         // ── 1. Row 1: Dominant Full-Width Search Input ────────────────────────
-        let input_width = (props.list_pane_width - 16.0).max(200.0);
         let row1 = div()
             .id("workbench_row1_search")
-            .w(px(input_width))
+            .w_full()
             .h(px(40.0))
             .child(props.search_input.clone());
 
@@ -130,20 +150,13 @@ impl QueryWorkbench {
             })
         };
 
-        let filter_badge_count = {
-            let mut count = 0;
-            if !props.source_scope.is_all_enabled(
-                props.aur_enabled,
-                props.flatpak_enabled,
-                props.appimage_enabled,
-            ) {
-                count += 1;
-            }
-            if props.state_filter != PackageStateFilter::All {
-                count += 1;
-            }
-            count
-        };
+        let filter_badge_count = compute_filter_badge_count(
+            &props.source_scope,
+            props.state_filter,
+            props.aur_enabled,
+            props.flatpak_enabled,
+            props.appimage_enabled,
+        );
 
         let filters_btn_text = if filter_badge_count > 0 {
             format!("Filters ({filter_badge_count}) ▾")
@@ -282,6 +295,9 @@ impl QueryWorkbench {
             );
         }
 
+        // Divider
+        filter_menu_items.push(MenuDivider::render(theme).into_any_element());
+
         // Package State section inside Filters menu
         filter_menu_items.push(MenuSection::render("Package State", theme).into_any_element());
         for state in [
@@ -319,12 +335,13 @@ impl QueryWorkbench {
                 deferred(
                     anchored()
                         .anchor(Corner::TopLeft)
-                        .offset(point(px(0.0), px(28.0)))
+                        .offset(point(px(0.0), px(32.0)))
                         .snap_to_window()
                         .child(MenuSurface::render(
                             "filters_menu_surface".into(),
                             theme,
                             px(240.0),
+                            props.reduce_motion,
                             on_close_filters,
                             filter_menu_items,
                         )),
@@ -354,10 +371,10 @@ impl QueryWorkbench {
             })
             .flex()
             .items_center()
-            .gap(px(4.0))
-            .px(px(8.0))
-            .py(px(2.5))
-            .rounded_md()
+            .h(px(28.0))
+            .gap(px(5.0))
+            .px(px(10.0))
+            .rounded_sm()
             .bg(if is_filters_open {
                 theme.bg_surface_active
             } else {
@@ -393,69 +410,7 @@ impl QueryWorkbench {
             })
             .children(filters_dropdown);
 
-        // ── 3. Quick Source Pills (Wide Breakpoint Only) ──────────────────────
-        let mut quick_source_pills = Vec::new();
-        if breakpoint == WorkbenchBreakpoint::Wide {
-            quick_source_pills.push(
-                Self::render_quick_pill(
-                    PackageSourceKind::Alpm,
-                    "ALPM",
-                    "workbench_quick_source_alpm",
-                    props.source_scope.alpm,
-                    Some(theme.badge_alpm),
-                    theme,
-                    props.on_toggle_source.clone(),
-                )
-                .into_any_element(),
-            );
-
-            if props.aur_enabled {
-                quick_source_pills.push(
-                    Self::render_quick_pill(
-                        PackageSourceKind::Aur,
-                        "AUR",
-                        "workbench_quick_source_aur",
-                        props.source_scope.aur,
-                        Some(theme.badge_aur),
-                        theme,
-                        props.on_toggle_source.clone(),
-                    )
-                    .into_any_element(),
-                );
-            }
-
-            if props.flatpak_enabled {
-                quick_source_pills.push(
-                    Self::render_quick_pill(
-                        PackageSourceKind::Flatpak,
-                        "Flatpak",
-                        "workbench_quick_source_flatpak",
-                        props.source_scope.flatpak,
-                        Some(theme.badge_flatpak),
-                        theme,
-                        props.on_toggle_source.clone(),
-                    )
-                    .into_any_element(),
-                );
-            }
-
-            if props.appimage_enabled {
-                quick_source_pills.push(
-                    Self::render_quick_pill(
-                        PackageSourceKind::AppImage,
-                        "AppImage",
-                        "workbench_quick_source_appimage",
-                        props.source_scope.appimage,
-                        Some(theme.badge_appimage),
-                        theme,
-                        props.on_toggle_source.clone(),
-                    )
-                    .into_any_element(),
-                );
-            }
-        }
-
-        // ── 4. State Dropdown (Wide and Medium Breakpoints) ───────────────────
+        // ── 3. State Dropdown (Wide and Medium Breakpoints) ───────────────────
         let is_state_open = props.active_menu == Some(WorkbenchMenu::State);
         let on_close_state = {
             let cb = on_toggle_menu.clone();
@@ -501,12 +456,13 @@ impl QueryWorkbench {
                     deferred(
                         anchored()
                             .anchor(Corner::TopLeft)
-                            .offset(point(px(0.0), px(28.0)))
+                            .offset(point(px(0.0), px(32.0)))
                             .snap_to_window()
                             .child(MenuSurface::render(
                                 "state_menu_surface".into(),
                                 theme,
                                 px(180.0),
+                                props.reduce_motion,
                                 on_close_state,
                                 state_items,
                             )),
@@ -541,10 +497,10 @@ impl QueryWorkbench {
                     })
                     .flex()
                     .items_center()
-                    .gap(px(4.0))
-                    .px(px(8.0))
-                    .py(px(2.5))
-                    .rounded_md()
+                    .h(px(28.0))
+                    .gap(px(5.0))
+                    .px(px(10.0))
+                    .rounded_sm()
                     .bg(if is_state_open {
                         theme.bg_surface_active
                     } else {
@@ -579,7 +535,7 @@ impl QueryWorkbench {
             None
         };
 
-        // ── 5. Sort Dropdown ──────────────────────────────────────────────────
+        // ── 4. Sort Dropdown ──────────────────────────────────────────────────
         let is_sort_open = props.active_menu == Some(WorkbenchMenu::Sort);
         let on_close_sort = {
             let cb = on_toggle_menu.clone();
@@ -628,12 +584,13 @@ impl QueryWorkbench {
                 deferred(
                     anchored()
                         .anchor(Corner::TopLeft)
-                        .offset(point(px(0.0), px(28.0)))
+                        .offset(point(px(0.0), px(32.0)))
                         .snap_to_window()
                         .child(MenuSurface::render(
                             "sort_menu_surface".into(),
                             theme,
                             px(180.0),
+                            props.reduce_motion,
                             on_close_sort,
                             sort_items,
                         )),
@@ -686,10 +643,10 @@ impl QueryWorkbench {
             })
             .flex()
             .items_center()
-            .gap(px(4.0))
-            .px(px(8.0))
-            .py(px(2.5))
-            .rounded_md()
+            .h(px(28.0))
+            .gap(px(5.0))
+            .px(px(10.0))
+            .rounded_sm()
             .bg(if is_sort_open {
                 theme.bg_surface_active
             } else {
@@ -720,32 +677,47 @@ impl QueryWorkbench {
             })
             .children(sort_dropdown);
 
-        // ── 6. View Mode Switcher & Count ─────────────────────────────────────
+        // ── 5. View Mode Switcher & Count ─────────────────────────────────────
         let view_switcher = ViewModeSwitcher::render(ViewModeSwitcherProps {
             current_mode: props.view_mode,
             theme,
             on_select_mode: props.on_select_view_mode.clone(),
         });
 
-        let status_badge = if props.is_searching {
-            Some(
-                div()
-                    .text_xs()
-                    .text_color(theme.accent)
-                    .child("Searching..."),
-            )
-        } else if props.total_count > 0 {
-            Some(
-                div()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child(format!("{} pkgs", props.total_count)),
-            )
+        let summary_text = format_active_filter_summary(
+            props.total_count,
+            props.is_searching,
+            &props.source_scope,
+            props.state_filter,
+            props.aur_enabled,
+            props.flatpak_enabled,
+            props.appimage_enabled,
+        );
+        let has_active_filters = summary_text.is_some();
+
+        let status_badge = if !has_active_filters {
+            if props.is_searching {
+                Some(
+                    div()
+                        .text_xs()
+                        .text_color(theme.accent)
+                        .child("Searching..."),
+                )
+            } else if props.total_count > 0 {
+                Some(
+                    div()
+                        .text_xs()
+                        .text_color(theme.text_muted)
+                        .child(format!("{} pkgs", props.total_count)),
+                )
+            } else {
+                None
+            }
         } else {
             None
         };
 
-        // ── 7. Row 2 Composition ──────────────────────────────────────────────
+        // ── 6. Row 2 Composition ──────────────────────────────────────────────
         let row2 = div()
             .flex()
             .items_center()
@@ -757,8 +729,7 @@ impl QueryWorkbench {
                     .flex()
                     .items_center()
                     .gap(px(4.0))
-                    .child(filters_trigger)
-                    .children(quick_source_pills),
+                    .child(filters_trigger),
             )
             .child(
                 div()
@@ -771,153 +742,11 @@ impl QueryWorkbench {
                     .child(view_switcher),
             );
 
-        // ── 8. Row 3: Active Filter Chips & Clear Filters ─────────────────────
-        let is_all_sources = props.source_scope.is_all_enabled(
-            props.aur_enabled,
-            props.flatpak_enabled,
-            props.appimage_enabled,
-        );
-        let is_all_states = props.state_filter == PackageStateFilter::All;
-        let has_active_filters = !is_all_sources || !is_all_states;
-
-        let row3 = if has_active_filters {
-            let mut active_chips = Vec::new();
-
-            // Source filter chips if not all enabled
-            if !is_all_sources {
-                if props.source_scope.alpm {
-                    let on_toggle = props.on_toggle_source.clone();
-                    active_chips.push(
-                        div()
-                            .id("active_chip_alpm")
-                            .flex()
-                            .items_center()
-                            .gap(px(2.0))
-                            .px(px(6.0))
-                            .py(px(1.5))
-                            .rounded_sm()
-                            .bg(theme.bg_surface)
-                            .border_1()
-                            .border_color(theme.badge_alpm)
-                            .text_xs()
-                            .text_color(theme.badge_alpm)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.bg_surface_hover))
-                            .child("Official ×")
-                            .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                                on_toggle(PackageSourceKind::Alpm, window, cx);
-                            })
-                            .into_any_element(),
-                    );
-                }
-                if props.aur_enabled && props.source_scope.aur {
-                    let on_toggle = props.on_toggle_source.clone();
-                    active_chips.push(
-                        div()
-                            .id("active_chip_aur")
-                            .flex()
-                            .items_center()
-                            .gap(px(2.0))
-                            .px(px(6.0))
-                            .py(px(1.5))
-                            .rounded_sm()
-                            .bg(theme.bg_surface)
-                            .border_1()
-                            .border_color(theme.badge_aur)
-                            .text_xs()
-                            .text_color(theme.badge_aur)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.bg_surface_hover))
-                            .child("AUR ×")
-                            .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                                on_toggle(PackageSourceKind::Aur, window, cx);
-                            })
-                            .into_any_element(),
-                    );
-                }
-                if props.flatpak_enabled && props.source_scope.flatpak {
-                    let on_toggle = props.on_toggle_source.clone();
-                    active_chips.push(
-                        div()
-                            .id("active_chip_flatpak")
-                            .flex()
-                            .items_center()
-                            .gap(px(2.0))
-                            .px(px(6.0))
-                            .py(px(1.5))
-                            .rounded_sm()
-                            .bg(theme.bg_surface)
-                            .border_1()
-                            .border_color(theme.badge_flatpak)
-                            .text_xs()
-                            .text_color(theme.badge_flatpak)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.bg_surface_hover))
-                            .child("Flatpak ×")
-                            .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                                on_toggle(PackageSourceKind::Flatpak, window, cx);
-                            })
-                            .into_any_element(),
-                    );
-                }
-                if props.appimage_enabled && props.source_scope.appimage {
-                    let on_toggle = props.on_toggle_source.clone();
-                    active_chips.push(
-                        div()
-                            .id("active_chip_appimage")
-                            .flex()
-                            .items_center()
-                            .gap(px(2.0))
-                            .px(px(6.0))
-                            .py(px(1.5))
-                            .rounded_sm()
-                            .bg(theme.bg_surface)
-                            .border_1()
-                            .border_color(theme.badge_appimage)
-                            .text_xs()
-                            .text_color(theme.badge_appimage)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.bg_surface_hover))
-                            .child("AppImage ×")
-                            .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                                on_toggle(PackageSourceKind::AppImage, window, cx);
-                            })
-                            .into_any_element(),
-                    );
-                }
-            }
-
-            // State filter chip if not All
-            if !is_all_states {
-                let on_select = props.on_select_state.clone();
-                let state_lbl = format!("{} ×", props.state_filter.label());
-                active_chips.push(
-                    div()
-                        .id("active_chip_state")
-                        .flex()
-                        .items_center()
-                        .gap(px(2.0))
-                        .px(px(6.0))
-                        .py(px(1.5))
-                        .rounded_sm()
-                        .bg(theme.bg_surface)
-                        .border_1()
-                        .border_color(theme.accent)
-                        .text_xs()
-                        .text_color(theme.accent)
-                        .cursor_pointer()
-                        .hover(|s| s.bg(theme.bg_surface_hover))
-                        .child(state_lbl)
-                        .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                            on_select(PackageStateFilter::All, window, cx);
-                        })
-                        .into_any_element(),
-                );
-            }
-
-            // Clear filters button
+        // ── 7. Row 3: Active Filter Textual Summary ───────────────────────────
+        let row3 = summary_text.map(|summary| {
             let on_clear = props.on_clear_filters.clone();
             let on_clear_key = on_clear.clone();
+
             let clear_btn = div()
                 .id("workbench_clear_filters_btn")
                 .focusable()
@@ -933,12 +762,12 @@ impl QueryWorkbench {
                 .items_center()
                 .gap(px(4.0))
                 .px(px(6.0))
-                .py(px(1.5))
+                .py(px(2.0))
                 .rounded_sm()
                 .cursor_pointer()
                 .text_xs()
                 .text_color(theme.accent)
-                .hover(|s| s.bg(theme.bg_surface_hover))
+                .hover(|s| s.bg(theme.bg_surface_hover).text_color(theme.accent_hover))
                 .child(
                     svg()
                         .path(AppIcon::Close.path())
@@ -950,32 +779,28 @@ impl QueryWorkbench {
                     on_clear(window, cx);
                 });
 
-            Some(
-                div()
-                    .id("workbench_row3_active_filters")
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(6.0))
-                    .w_full()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .flex_wrap()
-                            .gap(px(4.0))
-                            .children(active_chips),
-                    )
-                    .child(clear_btn),
-            )
-        } else {
-            None
-        };
+            div()
+                .id("workbench_row3_active_filters")
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(px(8.0))
+                .w_full()
+                .px(px(4.0))
+                .py(px(2.0))
+                .child(
+                    div()
+                        .id("workbench_textual_summary")
+                        .text_xs()
+                        .text_color(theme.text_secondary)
+                        .child(summary),
+                )
+                .child(clear_btn)
+        });
 
-        // ── 9. Final Container Assembly ───────────────────────────────────────
+        // ── 8. Final Container Assembly ───────────────────────────────────────
         div()
             .id("query_workbench_container")
-            .w(px(props.list_pane_width))
             .w_full()
             .flex()
             .flex_col()
@@ -987,5 +812,159 @@ impl QueryWorkbench {
             .child(row1)
             .child(row2)
             .children(row3)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::prelude::v1::test;
+
+    #[test]
+    fn test_format_active_filter_summary_default_returns_none() {
+        let scope = SourceScope {
+            alpm: true,
+            aur: true,
+            flatpak: true,
+            appimage: true,
+        };
+        let summary = format_active_filter_summary(
+            150,
+            false,
+            &scope,
+            PackageStateFilter::All,
+            true,
+            true,
+            true,
+        );
+        assert!(summary.is_none());
+    }
+
+    #[test]
+    fn test_format_active_filter_summary_source_subset() {
+        let scope = SourceScope {
+            alpm: true,
+            aur: true,
+            flatpak: false,
+            appimage: false,
+        };
+        let summary = format_active_filter_summary(
+            42,
+            false,
+            &scope,
+            PackageStateFilter::All,
+            true,
+            true,
+            true,
+        );
+        assert_eq!(
+            summary,
+            Some("Showing 42 packages  •  Sources: Arch, AUR".to_string())
+        );
+    }
+
+    #[test]
+    fn test_format_active_filter_summary_state_filter_only() {
+        let scope = SourceScope {
+            alpm: true,
+            aur: true,
+            flatpak: true,
+            appimage: true,
+        };
+        let summary = format_active_filter_summary(
+            12,
+            false,
+            &scope,
+            PackageStateFilter::Installed,
+            true,
+            true,
+            true,
+        );
+        assert_eq!(
+            summary,
+            Some("Showing 12 packages  •  State: Installed".to_string())
+        );
+    }
+
+    #[test]
+    fn test_format_active_filter_summary_both_sources_and_state() {
+        let scope = SourceScope {
+            alpm: true,
+            aur: false,
+            flatpak: false,
+            appimage: false,
+        };
+        let summary = format_active_filter_summary(
+            1,
+            false,
+            &scope,
+            PackageStateFilter::UpdatesAvailable,
+            true,
+            true,
+            true,
+        );
+        assert_eq!(
+            summary,
+            Some("Showing 1 package  •  Sources: Arch  •  State: Updates Available".to_string())
+        );
+    }
+
+    #[test]
+    fn test_format_active_filter_summary_searching_state() {
+        let scope = SourceScope {
+            alpm: true,
+            aur: false,
+            flatpak: false,
+            appimage: false,
+        };
+        let summary = format_active_filter_summary(
+            0,
+            true,
+            &scope,
+            PackageStateFilter::All,
+            true,
+            true,
+            true,
+        );
+        assert_eq!(summary, Some("Searching...  •  Sources: Arch".to_string()));
+    }
+
+    #[test]
+    fn test_compute_filter_badge_count() {
+        let all_scope = SourceScope {
+            alpm: true,
+            aur: true,
+            flatpak: true,
+            appimage: true,
+        };
+        assert_eq!(
+            compute_filter_badge_count(&all_scope, PackageStateFilter::All, true, true, true),
+            0
+        );
+
+        let subset_scope = SourceScope {
+            alpm: true,
+            aur: false,
+            flatpak: false,
+            appimage: false,
+        };
+        assert_eq!(
+            compute_filter_badge_count(&subset_scope, PackageStateFilter::All, true, true, true),
+            1
+        );
+        assert_eq!(
+            compute_filter_badge_count(&all_scope, PackageStateFilter::Installed, true, true, true),
+            1
+        );
+        assert_eq!(
+            compute_filter_badge_count(
+                &subset_scope,
+                PackageStateFilter::Installed,
+                true,
+                true,
+                true
+            ),
+            2
+        );
     }
 }

@@ -386,6 +386,7 @@ impl Render for PackageWorkstationView {
                     active_menu: self.active_menu,
                     is_searching,
                     total_count: packages.len(),
+                    reduce_motion: self.reduce_motion,
                     aur_enabled: self.aur_enabled,
                     flatpak_enabled: self.flatpak_enabled,
                     appimage_enabled: self.appimage_enabled,

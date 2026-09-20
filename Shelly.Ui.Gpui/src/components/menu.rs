@@ -13,13 +13,14 @@ impl MenuSurface {
         id: ElementId,
         theme: &Theme,
         min_width: Pixels,
+        reduce_motion: bool,
         on_close: MenuActionHandler,
         children: Vec<AnyElement>,
     ) -> impl IntoElement {
         let on_close_out = on_close.clone();
         let on_close_key = on_close.clone();
 
-        div()
+        let base = div()
             .id(id)
             .occlude()
             .key_context("MenuSurface")
@@ -43,7 +44,28 @@ impl MenuSurface {
             .border_color(theme.border)
             .rounded_md()
             .shadow_lg()
-            .children(children)
+            .children(children);
+
+        if reduce_motion {
+            base.into_any_element()
+        } else {
+            base.with_animation(
+                ("menu_surface_anim", 0usize),
+                Animation::new(crate::state::MotionDurations::FAST)
+                    .with_easing(gpui::ease_out_quint()),
+                |el, delta| el.opacity(delta),
+            )
+            .into_any_element()
+        }
+    }
+}
+
+/// Séparateur horizontal au sein d'un menu
+pub struct MenuDivider;
+
+impl MenuDivider {
+    pub fn render(theme: &Theme) -> impl IntoElement {
+        div().h(px(1.0)).my(px(4.0)).bg(theme.border)
     }
 }
 

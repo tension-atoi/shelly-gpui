@@ -14,9 +14,7 @@ impl UiMetrics {
 
     // ── Workspace Splitter & Pane Limits ─────────────────────────────────────
     pub const SPLITTER_WIDTH: f32 = 5.0;
-    pub const LIST_MIN_WIDTH: f32 = 340.0;
     pub const LIST_MIN_USABLE: f32 = 340.0;
-    pub const INSPECTOR_MIN_WIDTH: f32 = 320.0;
     pub const INSPECTOR_MIN_USABLE: f32 = 320.0;
     pub const INSPECTOR_MAX_WIDTH: f32 = 520.0;
     pub const INSPECTOR_MAX_RATIO: f32 = 3.0 / 7.0;
@@ -75,12 +73,12 @@ mod tests {
             "Collapsed sidebar must be narrower than expanded sidebar"
         );
         assert!(
-            UiMetrics::LIST_MIN_WIDTH > 0.0,
-            "List minimum width must be positive"
+            UiMetrics::LIST_MIN_USABLE > 0.0,
+            "List minimum usable width must be positive"
         );
         assert!(
-            UiMetrics::INSPECTOR_MIN_WIDTH > 0.0,
-            "Inspector minimum width must be positive"
+            UiMetrics::INSPECTOR_MIN_USABLE > 0.0,
+            "Inspector minimum usable width must be positive"
         );
         assert!(
             UiMetrics::SPLITTER_WIDTH > 0.0,
