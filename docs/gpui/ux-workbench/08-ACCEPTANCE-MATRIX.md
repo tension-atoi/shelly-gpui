@@ -9,5 +9,6 @@
 | **Sticky Query Surface** | Search bar and filters remain sticky at top; results scroll beneath | `top_bar` placed above `uniform_list` container in `list_pane` | Code audit of `list_pane` flex column hierarchy; runtime verification | **PASSED** |
 | **Zero Deadcode Policy** | No dead code, no unused variables/imports, no warning suppressions | Crates enforced with `#![deny(dead_code)]`, `#![deny(unused_variables)]`, `#![deny(unused_imports)]`, `#![deny(unused_must_use)]` | `cargo clippy --release --locked -- -D warnings` exits 0 with zero warnings | **PASSED** |
 | **Release Locked Tests** | All unit and integration tests passing in release locked profile | 93 passing tests in release locked profile | `cargo test --release --locked` exits 0 (93 passed) | **PASSED** |
-| **Native Packaging** | AUR PKGBUILD builds clean package from remote git commit | Built via `makepkg -C -c -f`, installed via `pacman -U` | `pacman -Q shelly-gpui-git` and binary integrity check | **PENDING EXECUTION** |
-| **Wayland Runtime Execution** | App launches under native Wayland Hyprland compositor with active window | `/proc/<pid>/exe -> /usr/lib/shelly/shelly-gpui-bin`, Hyprland `xwayland: 0` | `hyprctl clients -j`, Wayland screenshot via `grim` | **PENDING EXECUTION** |
+| **Native Packaging** | AUR PKGBUILD builds clean package from remote git commit | Built via `makepkg -C -c -f`, installed via `pacman -U` | `pacman -Q shelly-gpui-git` (`r4687.g3fd657b3-1`) and byte integrity check | **PASSED** |
+| **Wayland Runtime Execution** | App launches under native Wayland Hyprland compositor with active window | `/proc/<pid>/exe -> /usr/lib/shelly/shelly-gpui-bin`, Hyprland `xwayland: 0` | PID 2733610, `hyprctl clients -j`, Wayland screenshot via `grim` | **PASSED** |
+
