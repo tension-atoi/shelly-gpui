@@ -111,8 +111,8 @@ impl OperationConsoleView {
         self.toast_center.update(cx, |tc, cx| {
             tc.post(
                 ToastKind::Info,
-                "Journaux copiés",
-                "Le contenu de la console a été copié dans le presse-papiers.",
+                "Logs copied",
+                "Console output has been copied to clipboard.",
                 None,
                 reduce,
                 cx,

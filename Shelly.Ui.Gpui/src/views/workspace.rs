@@ -931,15 +931,6 @@ impl Render for WorkspaceView {
                                 })
                             })
                         },
-                        on_toggle_shelly_search: {
-                            let e = entity_st.clone();
-                            Rc::new(move |_w, cx| {
-                                e.update(cx, |view, cx| {
-                                    view.settings.toggle_shelly_search();
-                                    cx.notify();
-                                })
-                            })
-                        },
                         on_toggle_cascade_delete: {
                             let e = entity_st.clone();
                             Rc::new(move |_w, cx| {
@@ -954,15 +945,6 @@ impl Render for WorkspaceView {
                             Rc::new(move |_w, cx| {
                                 e.update(cx, |view, cx| {
                                     view.settings.toggle_remove_configs();
-                                    cx.notify();
-                                })
-                            })
-                        },
-                        on_toggle_no_confirm: {
-                            let e = entity_st.clone();
-                            Rc::new(move |_w, cx| {
-                                e.update(cx, |view, cx| {
-                                    view.settings.toggle_no_confirm();
                                     cx.notify();
                                 })
                             })
@@ -1039,6 +1021,45 @@ impl Render for WorkspaceView {
                                 })
                             })
                         },
+                        on_reset: Some({
+                            let e = entity_st.clone();
+                            Rc::new(move |_w, cx| {
+                                e.update(cx, |view, cx| {
+                                    view.settings.reset_to(
+                                        view.shelly_settings.clone(),
+                                        view.gpui_config.clone(),
+                                    );
+                                    let theme = if view.gpui_config.dark_theme {
+                                        Theme::dark()
+                                    } else {
+                                        Theme::light()
+                                    };
+                                    view.theme = theme;
+                                    view.workstation
+                                        .update(cx, |ws, cx| ws.set_theme(theme, cx));
+                                    view.sidebar.update(cx, |sb, cx| sb.set_theme(theme, cx));
+                                    view.console_view
+                                        .update(cx, |cv, cx| cv.set_theme(theme, cx));
+                                    let compact = view.gpui_config.compact_view;
+                                    view.session
+                                        .update(cx, |s, cx| s.set_sidebar_collapsed(compact, cx));
+                                    view.workstation
+                                        .update(cx, |ws, cx| ws.set_compact(compact, cx));
+                                    let auto_open = view.gpui_config.log_drawer_open;
+                                    view.console.update(cx, |c, _| c.set_auto_open(auto_open));
+                                    let reduce = view.gpui_config.reduce_motion;
+                                    view.motion_policy =
+                                        crate::state::motion::MotionPolicy::new(reduce);
+                                    view.workstation
+                                        .update(cx, |ws, cx| ws.set_reduce_motion(reduce, cx));
+                                    view.sidebar
+                                        .update(cx, |sb, cx| sb.set_reduce_motion(reduce, cx));
+                                    view.console_view
+                                        .update(cx, |cv, cx| cv.set_reduce_motion(reduce, cx));
+                                    cx.notify();
+                                })
+                            })
+                        }),
                     }))
             }
         };

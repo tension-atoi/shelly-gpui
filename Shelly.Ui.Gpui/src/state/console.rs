@@ -75,7 +75,7 @@ impl ConsoleModel {
 
     pub fn start_operation(&mut self, op_name: &str, cx: &mut Context<Self>) {
         let opened = self.start_operation_state(op_name);
-        self.append_stdout(&format!(">>> Démarrage de l'opération : {}", op_name), cx);
+        self.append_stdout(&format!(">>> Starting operation: {}", op_name), cx);
         if opened {
             cx.emit(ConsoleEvent::Toggled(true));
         }
@@ -106,9 +106,9 @@ impl ConsoleModel {
     pub fn finish_operation(&mut self, success: bool, message: &str, cx: &mut Context<Self>) {
         let (status, opened) = self.finish_operation_state(success, message);
         let log_line = if success {
-            format!(">>> Succès : {}", message)
+            format!(">>> Success: {}", message)
         } else {
-            format!(">>> Échec : {}", message)
+            format!(">>> Failed: {}", message)
         };
         if success {
             self.append_stdout(&log_line, cx);

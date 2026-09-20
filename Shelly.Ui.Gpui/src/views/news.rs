@@ -33,13 +33,13 @@ impl NewsView {
                         .text_2xl()
                         .font_weight(FontWeight::BOLD)
                         .text_color(theme.text_primary)
-                        .child("Actualités Officielles Arch Linux"),
+                        .child("Official Arch Linux News"),
                 )
                 .child(
                     div()
                         .text_xs()
                         .text_color(theme.text_muted)
-                        .child("Annonces importantes, changements de paquets et interventions manuelles recommandées."),
+                        .child("Important announcements, package updates, and recommended manual interventions."),
                 ),
         );
 
@@ -51,7 +51,7 @@ impl NewsView {
                     .justify_center()
                     .h(px(200.0))
                     .text_color(theme.text_muted)
-                    .child("Chargement des actualités Arch Linux..."),
+                    .child("Loading Arch Linux news..."),
             );
         }
 
@@ -63,7 +63,7 @@ impl NewsView {
                     .justify_center()
                     .h(px(200.0))
                     .text_color(theme.text_muted)
-                    .child("Aucune actualité récente à afficher."),
+                    .child("No recent announcements to display."),
             );
         }
 
@@ -103,14 +103,14 @@ impl NewsView {
                         .text_color(theme.text_secondary)
                         .mb_2()
                         .child(if let Some(ref author) = item.author {
-                            format!("Publié par : {}", author)
+                            format!("Published by: {}", author)
                         } else {
                             "Arch Linux Team".to_string()
                         }),
                 )
                 .child(div().text_sm().text_color(theme.text_primary).child(
                     item.summary.clone().unwrap_or_else(|| {
-                        "Cliquez pour lire l'annonce complète sur archlinux.org".to_string()
+                        "Click to read the full announcement on archlinux.org".to_string()
                     }),
                 ));
 

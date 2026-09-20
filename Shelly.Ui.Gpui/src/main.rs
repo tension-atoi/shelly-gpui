@@ -2,7 +2,7 @@
 #![deny(unused_variables)]
 #![deny(unused_imports)]
 #![deny(unused_must_use)]
-#![recursion_limit = "1024"]
+#![recursion_limit = "2048"]
 
 mod backend;
 mod components;
@@ -32,7 +32,7 @@ fn main() {
                 size: size(px(1280.0), px(840.0)),
             })),
             titlebar: Some(TitlebarOptions {
-                title: Some("Shelly — Gestionnaire de paquets Arch Linux (GPUI)".into()),
+                title: Some("Shelly — Universal Package Manager".into()),
                 appears_transparent: false,
                 traffic_light_position: None,
             }),

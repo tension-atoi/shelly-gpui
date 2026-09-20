@@ -13,15 +13,14 @@ pub struct SettingsViewProps<'a> {
     pub on_toggle_aur: WindowActionHandler,
     pub on_toggle_flatpak: WindowActionHandler,
     pub on_toggle_appimage: WindowActionHandler,
-    pub on_toggle_shelly_search: WindowActionHandler,
     pub on_toggle_cascade_delete: WindowActionHandler,
     pub on_toggle_remove_configs: WindowActionHandler,
-    pub on_toggle_no_confirm: WindowActionHandler,
     pub on_toggle_dark_theme: WindowActionHandler,
     pub on_toggle_compact_view: WindowActionHandler,
     pub on_toggle_log_drawer_auto_open: WindowActionHandler,
     pub on_toggle_reduce_motion: WindowActionHandler,
     pub on_save: WindowActionHandler,
+    pub on_reset: Option<WindowActionHandler>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,11 +54,6 @@ impl SettingsView {
         self.is_dirty = true;
     }
 
-    pub fn toggle_shelly_search(&mut self) {
-        self.draft_shelly.shelly_search_enabled = !self.draft_shelly.shelly_search_enabled;
-        self.is_dirty = true;
-    }
-
     pub fn toggle_cascade_delete(&mut self) {
         self.draft_shelly.package_management_cascade_delete =
             !self.draft_shelly.package_management_cascade_delete;
@@ -69,11 +63,6 @@ impl SettingsView {
     pub fn toggle_remove_configs(&mut self) {
         self.draft_shelly.package_management_remove_configs =
             !self.draft_shelly.package_management_remove_configs;
-        self.is_dirty = true;
-    }
-
-    pub fn toggle_no_confirm(&mut self) {
-        self.draft_shelly.no_confirm = !self.draft_shelly.no_confirm;
         self.is_dirty = true;
     }
 
@@ -95,6 +84,12 @@ impl SettingsView {
     pub fn toggle_reduce_motion(&mut self) {
         self.draft_gpui.reduce_motion = !self.draft_gpui.reduce_motion;
         self.is_dirty = true;
+    }
+
+    pub fn reset_to(&mut self, shelly: ShellySettings, gpui: GpuiUiConfig) {
+        self.draft_shelly = shelly;
+        self.draft_gpui = gpui;
+        self.is_dirty = false;
     }
 
     /// Sauvegarde pure paramétrable par injection de closures (permettant les tests unitaires sans disque)
@@ -148,38 +143,41 @@ impl SettingsView {
                                 .text_2xl()
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(theme.text_primary)
-                                .child("Paramètres Shelly & GPUI"),
+                                .child("Shelly Settings"),
                         )
                         .child(if is_dirty {
                             div()
-                                .px_2()
+                                .px_2p5()
                                 .py_0p5()
                                 .rounded_full()
                                 .bg(theme.warning)
                                 .text_xs()
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(theme.bg_app)
-                                .child("Modifications non enregistrées")
+                                .child("Unsaved Changes")
                         } else {
                             div()
-                                .px_2()
+                                .px_2p5()
                                 .py_0p5()
                                 .rounded_full()
-                                .bg(theme.border)
+                                .bg(theme.bg_surface)
+                                .border_1()
+                                .border_color(theme.border)
                                 .text_xs()
+                                .font_weight(FontWeight::MEDIUM)
                                 .text_color(theme.text_muted)
-                                .child("À jour")
+                                .child("Up to Date")
                         }),
                 )
                 .child(
                     div()
                         .text_xs()
                         .text_color(theme.text_muted)
-                        .child("Configuration du moteur Shelly (~/.config/shelly/settings.json) et des interactions GPUI."),
+                        .child("Configuration of package sources, desktop preferences, and motion policy."),
                 ),
         );
 
-        // Section Sources de paquets
+        // Section 1: PACKAGE SOURCES
         let sources_section = div()
             .flex()
             .flex_col()
@@ -195,37 +193,34 @@ impl SettingsView {
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.accent)
                     .mb_3()
-                    .child("SOURCES DE PAQUETS"),
+                    .child("PACKAGE SOURCES"),
             )
             .child(Self::toggle_row(
-                "Support AUR (Arch User Repository)",
+                "Arch User Repository (AUR)",
+                "Enable search and PKGBUILD inspection for community AUR packages",
                 s.aur_enabled,
                 props.on_toggle_aur,
                 theme,
             ))
             .child(Self::toggle_row(
-                "Support Flatpak (Flathub & remotes)",
+                "Flatpak Packages",
+                "Enable search and inspection for sandboxed applications via Flathub",
                 s.flat_pack_enabled,
                 props.on_toggle_flatpak,
                 theme,
             ))
             .child(Self::toggle_row(
-                "Support AppImage (Applications portables)",
+                "AppImage Packages",
+                "Enable discovery and inspection for self-contained AppImage binaries",
                 s.app_image_enabled,
                 props.on_toggle_appimage,
-                theme,
-            ))
-            .child(Self::toggle_row(
-                "Recherche Shelly unifiée activée",
-                s.shelly_search_enabled,
-                props.on_toggle_shelly_search,
                 theme,
             ));
 
         root = root.child(sources_section);
 
-        // Section Maintenance & Sécurité
-        let maintenance_section = div()
+        // Section 2: PACKAGE MANAGEMENT
+        let mgmt_section = div()
             .flex()
             .flex_col()
             .p_4()
@@ -240,34 +235,31 @@ impl SettingsView {
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.accent)
                     .mb_3()
-                    .child("MAINTENANCE ET SUPPRESSION"),
+                    .child("PACKAGE MANAGEMENT"),
             )
             .child(Self::toggle_row(
-                "Suppression en cascade des dépendances orphelines",
+                "Cascade Dependency Removal (--cascade)",
+                "Recursively remove orphaned dependencies when removing packages",
                 s.package_management_cascade_delete,
                 props.on_toggle_cascade_delete,
                 theme,
             ))
             .child(Self::toggle_row(
-                "Nettoyage automatique des fichiers de configuration",
+                "Remove Configuration Files (--remove-config)",
+                "Purge package configuration and backup files upon package removal",
                 s.package_management_remove_configs,
                 props.on_toggle_remove_configs,
                 theme,
-            ))
-            .child(Self::toggle_row(
-                "Mode sans confirmation automatique (--no-confirm)",
-                s.no_confirm,
-                props.on_toggle_no_confirm,
-                theme,
             ));
 
-        root = root.child(maintenance_section);
+        root = root.child(mgmt_section);
 
-        // Section Préférences UI & Mouvement GPUI
-        let ui_section = div()
+        // Section 3: APPEARANCE & DENSITY
+        let appearance_section = div()
             .flex()
             .flex_col()
             .p_4()
+            .mb_6()
             .rounded_md()
             .bg(theme.bg_surface)
             .border_1()
@@ -278,76 +270,152 @@ impl SettingsView {
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.accent)
                     .mb_3()
-                    .child("PRÉFÉRENCES D'AFFICHAGE & MOUVEMENT GPUI"),
+                    .child("APPEARANCE & DENSITY"),
             )
             .child(Self::toggle_row(
-                "Thème Sombre haute performance (Dark Mode)",
+                "Dark Theme",
+                "Use high-contrast dark theme interface (uncheck for light theme)",
                 g.dark_theme,
                 props.on_toggle_dark_theme,
                 theme,
             ))
             .child(Self::toggle_row(
-                "Affichage compact de la liste de paquets",
+                "Compact View Density",
+                "Reduce card and table row heights and collapse the navigation sidebar",
                 g.compact_view,
                 props.on_toggle_compact_view,
                 theme,
-            ))
+            ));
+
+        root = root.child(appearance_section);
+
+        // Section 4: MOTION & FEEDBACK
+        let motion_section = div()
+            .flex()
+            .flex_col()
+            .p_4()
+            .mb_6()
+            .rounded_md()
+            .bg(theme.bg_surface)
+            .border_1()
+            .border_color(theme.border)
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.accent)
+                    .mb_3()
+                    .child("MOTION & FEEDBACK"),
+            )
             .child(Self::toggle_row(
-                "Ouvrir automatiquement le tiroir de logs lors d'une action",
-                g.log_drawer_open,
-                props.on_toggle_log_drawer_auto_open,
-                theme,
-            ))
-            .child(Self::toggle_row(
-                "Réduire les animations (Reduce motion — transitions instantanées)",
+                "Reduce Motion",
+                "Disable animated transitions and snap sidebar, console, and toasts immediately",
                 g.reduce_motion,
                 props.on_toggle_reduce_motion,
                 theme,
             ));
 
-        root = root.child(ui_section);
+        root = root.child(motion_section);
 
-        // Bouton de sauvegarde explicite (inerte et non cliquable si propre / non modifié)
+        // Section 5: LOGS & OPERATIONS
+        let logs_section = div()
+            .flex()
+            .flex_col()
+            .p_4()
+            .mb_6()
+            .rounded_md()
+            .bg(theme.bg_surface)
+            .border_1()
+            .border_color(theme.border)
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.accent)
+                    .mb_3()
+                    .child("LOGS & OPERATIONS"),
+            )
+            .child(Self::toggle_row(
+                "Auto-Open Operation Console",
+                "Automatically reveal the log drawer whenever a package mutation starts",
+                g.log_drawer_open,
+                props.on_toggle_log_drawer_auto_open,
+                theme,
+            ));
+
+        root = root.child(logs_section);
+
+        // Bouton de sauvegarde explicite & bouton de réinitialisation
         let on_save = props.on_save;
-        let save_btn = div().flex().justify_end().mt_6().child(if is_dirty {
-            div()
-                .id("save_settings_btn")
-                .px_6()
-                .py_2()
-                .rounded_md()
-                .bg(theme.accent)
-                .border_1()
-                .border_color(theme.accent)
-                .text_sm()
-                .font_weight(FontWeight::BOLD)
-                .text_color(theme.bg_app)
-                .cursor_pointer()
-                .hover(move |s| s.bg(theme.accent_hover).text_color(theme.bg_app))
-                .child("Enregistrer les paramètres *")
-                .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
-                    on_save(window, cx);
-                })
-        } else {
-            div()
-                .id("save_settings_btn")
-                .px_6()
-                .py_2()
-                .rounded_md()
-                .bg(theme.bg_surface_active)
-                .border_1()
-                .border_color(theme.border)
-                .text_sm()
-                .font_weight(FontWeight::BOLD)
-                .text_color(theme.text_muted)
-                .child("Paramètres enregistrés")
-        });
+        let on_reset = props.on_reset;
+        let mut actions_bar = div().flex().items_center().justify_end().gap_3().mt_6();
 
-        root = root.child(save_btn);
+        if is_dirty {
+            if let Some(reset_handler) = on_reset {
+                actions_bar = actions_bar.child(
+                    div()
+                        .id("reset_settings_btn")
+                        .px_4()
+                        .py_2()
+                        .rounded_md()
+                        .bg(theme.bg_surface)
+                        .border_1()
+                        .border_color(theme.border)
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.text_secondary)
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(theme.bg_surface_hover).text_color(theme.text_primary))
+                        .child("Reset Changes")
+                        .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
+                            reset_handler(window, cx);
+                        }),
+                );
+            }
+
+            actions_bar = actions_bar.child(
+                div()
+                    .id("save_settings_btn")
+                    .px_6()
+                    .py_2()
+                    .rounded_md()
+                    .bg(theme.accent)
+                    .border_1()
+                    .border_color(theme.accent)
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.bg_app)
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(theme.accent_hover).text_color(theme.bg_app))
+                    .child("Save Settings *")
+                    .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
+                        on_save(window, cx);
+                    }),
+            );
+        } else {
+            actions_bar = actions_bar.child(
+                div()
+                    .id("save_settings_btn")
+                    .px_6()
+                    .py_2()
+                    .rounded_md()
+                    .bg(theme.bg_surface_active)
+                    .border_1()
+                    .border_color(theme.border)
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_muted)
+                    .child("Settings Saved"),
+            );
+        }
+
+        root = root.child(actions_bar);
         root
     }
 
     fn toggle_row(
-        label: &'static str,
+        title: &'static str,
+        description: &'static str,
         active: bool,
         on_toggle: WindowActionHandler,
         theme: &Theme,
@@ -357,13 +425,31 @@ impl SettingsView {
             .flex()
             .items_center()
             .justify_between()
-            .py_2()
-            .px_2()
+            .py_3()
+            .px_3()
             .rounded_sm()
             .border_b_1()
             .border_color(theme.border)
             .hover(move |s| s.bg(hover_bg))
-            .child(div().text_xs().text_color(theme.text_primary).child(label))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_secondary)
+                            .child(description),
+                    ),
+            )
             .child(
                 div()
                     .px_3()
@@ -378,7 +464,7 @@ impl SettingsView {
                     } else {
                         theme.text_muted
                     })
-                    .child(if active { "Activé" } else { "Désactivé" })
+                    .child(if active { "Enabled" } else { "Disabled" })
                     .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
                         on_toggle(window, cx);
                     }),
@@ -407,17 +493,11 @@ mod tests {
         settings.toggle_appimage();
         assert!(!settings.draft_shelly.app_image_enabled);
 
-        settings.toggle_shelly_search();
-        assert!(!settings.draft_shelly.shelly_search_enabled);
-
         settings.toggle_cascade_delete();
         assert!(!settings.draft_shelly.package_management_cascade_delete);
 
         settings.toggle_remove_configs();
         assert!(!settings.draft_shelly.package_management_remove_configs);
-
-        settings.toggle_no_confirm();
-        assert!(!settings.draft_shelly.no_confirm);
 
         settings.toggle_dark_theme();
         assert!(!settings.draft_gpui.dark_theme);
@@ -495,5 +575,21 @@ mod tests {
         let result = settings.save_with(|_| Ok(()), |_| Ok(()));
         assert!(result.is_ok());
         assert!(!settings.is_dirty);
+    }
+
+    #[test]
+    fn test_settings_reset_restores_saved_state() {
+        let initial_shelly = ShellySettings::default();
+        let initial_gpui = GpuiUiConfig::default();
+        let mut settings = SettingsView::new(initial_shelly.clone(), initial_gpui.clone());
+
+        settings.toggle_aur();
+        settings.toggle_dark_theme();
+        assert!(settings.is_dirty);
+
+        settings.reset_to(initial_shelly.clone(), initial_gpui.clone());
+        assert!(!settings.is_dirty);
+        assert_eq!(settings.draft_shelly.aur_enabled, initial_shelly.aur_enabled);
+        assert_eq!(settings.draft_gpui.dark_theme, initial_gpui.dark_theme);
     }
 }
