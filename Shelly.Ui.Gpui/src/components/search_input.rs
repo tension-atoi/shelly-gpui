@@ -717,6 +717,15 @@ impl Render for SearchInputView {
             Some(
                 div()
                     .id("search_clear_button")
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(theme.border_focus))
+                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        let key = event.keystroke.key.as_str();
+                        if key == "enter" || key == "space" {
+                            this.clear_and_focus(window, cx);
+                        }
+                    }))
                     .flex_none()
                     .cursor_pointer()
                     .p(px(4.0))
@@ -740,52 +749,75 @@ impl Render for SearchInputView {
         };
 
         let search_indicator = if is_searching {
-            if reduce_motion {
-                Some(
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(theme.accent)
-                        .child("Searching...")
-                        .into_any_element(),
-                )
+            let indicator_dot = div().size(px(7.0)).rounded_full().bg(theme.accent);
+
+            let indicator_el = if reduce_motion {
+                indicator_dot.into_any_element()
             } else {
-                Some(
-                    div()
-                        .id("searching_indicator")
-                        .flex_none()
-                        .text_xs()
-                        .text_color(theme.accent)
-                        .child("Searching...")
-                        .with_animation(
-                            ("search_pulse", 0usize),
-                            Animation::new(std::time::Duration::from_millis(800))
-                                .repeat()
-                                .with_easing(gpui::pulsating_between(0.4, 1.0)),
-                            |el, delta| el.opacity(delta),
-                        )
-                        .into_any_element(),
-                )
-            }
+                indicator_dot
+                    .with_animation(
+                        ("search_pulse", 0usize),
+                        Animation::new(std::time::Duration::from_millis(700))
+                            .repeat()
+                            .with_easing(gpui::ease_in_out),
+                        |el, delta| {
+                            let opacity = 0.25 + 0.75 * (delta * std::f32::consts::PI).sin().abs();
+                            el.opacity(opacity)
+                        },
+                    )
+                    .into_any_element()
+            };
+
+            Some(
+                div()
+                    .id("searching_indicator")
+                    .flex_none()
+                    .size(px(14.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(indicator_el)
+                    .into_any_element(),
+            )
+        } else if !has_content {
+            Some(
+                div()
+                    .flex_none()
+                    .px(px(5.0))
+                    .py(px(1.0))
+                    .rounded_xs()
+                    .bg(theme.bg_surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .text_xs()
+                    .text_color(theme.text_muted)
+                    .child("/")
+                    .into_any_element(),
+            )
         } else {
             None
         };
 
-        div()
+        let mut container = div()
             .id("search_input_container")
             .key_context("SearchInput")
             .track_focus(&self.focus_handle)
-            .cursor(CursorStyle::IBeam)
-            .h(px(40.0))
             .w_full()
+            .h_full()
+            .px_3()
             .flex()
             .items_center()
-            .gap(px(8.0))
-            .px(px(12.0))
+            .gap_2()
             .bg(theme.bg_surface)
             .border_1()
             .border_color(border_color)
-            .rounded_md()
+            .rounded_md();
+
+        if is_focused {
+            container = container.shadow_sm();
+        }
+
+        let container = container
             .hover(move |s| {
                 if is_focused {
                     s
@@ -826,7 +858,7 @@ impl Render for SearchInputView {
                     .path(AppIcon::Search.path())
                     .size(px(16.0))
                     .flex_none()
-                    .text_color(if is_focused {
+                    .text_color(if is_focused || is_searching {
                         theme.accent
                     } else {
                         theme.text_muted
@@ -839,7 +871,29 @@ impl Render for SearchInputView {
                     .child(SearchInputElement { input: cx.entity() }),
             )
             .children(search_indicator)
-            .children(clear_button)
+            .children(clear_button);
+
+        if !reduce_motion {
+            container
+                .with_animation(
+                    (
+                        "search_focus_anim",
+                        if is_focused { 1usize } else { 0usize },
+                    ),
+                    Animation::new(std::time::Duration::from_millis(110))
+                        .with_easing(gpui::ease_out_quint()),
+                    move |el, delta| {
+                        if is_focused {
+                            el.opacity(0.9 + 0.1 * delta)
+                        } else {
+                            el.opacity(1.0)
+                        }
+                    },
+                )
+                .into_any_element()
+        } else {
+            container.into_any_element()
+        }
     }
 }
 

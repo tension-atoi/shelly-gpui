@@ -1,5 +1,6 @@
 use crate::components::menu::{
-    MenuCheckItem, MenuCheckItemProps, MenuDivider, MenuRadioItem, MenuSection, MenuSurface,
+    MenuActionHandler, MenuCheckItem, MenuCheckItemProps, MenuCheckmarkItem, MenuDivider,
+    MenuKeyHandler, MenuLifecycle, MenuSection, MenuSurface, MenuSurfaceProps,
 };
 use crate::components::search_input::SearchInputView;
 use crate::components::view_mode_switcher::{ViewModeSwitcher, ViewModeSwitcherProps};
@@ -18,6 +19,14 @@ pub enum WorkbenchMenu {
     Sort,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActiveMenuState {
+    pub menu: WorkbenchMenu,
+    pub lifecycle: MenuLifecycle,
+    pub anim_epoch: usize,
+    pub highlighted_index: usize,
+}
+
 pub type SourceToggleHandler = Rc<dyn Fn(PackageSourceKind, &mut Window, &mut App) + 'static>;
 pub type StateSelectHandler = Rc<dyn Fn(PackageStateFilter, &mut Window, &mut App) + 'static>;
 pub type SortSelectHandler = Rc<dyn Fn(SortMode, &mut Window, &mut App) + 'static>;
@@ -33,7 +42,7 @@ pub struct QueryWorkbenchProps<'a> {
     pub state_filter: PackageStateFilter,
     pub sort_mode: SortMode,
     pub view_mode: PackageViewMode,
-    pub active_menu: Option<WorkbenchMenu>,
+    pub active_menu_state: Option<ActiveMenuState>,
     pub is_searching: bool,
     pub total_count: usize,
     pub reduce_motion: bool,
@@ -42,11 +51,16 @@ pub struct QueryWorkbenchProps<'a> {
     pub appimage_enabled: bool,
     pub source_health: &'a SourceHealthMap,
     pub theme: &'a Theme,
+    pub filters_btn_focus: FocusHandle,
+    pub state_btn_focus: FocusHandle,
+    pub sort_btn_focus: FocusHandle,
+    pub menu_surface_focus: FocusHandle,
     pub on_toggle_source: SourceToggleHandler,
     pub on_select_state: StateSelectHandler,
     pub on_select_sort: SortSelectHandler,
     pub on_select_view_mode: ViewModeHandler,
     pub on_toggle_menu: MenuToggleHandler,
+    pub on_navigate_menu: MenuKeyHandler,
     pub on_retry_source: SourceRetryHandler,
     pub on_clear_filters: ActionHandler,
 }
@@ -69,61 +83,174 @@ pub fn compute_filter_badge_count(
     count
 }
 
-/// Formats the single clean textual summary for active filters, replacing the former chip pile.
-pub fn format_active_filter_summary(
-    total_count: usize,
-    is_searching: bool,
-    source_scope: &SourceScope,
-    state_filter: PackageStateFilter,
-    aur_enabled: bool,
-    flatpak_enabled: bool,
-    appimage_enabled: bool,
-) -> Option<String> {
+/// Formats integers with standard grouping separators (e.g. 1,808 or 16).
+pub fn format_count(n: usize) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    let len = s.len();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (len - i).is_multiple_of(3) {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result
+}
+
+/// Arguments pour le calcul de la ligne de statut permanente.
+pub struct FormatStatusRailArgs<'a> {
+    pub total_count: usize,
+    pub is_searching: bool,
+    pub source_scope: &'a SourceScope,
+    pub state_filter: PackageStateFilter,
+    pub source_health: &'a SourceHealthMap,
+    pub aur_enabled: bool,
+    pub flatpak_enabled: bool,
+    pub appimage_enabled: bool,
+}
+
+/// Etat de contenu de la ligne de statut permanente (Row 3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusRailState {
+    pub left_text: String,
+    pub has_clear_filters: bool,
+    pub retry_source: Option<PackageSourceKind>,
+}
+
+/// Formats the single permanent status rail content (guaranteeing zero layout shift).
+pub fn format_status_rail(args: FormatStatusRailArgs<'_>) -> StatusRailState {
+    let total_count = args.total_count;
+    let is_searching = args.is_searching;
+    let source_scope = args.source_scope;
+    let state_filter = args.state_filter;
+    let source_health = args.source_health;
+    let aur_enabled = args.aur_enabled;
+    let flatpak_enabled = args.flatpak_enabled;
+    let appimage_enabled = args.appimage_enabled;
+
+    // 1. Check for partial failures first
+    let failed_source = [
+        PackageSourceKind::Alpm,
+        PackageSourceKind::Aur,
+        PackageSourceKind::Flatpak,
+        PackageSourceKind::AppImage,
+    ]
+    .into_iter()
+    .find(|kind| {
+        let is_enabled = match kind {
+            PackageSourceKind::Alpm => true,
+            PackageSourceKind::Aur => aur_enabled,
+            PackageSourceKind::Flatpak => flatpak_enabled,
+            PackageSourceKind::AppImage => appimage_enabled,
+        };
+        is_enabled
+            && source_health
+                .get(kind)
+                .is_some_and(|h| h.status == SourceHealthStatus::Failed)
+    });
+
     let is_all_sources =
         source_scope.is_all_enabled(aur_enabled, flatpak_enabled, appimage_enabled);
     let is_all_states = state_filter == PackageStateFilter::All;
-    if is_all_sources && is_all_states {
-        return None;
-    }
+    let has_clear_filters = !is_all_sources || !is_all_states;
 
-    let mut parts = Vec::new();
-    if is_searching {
-        parts.push("Searching...".to_string());
-    } else {
+    if let Some(failed) = failed_source {
+        let count_str = format_count(total_count);
         let plural = if total_count == 1 {
             "package"
         } else {
             "packages"
         };
-        parts.push(format!("Showing {} {}", total_count, plural));
+        let failed_label = match failed {
+            PackageSourceKind::Alpm => "Arch ALPM",
+            PackageSourceKind::Aur => "AUR",
+            PackageSourceKind::Flatpak => "Flatpak",
+            PackageSourceKind::AppImage => "AppImage",
+        };
+        return StatusRailState {
+            left_text: format!("{count_str} {plural}  •  {failed_label} unavailable"),
+            has_clear_filters,
+            retry_source: Some(failed),
+        };
     }
 
-    if !is_all_sources {
-        let mut active_srcs = Vec::new();
-        if source_scope.alpm {
-            active_srcs.push("Arch");
-        }
-        if aur_enabled && source_scope.aur {
-            active_srcs.push("AUR");
-        }
-        if flatpak_enabled && source_scope.flatpak {
-            active_srcs.push("Flatpak");
-        }
-        if appimage_enabled && source_scope.appimage {
-            active_srcs.push("AppImage");
-        }
-        if active_srcs.is_empty() {
-            parts.push("Sources: None".to_string());
+    if is_searching {
+        let search_sources = if is_all_sources {
+            "all sources".to_string()
         } else {
-            parts.push(format!("Sources: {}", active_srcs.join(", ")));
+            let mut names = Vec::new();
+            if source_scope.alpm {
+                names.push("Official");
+            }
+            if source_scope.aur && aur_enabled {
+                names.push("AUR");
+            }
+            if source_scope.flatpak && flatpak_enabled {
+                names.push("Flatpak");
+            }
+            if source_scope.appimage && appimage_enabled {
+                names.push("AppImage");
+            }
+            names.join(" + ")
+        };
+        return StatusRailState {
+            left_text: format!("Searching {search_sources}…"),
+            has_clear_filters,
+            retry_source: None,
+        };
+    }
+
+    if has_clear_filters {
+        let count_str = format_count(total_count);
+        let plural = if total_count == 1 {
+            "package"
+        } else {
+            "packages"
+        };
+        let mut parts = vec![format!("{count_str} {plural}")];
+
+        if !is_all_sources {
+            let mut names = Vec::new();
+            if source_scope.alpm {
+                names.push("Official");
+            }
+            if source_scope.aur && aur_enabled {
+                names.push("AUR");
+            }
+            if source_scope.flatpak && flatpak_enabled {
+                names.push("Flatpak");
+            }
+            if source_scope.appimage && appimage_enabled {
+                names.push("AppImage");
+            }
+            if !names.is_empty() {
+                parts.push(names.join(" + "));
+            }
         }
+
+        if !is_all_states {
+            parts.push(state_filter.label().to_string());
+        }
+
+        return StatusRailState {
+            left_text: parts.join("  •  "),
+            has_clear_filters: true,
+            retry_source: None,
+        };
     }
 
-    if !is_all_states {
-        parts.push(format!("State: {}", state_filter.label()));
+    // Default clean state
+    let count_str = format_count(total_count);
+    let plural = if total_count == 1 {
+        "package"
+    } else {
+        "packages"
+    };
+    StatusRailState {
+        left_text: format!("{count_str} {plural}"),
+        has_clear_filters: false,
+        retry_source: None,
     }
-
-    Some(parts.join("  •  "))
 }
 
 pub struct QueryWorkbench;
@@ -142,7 +269,20 @@ impl QueryWorkbench {
 
         // ── 2. Filters Popover Setup ──────────────────────────────────────────
         let on_toggle_menu = props.on_toggle_menu.clone();
-        let is_filters_open = props.active_menu == Some(WorkbenchMenu::Filters);
+        let active_state = props.active_menu_state;
+        let is_filters_open = active_state.is_some_and(|s| {
+            s.menu == WorkbenchMenu::Filters && s.lifecycle != MenuLifecycle::Closed
+        });
+        let filters_lifecycle = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::Filters).then_some(s.lifecycle))
+            .unwrap_or(MenuLifecycle::Closed);
+        let filters_epoch = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::Filters).then_some(s.anim_epoch))
+            .unwrap_or(0);
+        let filters_highlighted = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::Filters).then_some(s.highlighted_index))
+            .unwrap_or(0);
+
         let on_close_filters = {
             let cb = on_toggle_menu.clone();
             Rc::new(move |window: &mut Window, cx: &mut App| {
@@ -159,7 +299,7 @@ impl QueryWorkbench {
         );
 
         let filters_btn_text = if filter_badge_count > 0 {
-            format!("Filters ({filter_badge_count}) ▾")
+            format!("Filters  {filter_badge_count}")
         } else {
             "Filters ▾".to_string()
         };
@@ -170,8 +310,6 @@ impl QueryWorkbench {
 
         // Build items for Filters popover
         let mut filter_menu_items = Vec::new();
-
-        // Sources section
         filter_menu_items.push(MenuSection::render("Sources", theme).into_any_element());
 
         let build_health_badge = |kind: PackageSourceKind| -> (Option<&'static str>, bool) {
@@ -187,6 +325,8 @@ impl QueryWorkbench {
             }
         };
 
+        let mut item_index = 0;
+
         // ALPM source check item
         {
             let (health_lbl, is_failed) = build_health_badge(PackageSourceKind::Alpm);
@@ -194,7 +334,7 @@ impl QueryWorkbench {
                 let cb = props.on_retry_source.clone();
                 Some(Rc::new(move |w: &mut Window, a: &mut App| {
                     cb(PackageSourceKind::Alpm, w, a);
-                }) as Rc<dyn Fn(&mut Window, &mut App)>)
+                }) as MenuActionHandler)
             } else {
                 None
             };
@@ -202,8 +342,10 @@ impl QueryWorkbench {
             filter_menu_items.push(
                 MenuCheckItem::render(MenuCheckItemProps {
                     id: "menu_source_alpm".into(),
+                    retry_id: "menu_retry_alpm".into(),
                     label: "Official / ALPM".into(),
                     is_checked: props.source_scope.alpm,
+                    is_highlighted: is_filters_open && filters_highlighted == item_index,
                     health_label: health_lbl,
                     is_failed,
                     theme,
@@ -212,6 +354,7 @@ impl QueryWorkbench {
                 })
                 .into_any_element(),
             );
+            item_index += 1;
         }
 
         // AUR source check item
@@ -221,7 +364,7 @@ impl QueryWorkbench {
                 let cb = props.on_retry_source.clone();
                 Some(Rc::new(move |w: &mut Window, a: &mut App| {
                     cb(PackageSourceKind::Aur, w, a);
-                }) as Rc<dyn Fn(&mut Window, &mut App)>)
+                }) as MenuActionHandler)
             } else {
                 None
             };
@@ -229,8 +372,10 @@ impl QueryWorkbench {
             filter_menu_items.push(
                 MenuCheckItem::render(MenuCheckItemProps {
                     id: "menu_source_aur".into(),
+                    retry_id: "menu_retry_aur".into(),
                     label: "AUR".into(),
                     is_checked: props.source_scope.aur,
+                    is_highlighted: is_filters_open && filters_highlighted == item_index,
                     health_label: health_lbl,
                     is_failed,
                     theme,
@@ -239,6 +384,7 @@ impl QueryWorkbench {
                 })
                 .into_any_element(),
             );
+            item_index += 1;
         }
 
         // Flatpak source check item
@@ -248,7 +394,7 @@ impl QueryWorkbench {
                 let cb = props.on_retry_source.clone();
                 Some(Rc::new(move |w: &mut Window, a: &mut App| {
                     cb(PackageSourceKind::Flatpak, w, a);
-                }) as Rc<dyn Fn(&mut Window, &mut App)>)
+                }) as MenuActionHandler)
             } else {
                 None
             };
@@ -256,8 +402,10 @@ impl QueryWorkbench {
             filter_menu_items.push(
                 MenuCheckItem::render(MenuCheckItemProps {
                     id: "menu_source_flatpak".into(),
+                    retry_id: "menu_retry_flatpak".into(),
                     label: "Flatpak".into(),
                     is_checked: props.source_scope.flatpak,
+                    is_highlighted: is_filters_open && filters_highlighted == item_index,
                     health_label: health_lbl,
                     is_failed,
                     theme,
@@ -266,6 +414,7 @@ impl QueryWorkbench {
                 })
                 .into_any_element(),
             );
+            item_index += 1;
         }
 
         // AppImage source check item
@@ -275,7 +424,7 @@ impl QueryWorkbench {
                 let cb = props.on_retry_source.clone();
                 Some(Rc::new(move |w: &mut Window, a: &mut App| {
                     cb(PackageSourceKind::AppImage, w, a);
-                }) as Rc<dyn Fn(&mut Window, &mut App)>)
+                }) as MenuActionHandler)
             } else {
                 None
             };
@@ -283,8 +432,10 @@ impl QueryWorkbench {
             filter_menu_items.push(
                 MenuCheckItem::render(MenuCheckItemProps {
                     id: "menu_source_appimage".into(),
+                    retry_id: "menu_retry_appimage".into(),
                     label: "AppImage".into(),
                     is_checked: props.source_scope.appimage,
+                    is_highlighted: is_filters_open && filters_highlighted == item_index,
                     health_label: health_lbl,
                     is_failed,
                     theme,
@@ -293,58 +444,67 @@ impl QueryWorkbench {
                 })
                 .into_any_element(),
             );
+            item_index += 1;
         }
 
-        // Divider
-        filter_menu_items.push(MenuDivider::render(theme).into_any_element());
-
-        // Package State section inside Filters menu
-        filter_menu_items.push(MenuSection::render("Package State", theme).into_any_element());
-        for state in [
-            PackageStateFilter::All,
-            PackageStateFilter::Installed,
-            PackageStateFilter::NotInstalled,
-            PackageStateFilter::UpdatesAvailable,
-        ] {
-            let on_select = props.on_select_state.clone();
-            let close_cb = on_close_filters.clone();
-            let state_val = state;
-            let id_str = match state {
-                PackageStateFilter::All => "menu_state_all",
-                PackageStateFilter::Installed => "menu_state_installed",
-                PackageStateFilter::NotInstalled => "menu_state_not_installed",
-                PackageStateFilter::UpdatesAvailable => "menu_state_updates",
-            };
-            filter_menu_items.push(
-                MenuRadioItem::render(
-                    id_str.into(),
-                    state.label(),
-                    props.state_filter == state,
-                    theme,
-                    Rc::new(move |w, a| {
-                        on_select(state_val, w, a);
-                        close_cb(w, a);
-                    }),
-                )
-                .into_any_element(),
-            );
+        // In Narrow mode ONLY: dynamically include Package State in Filters menu
+        if breakpoint == WorkbenchBreakpoint::Narrow {
+            filter_menu_items.push(MenuDivider::render(theme).into_any_element());
+            filter_menu_items.push(MenuSection::render("Package State", theme).into_any_element());
+            for state in [
+                PackageStateFilter::All,
+                PackageStateFilter::Installed,
+                PackageStateFilter::NotInstalled,
+                PackageStateFilter::UpdatesAvailable,
+            ] {
+                let on_select = props.on_select_state.clone();
+                let close_cb = on_close_filters.clone();
+                let state_val = state;
+                let id_str = match state {
+                    PackageStateFilter::All => "menu_state_all",
+                    PackageStateFilter::Installed => "menu_state_installed",
+                    PackageStateFilter::NotInstalled => "menu_state_not_installed",
+                    PackageStateFilter::UpdatesAvailable => "menu_state_updates",
+                };
+                filter_menu_items.push(
+                    MenuCheckmarkItem::render(
+                        id_str.into(),
+                        state.label(),
+                        props.state_filter == state,
+                        is_filters_open && filters_highlighted == item_index,
+                        theme,
+                        Rc::new(move |w, a| {
+                            on_select(state_val, w, a);
+                            close_cb(w, a);
+                        }),
+                    )
+                    .into_any_element(),
+                );
+                item_index += 1;
+            }
         }
+
+        let on_nav_filters = props.on_navigate_menu.clone();
 
         let filters_dropdown = if is_filters_open {
             Some(
                 deferred(
                     anchored()
                         .anchor(Corner::TopLeft)
-                        .offset(point(px(0.0), px(32.0)))
+                        .offset(point(px(0.0), px(30.0)))
                         .snap_to_window()
-                        .child(MenuSurface::render(
-                            "filters_menu_surface".into(),
+                        .child(MenuSurface::render(MenuSurfaceProps {
+                            id: "filters_menu_surface".into(),
                             theme,
-                            px(240.0),
-                            props.reduce_motion,
-                            on_close_filters,
-                            filter_menu_items,
-                        )),
+                            min_width: px(240.0),
+                            reduce_motion: props.reduce_motion,
+                            lifecycle: filters_lifecycle,
+                            anim_epoch: filters_epoch,
+                            focus_handle: Some(props.menu_surface_focus.clone()),
+                            on_close: on_close_filters,
+                            on_key_navigate: Some(on_nav_filters),
+                            children: filter_menu_items,
+                        })),
                 )
                 .into_any_element(),
             )
@@ -352,10 +512,11 @@ impl QueryWorkbench {
             None
         };
 
+        // Unboxed command trigger for Filters
         let filters_trigger = div()
             .id("workbench_filters_btn")
             .relative()
-            .focusable()
+            .track_focus(&props.filters_btn_focus)
             .tab_stop(true)
             .focus(move |s| s.border_1().border_color(focus_border))
             .on_key_down(move |event, window, cx| {
@@ -373,18 +534,18 @@ impl QueryWorkbench {
             .items_center()
             .h(px(28.0))
             .gap(px(5.0))
-            .px(px(10.0))
-            .rounded_sm()
+            .px(px(8.0))
+            .rounded_md()
             .bg(if is_filters_open {
                 theme.bg_surface_active
             } else {
-                theme.bg_surface
+                gpui::rgba(0x00000000)
             })
             .border_1()
-            .border_color(if filter_badge_count > 0 || is_filters_open {
-                theme.accent
-            } else {
+            .border_color(if is_filters_open {
                 theme.border
+            } else {
+                gpui::rgba(0x00000000)
             })
             .text_xs()
             .font_weight(if filter_badge_count > 0 {
@@ -392,7 +553,7 @@ impl QueryWorkbench {
             } else {
                 FontWeight::NORMAL
             })
-            .text_color(if filter_badge_count > 0 {
+            .text_color(if filter_badge_count > 0 || is_filters_open {
                 theme.accent
             } else {
                 theme.text_secondary
@@ -410,8 +571,20 @@ impl QueryWorkbench {
             })
             .children(filters_dropdown);
 
-        // ── 3. State Dropdown (Wide and Medium Breakpoints) ───────────────────
-        let is_state_open = props.active_menu == Some(WorkbenchMenu::State);
+        // ── 3. State Dropdown (Wide and Medium Breakpoints ONLY) ───────────────
+        let is_state_open = active_state.is_some_and(|s| {
+            s.menu == WorkbenchMenu::State && s.lifecycle != MenuLifecycle::Closed
+        });
+        let state_lifecycle = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::State).then_some(s.lifecycle))
+            .unwrap_or(MenuLifecycle::Closed);
+        let state_epoch = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::State).then_some(s.anim_epoch))
+            .unwrap_or(0);
+        let state_highlighted = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::State).then_some(s.highlighted_index))
+            .unwrap_or(0);
+
         let on_close_state = {
             let cb = on_toggle_menu.clone();
             Rc::new(move |window: &mut Window, cx: &mut App| {
@@ -421,12 +594,17 @@ impl QueryWorkbench {
 
         let state_btn = if breakpoint != WorkbenchBreakpoint::Narrow {
             let mut state_items = Vec::new();
-            for state in [
+            state_items.push(MenuSection::render("Filter by State", theme).into_any_element());
+
+            for (idx, state) in [
                 PackageStateFilter::All,
                 PackageStateFilter::Installed,
                 PackageStateFilter::NotInstalled,
                 PackageStateFilter::UpdatesAvailable,
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
                 let on_select = props.on_select_state.clone();
                 let close_cb = on_close_state.clone();
                 let state_val = state;
@@ -437,10 +615,11 @@ impl QueryWorkbench {
                     PackageStateFilter::UpdatesAvailable => "state_dropdown_updates",
                 };
                 state_items.push(
-                    MenuRadioItem::render(
+                    MenuCheckmarkItem::render(
                         id_str.into(),
                         state.label(),
                         props.state_filter == state,
+                        is_state_open && state_highlighted == idx,
                         theme,
                         Rc::new(move |w, a| {
                             on_select(state_val, w, a);
@@ -451,21 +630,27 @@ impl QueryWorkbench {
                 );
             }
 
+            let on_nav_state = props.on_navigate_menu.clone();
+
             let state_dropdown = if is_state_open {
                 Some(
                     deferred(
                         anchored()
                             .anchor(Corner::TopLeft)
-                            .offset(point(px(0.0), px(32.0)))
+                            .offset(point(px(0.0), px(30.0)))
                             .snap_to_window()
-                            .child(MenuSurface::render(
-                                "state_menu_surface".into(),
+                            .child(MenuSurface::render(MenuSurfaceProps {
+                                id: "state_menu_surface".into(),
                                 theme,
-                                px(180.0),
-                                props.reduce_motion,
-                                on_close_state,
-                                state_items,
-                            )),
+                                min_width: px(180.0),
+                                reduce_motion: props.reduce_motion,
+                                lifecycle: state_lifecycle,
+                                anim_epoch: state_epoch,
+                                focus_handle: Some(props.menu_surface_focus.clone()),
+                                on_close: on_close_state,
+                                on_key_navigate: Some(on_nav_state),
+                                children: state_items,
+                            })),
                     )
                     .into_any_element(),
                 )
@@ -481,7 +666,7 @@ impl QueryWorkbench {
                 div()
                     .id("workbench_state_btn")
                     .relative()
-                    .focusable()
+                    .track_focus(&props.state_btn_focus)
                     .tab_stop(true)
                     .focus(move |s| s.border_1().border_color(focus_border))
                     .on_key_down(move |event, window, cx| {
@@ -499,25 +684,27 @@ impl QueryWorkbench {
                     .items_center()
                     .h(px(28.0))
                     .gap(px(5.0))
-                    .px(px(10.0))
-                    .rounded_sm()
+                    .px(px(8.0))
+                    .rounded_md()
                     .bg(if is_state_open {
                         theme.bg_surface_active
                     } else {
-                        theme.bg_surface
+                        gpui::rgba(0x00000000)
                     })
                     .border_1()
-                    .border_color(if props.state_filter != PackageStateFilter::All {
-                        theme.accent
-                    } else {
+                    .border_color(if is_state_open {
                         theme.border
+                    } else {
+                        gpui::rgba(0x00000000)
                     })
                     .text_xs()
-                    .text_color(if props.state_filter != PackageStateFilter::All {
-                        theme.accent
-                    } else {
-                        theme.text_secondary
-                    })
+                    .text_color(
+                        if props.state_filter != PackageStateFilter::All || is_state_open {
+                            theme.accent
+                        } else {
+                            theme.text_secondary
+                        },
+                    )
                     .cursor_pointer()
                     .hover(|s| s.bg(theme.bg_surface_hover).text_color(theme.text_primary))
                     .child(state_label)
@@ -536,7 +723,18 @@ impl QueryWorkbench {
         };
 
         // ── 4. Sort Dropdown ──────────────────────────────────────────────────
-        let is_sort_open = props.active_menu == Some(WorkbenchMenu::Sort);
+        let is_sort_open = active_state
+            .is_some_and(|s| s.menu == WorkbenchMenu::Sort && s.lifecycle != MenuLifecycle::Closed);
+        let sort_lifecycle = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::Sort).then_some(s.lifecycle))
+            .unwrap_or(MenuLifecycle::Closed);
+        let sort_epoch = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::Sort).then_some(s.anim_epoch))
+            .unwrap_or(0);
+        let sort_highlighted = active_state
+            .and_then(|s| (s.menu == WorkbenchMenu::Sort).then_some(s.highlighted_index))
+            .unwrap_or(0);
+
         let on_close_sort = {
             let cb = on_toggle_menu.clone();
             Rc::new(move |window: &mut Window, cx: &mut App| {
@@ -545,14 +743,19 @@ impl QueryWorkbench {
         };
 
         let mut sort_items = Vec::new();
-        for sort in [
+        sort_items.push(MenuSection::render("Sort by", theme).into_any_element());
+
+        for (idx, sort) in [
             SortMode::Relevance,
             SortMode::NameAsc,
             SortMode::NameDesc,
             SortMode::Source,
             SortMode::InstalledFirst,
             SortMode::UpdatesFirst,
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let on_select = props.on_select_sort.clone();
             let close_cb = on_close_sort.clone();
             let sort_val = sort;
@@ -565,10 +768,11 @@ impl QueryWorkbench {
                 SortMode::UpdatesFirst => "sort_dropdown_updates",
             };
             sort_items.push(
-                MenuRadioItem::render(
+                MenuCheckmarkItem::render(
                     id_str.into(),
                     sort.label(),
                     props.sort_mode == sort,
+                    is_sort_open && sort_highlighted == idx,
                     theme,
                     Rc::new(move |w, a| {
                         on_select(sort_val, w, a);
@@ -579,21 +783,27 @@ impl QueryWorkbench {
             );
         }
 
+        let on_nav_sort = props.on_navigate_menu.clone();
+
         let sort_dropdown = if is_sort_open {
             Some(
                 deferred(
                     anchored()
                         .anchor(Corner::TopLeft)
-                        .offset(point(px(0.0), px(32.0)))
+                        .offset(point(px(0.0), px(30.0)))
                         .snap_to_window()
-                        .child(MenuSurface::render(
-                            "sort_menu_surface".into(),
+                        .child(MenuSurface::render(MenuSurfaceProps {
+                            id: "sort_menu_surface".into(),
                             theme,
-                            px(180.0),
-                            props.reduce_motion,
-                            on_close_sort,
-                            sort_items,
-                        )),
+                            min_width: px(180.0),
+                            reduce_motion: props.reduce_motion,
+                            lifecycle: sort_lifecycle,
+                            anim_epoch: sort_epoch,
+                            focus_handle: Some(props.menu_surface_focus.clone()),
+                            on_close: on_close_sort,
+                            on_key_navigate: Some(on_nav_sort),
+                            children: sort_items,
+                        })),
                 )
                 .into_any_element(),
             )
@@ -613,8 +823,8 @@ impl QueryWorkbench {
         } else {
             match props.sort_mode {
                 SortMode::Relevance => "Sort: Relevance ▾",
-                SortMode::NameAsc => "Sort: Name (A-Z) ▾",
-                SortMode::NameDesc => "Sort: Name (Z-A) ▾",
+                SortMode::NameAsc => "Sort: Name (A–Z) ▾",
+                SortMode::NameDesc => "Sort: Name (Z–A) ▾",
                 SortMode::Source => "Sort: Source ▾",
                 SortMode::InstalledFirst => "Sort: Installed First ▾",
                 SortMode::UpdatesFirst => "Sort: Updates First ▾",
@@ -624,10 +834,11 @@ impl QueryWorkbench {
         let on_toggle_sort_btn = on_toggle_menu.clone();
         let on_toggle_sort_key = on_toggle_menu.clone();
 
+        // Unboxed command trigger for Sort
         let sort_btn = div()
             .id("workbench_sort_btn")
             .relative()
-            .focusable()
+            .track_focus(&props.sort_btn_focus)
             .tab_stop(true)
             .focus(move |s| s.border_1().border_color(focus_border))
             .on_key_down(move |event, window, cx| {
@@ -645,21 +856,21 @@ impl QueryWorkbench {
             .items_center()
             .h(px(28.0))
             .gap(px(5.0))
-            .px(px(10.0))
-            .rounded_sm()
+            .px(px(8.0))
+            .rounded_md()
             .bg(if is_sort_open {
                 theme.bg_surface_active
             } else {
-                theme.bg_surface
+                gpui::rgba(0x00000000)
             })
             .border_1()
-            .border_color(if props.sort_mode != SortMode::Relevance {
-                theme.accent
-            } else {
+            .border_color(if is_sort_open {
                 theme.border
+            } else {
+                gpui::rgba(0x00000000)
             })
             .text_xs()
-            .text_color(if props.sort_mode != SortMode::Relevance {
+            .text_color(if props.sort_mode != SortMode::Relevance || is_sort_open {
                 theme.accent
             } else {
                 theme.text_secondary
@@ -677,48 +888,16 @@ impl QueryWorkbench {
             })
             .children(sort_dropdown);
 
-        // ── 5. View Mode Switcher & Count ─────────────────────────────────────
+        // ── 5. Unboxed Minimalist View Mode Switcher (▦ ≡) ───────────────────
         let view_switcher = ViewModeSwitcher::render(ViewModeSwitcherProps {
             current_mode: props.view_mode,
             theme,
             on_select_mode: props.on_select_view_mode.clone(),
         });
 
-        let summary_text = format_active_filter_summary(
-            props.total_count,
-            props.is_searching,
-            &props.source_scope,
-            props.state_filter,
-            props.aur_enabled,
-            props.flatpak_enabled,
-            props.appimage_enabled,
-        );
-        let has_active_filters = summary_text.is_some();
-
-        let status_badge = if !has_active_filters {
-            if props.is_searching {
-                Some(
-                    div()
-                        .text_xs()
-                        .text_color(theme.accent)
-                        .child("Searching..."),
-                )
-            } else if props.total_count > 0 {
-                Some(
-                    div()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child(format!("{} pkgs", props.total_count)),
-                )
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // ── 6. Row 2 Composition ──────────────────────────────────────────────
+        // ── 6. Row 2 Composition: Pure Native Controls (Zero Count Crowding) ─
         let row2 = div()
+            .id("workbench_row2_toolbar")
             .flex()
             .items_center()
             .justify_between()
@@ -735,83 +914,146 @@ impl QueryWorkbench {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
-                    .children(status_badge)
+                    .gap(px(4.0))
                     .children(state_btn)
                     .child(sort_btn)
                     .child(view_switcher),
             );
 
-        // ── 7. Row 3: Active Filter Textual Summary ───────────────────────────
-        let row3 = summary_text.map(|summary| {
-            let on_clear = props.on_clear_filters.clone();
-            let on_clear_key = on_clear.clone();
-
-            let clear_btn = div()
-                .id("workbench_clear_filters_btn")
-                .focusable()
-                .tab_stop(true)
-                .focus(move |s| s.border_1().border_color(focus_border))
-                .on_key_down(move |event, window, cx| {
-                    let key = event.keystroke.key.as_str();
-                    if key == "enter" || key == "space" {
-                        on_clear_key(window, cx);
-                    }
-                })
-                .flex()
-                .items_center()
-                .gap(px(4.0))
-                .px(px(6.0))
-                .py(px(2.0))
-                .rounded_sm()
-                .cursor_pointer()
-                .text_xs()
-                .text_color(theme.accent)
-                .hover(|s| s.bg(theme.bg_surface_hover).text_color(theme.accent_hover))
-                .child(
-                    svg()
-                        .path(AppIcon::Close.path())
-                        .size(px(10.0))
-                        .text_color(theme.accent),
-                )
-                .child("Clear filters")
-                .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                    on_clear(window, cx);
-                });
-
-            div()
-                .id("workbench_row3_active_filters")
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(px(8.0))
-                .w_full()
-                .px(px(4.0))
-                .py(px(2.0))
-                .child(
-                    div()
-                        .id("workbench_textual_summary")
-                        .text_xs()
-                        .text_color(theme.text_secondary)
-                        .child(summary),
-                )
-                .child(clear_btn)
+        // ── 7. Row 3: Permanent Status Rail (Fixed Height 24px) ───────────────
+        let rail_state = format_status_rail(FormatStatusRailArgs {
+            total_count: props.total_count,
+            is_searching: props.is_searching,
+            source_scope: &props.source_scope,
+            state_filter: props.state_filter,
+            source_health: props.source_health,
+            aur_enabled: props.aur_enabled,
+            flatpak_enabled: props.flatpak_enabled,
+            appimage_enabled: props.appimage_enabled,
         });
 
-        // ── 8. Final Container Assembly ───────────────────────────────────────
+        let on_clear = props.on_clear_filters.clone();
+        let on_clear_key = on_clear.clone();
+        let on_retry = props.on_retry_source.clone();
+
+        let clear_action = if rail_state.has_clear_filters {
+            Some(
+                div()
+                    .id("workbench_clear_filters_btn")
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
+                    .on_key_down(move |event, window, cx| {
+                        let key = event.keystroke.key.as_str();
+                        if key == "enter" || key == "space" {
+                            on_clear_key(window, cx);
+                        }
+                    })
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .px(px(6.0))
+                    .py(px(2.0))
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .text_xs()
+                    .text_color(theme.accent)
+                    .hover(|s| s.bg(theme.bg_surface_hover).text_color(theme.accent_hover))
+                    .child(
+                        svg()
+                            .path(AppIcon::Close.path())
+                            .size(px(10.0))
+                            .text_color(theme.accent),
+                    )
+                    .child("Clear filters")
+                    .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                        on_clear(window, cx);
+                    }),
+            )
+        } else {
+            None
+        };
+
+        let retry_action = if let Some(failed_kind) = rail_state.retry_source {
+            let cb = on_retry.clone();
+            Some(
+                div()
+                    .id(ElementId::Name(format!("rail_retry_{failed_kind}").into()))
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
+                    .on_key_down({
+                        let cb_key = cb.clone();
+                        move |event, window, cx| {
+                            let key = event.keystroke.key.as_str();
+                            if key == "enter" || key == "space" {
+                                cb_key(failed_kind, window, cx);
+                            }
+                        }
+                    })
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .px(px(6.0))
+                    .py(px(2.0))
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.danger)
+                    .hover(|s| s.bg(theme.bg_surface_hover))
+                    .child("Retry")
+                    .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                        cb(failed_kind, window, cx);
+                    }),
+            )
+        } else {
+            None
+        };
+
+        let status_rail = div()
+            .id("workbench_row3_status_rail")
+            .h(px(24.0))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(8.0))
+            .w_full()
+            .px(px(4.0))
+            .child(
+                div()
+                    .id("workbench_status_text")
+                    .text_xs()
+                    .text_color(if props.is_searching {
+                        theme.accent
+                    } else {
+                        theme.text_secondary
+                    })
+                    .child(rail_state.left_text),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .children(clear_action)
+                    .children(retry_action),
+            );
+
+        // ── 8. Final Container Assembly (Fixed Invariant Geometry) ────────────
         div()
             .id("query_workbench_container")
             .w_full()
             .flex()
             .flex_col()
-            .gap(px(6.0))
+            .gap(px(4.0))
             .p(px(8.0))
             .bg(theme.bg_sidebar)
             .border_b_1()
             .border_color(theme.border)
             .child(row1)
             .child(row2)
-            .children(row3)
+            .child(status_rail)
     }
 }
 
@@ -821,133 +1063,90 @@ mod tests {
     use core::prelude::v1::test;
 
     #[test]
-    fn test_format_active_filter_summary_default_returns_none() {
-        let scope = SourceScope {
-            alpm: true,
-            aur: true,
-            flatpak: true,
-            appimage: true,
-        };
-        let summary = format_active_filter_summary(
-            150,
-            false,
-            &scope,
-            PackageStateFilter::All,
-            true,
-            true,
-            true,
-        );
-        assert!(summary.is_none());
+    fn test_format_count() {
+        assert_eq!(format_count(0), "0");
+        assert_eq!(format_count(16), "16");
+        assert_eq!(format_count(999), "999");
+        assert_eq!(format_count(1000), "1,000");
+        assert_eq!(format_count(1808), "1,808");
+        assert_eq!(format_count(1234567), "1,234,567");
     }
 
     #[test]
-    fn test_format_active_filter_summary_source_subset() {
-        let scope = SourceScope {
-            alpm: true,
-            aur: true,
-            flatpak: false,
-            appimage: false,
-        };
-        let summary = format_active_filter_summary(
-            42,
-            false,
-            &scope,
-            PackageStateFilter::All,
-            true,
-            true,
-            true,
-        );
+    fn test_format_status_rail_default() {
+        let scope = SourceScope::all();
+        let health = SourceHealthMap::default();
+        let rail = format_status_rail(FormatStatusRailArgs {
+            total_count: 1808,
+            is_searching: false,
+            source_scope: &scope,
+            state_filter: PackageStateFilter::All,
+            source_health: &health,
+            aur_enabled: true,
+            flatpak_enabled: true,
+            appimage_enabled: true,
+        });
+        assert_eq!(rail.left_text, "1,808 packages");
+        assert!(!rail.has_clear_filters);
+        assert!(rail.retry_source.is_none());
+    }
+
+    #[test]
+    fn test_format_status_rail_filtered() {
+        let mut scope = SourceScope::all();
+        scope.flatpak = false;
+        scope.appimage = false;
+        let health = SourceHealthMap::default();
+        let rail = format_status_rail(FormatStatusRailArgs {
+            total_count: 16,
+            is_searching: false,
+            source_scope: &scope,
+            state_filter: PackageStateFilter::Installed,
+            source_health: &health,
+            aur_enabled: true,
+            flatpak_enabled: true,
+            appimage_enabled: true,
+        });
         assert_eq!(
-            summary,
-            Some("Showing 42 packages  •  Sources: Arch, AUR".to_string())
+            rail.left_text,
+            "16 packages  •  Official + AUR  •  Installed"
         );
+        assert!(rail.has_clear_filters);
+        assert!(rail.retry_source.is_none());
     }
 
     #[test]
-    fn test_format_active_filter_summary_state_filter_only() {
-        let scope = SourceScope {
-            alpm: true,
-            aur: true,
-            flatpak: true,
-            appimage: true,
-        };
-        let summary = format_active_filter_summary(
-            12,
-            false,
-            &scope,
-            PackageStateFilter::Installed,
-            true,
-            true,
-            true,
-        );
-        assert_eq!(
-            summary,
-            Some("Showing 12 packages  •  State: Installed".to_string())
-        );
-    }
-
-    #[test]
-    fn test_format_active_filter_summary_both_sources_and_state() {
-        let scope = SourceScope {
-            alpm: true,
-            aur: false,
-            flatpak: false,
-            appimage: false,
-        };
-        let summary = format_active_filter_summary(
-            1,
-            false,
-            &scope,
-            PackageStateFilter::UpdatesAvailable,
-            true,
-            true,
-            true,
-        );
-        assert_eq!(
-            summary,
-            Some("Showing 1 package  •  Sources: Arch  •  State: Updates Available".to_string())
-        );
-    }
-
-    #[test]
-    fn test_format_active_filter_summary_searching_state() {
-        let scope = SourceScope {
-            alpm: true,
-            aur: false,
-            flatpak: false,
-            appimage: false,
-        };
-        let summary = format_active_filter_summary(
-            0,
-            true,
-            &scope,
-            PackageStateFilter::All,
-            true,
-            true,
-            true,
-        );
-        assert_eq!(summary, Some("Searching...  •  Sources: Arch".to_string()));
+    fn test_format_status_rail_searching() {
+        let mut scope = SourceScope::all();
+        scope.appimage = false;
+        let health = SourceHealthMap::default();
+        let rail = format_status_rail(FormatStatusRailArgs {
+            total_count: 0,
+            is_searching: true,
+            source_scope: &scope,
+            state_filter: PackageStateFilter::All,
+            source_health: &health,
+            aur_enabled: true,
+            flatpak_enabled: true,
+            appimage_enabled: true,
+        });
+        assert_eq!(rail.left_text, "Searching Official + AUR + Flatpak…");
+        assert!(rail.has_clear_filters);
+        assert!(rail.retry_source.is_none());
     }
 
     #[test]
     fn test_compute_filter_badge_count() {
-        let all_scope = SourceScope {
-            alpm: true,
-            aur: true,
-            flatpak: true,
-            appimage: true,
-        };
+        let all_scope = SourceScope::all();
         assert_eq!(
             compute_filter_badge_count(&all_scope, PackageStateFilter::All, true, true, true),
             0
         );
 
-        let subset_scope = SourceScope {
-            alpm: true,
-            aur: false,
-            flatpak: false,
-            appimage: false,
-        };
+        let mut subset_scope = SourceScope::all();
+        subset_scope.aur = false;
+        subset_scope.flatpak = false;
+        subset_scope.appimage = false;
         assert_eq!(
             compute_filter_badge_count(&subset_scope, PackageStateFilter::All, true, true, true),
             1
@@ -966,5 +1165,24 @@ mod tests {
             ),
             2
         );
+    }
+
+    #[test]
+    fn test_format_status_rail_failure() {
+        let scope = SourceScope::all();
+        let mut health = SourceHealthMap::default();
+        health.aur = crate::state::package_store::SourceHealth::failed("network timeout");
+        let rail = format_status_rail(FormatStatusRailArgs {
+            total_count: 500,
+            is_searching: false,
+            source_scope: &scope,
+            state_filter: PackageStateFilter::All,
+            source_health: &health,
+            aur_enabled: true,
+            flatpak_enabled: true,
+            appimage_enabled: true,
+        });
+        assert_eq!(rail.left_text, "500 packages  •  AUR unavailable");
+        assert_eq!(rail.retry_source, Some(PackageSourceKind::Aur));
     }
 }

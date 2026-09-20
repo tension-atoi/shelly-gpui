@@ -30,3 +30,22 @@
 | **Zero Deadcode & Warnings** | Enforce `#![deny(dead_code)]` and zero clippy warnings | All components and handlers wired; strict YAGNI followed | `cargo clippy --release --locked -- -D warnings` exits 0 | **PASSED** |
 | **Release Locked Tests** | 99/99 tests passing in release locked profile | Added unit test suite for Query Workbench filters, summary, and session | `cargo test --release --locked` exits 0 (99 passed) | **PASSED** |
 | **Wayland Runtime Deployment** | Binary packaged and executed live under Hyprland Wayland compositor | Packaged as `shelly-gpui-git r4689.g73143130-1`, active window verified | PID 2957817, client `0x5651973c84a0`, 18 runtime screenshots captured | **PASSED** |
+
+---
+
+## Phase UX-02P Acceptance Matrix (Command Surface Productization)
+
+| Requirement | Specification | Implementation | Verification Method | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Unboxed Row 2 Toolbar** | No permanent perimeter borders/boxes at rest; calm surface; hover reveals fill | Transparent borders/backgrounds at rest; subtle hover fill (`bg_surface_hover`); active states with accent | Wayland runtime verification; dark & light theme audit | **PASSED** |
+| **Permanent Status Rail (Row 3, 24px)** | Fixed height 24px container for package count and status; zero layout shift | `format_status_rail`, `StatusRailState`, fixed `h(px(24.0))` container | Unit tests `test_format_status_rail_*`; zero layout shift verified | **PASSED** |
+| **Non-Redundant Filtering** | `Filters` contains exclusively sources in Wide/Medium; appends State dynamically only in Narrow | Dynamic inclusion conditioned on `WorkbenchBreakpoint::Narrow` | Unit tests in `query_workbench.rs` and `package_workstation.rs` | **PASSED** |
+| **Desktop Checkmark Menus** | Single-select menus use native desktop checkmark `✓` (no radio circles) | `MenuCheckmarkItem` with active `✓` glyph and alignment spacers | Code audit of `menu.rs` and `query_workbench.rs`; runtime screenshots | **PASSED** |
+| **Kinematic Menu Lifecycle** | Opening (150ms ease-out quint), Open, Closing (100ms ease-out quint), Closed | `MenuLifecycle` with opacity and translateY interpolation | Unit test `test_menu_lifecycle_transitions`; runtime verification | **PASSED** |
+| **Keyboard Contract & Roving Focus** | `↑ ↓ Home End Enter Space Escape` navigation; focus return to trigger button upon close | `navigate_menu`, `FocusHandle` tracking for trigger buttons | Manual keyboard navigation audit; GPUI focus tests | **PASSED** |
+| **Local Search Focus Interpolation** | 110ms smooth transition for focus/hover with subtle lift shadow & icon tint | `search_focus_anim` animation with local state tracking | Code audit in `search_input.rs`; runtime verification | **PASSED** |
+| **Compact Search Indicator** | Compact 14px indicator (7px pulsing accent dot) replacing verbose text; `"/"` shortcut hint | Pulsing dot in `search_input.rs` and `"/"` hint when empty | Code audit; runtime verification | **PASSED** |
+| **Accessible Clear Button (`×`)** | `focusable().tab_stop(true)` with Enter/Space keyboard listeners | Full keyboard event listener on `search_clear_button` | Code audit; unit test in `search_input.rs` | **PASSED** |
+| **Responsive Breakpoints** | Wide (>= 820px), Medium (600-819px), Narrow (< 600px) | `WorkbenchBreakpoint::from_width` pure classification | Unit test `test_query_workbench_breakpoints_wide_medium_narrow` | **PASSED** |
+| **Exact-SHA Build & Package** | Built and packaged via Arch PKGBUILD matching exact git commit SHA | `makepkg -C -c -f`, `pacman -U`, `pacman -Q` verification | Verified with pacman package query | **PASSED** |
+| **Zero Deadcode & 100/100 Tests** | `#![deny(dead_code)]` with zero warnings; 100% tests passing | Strict YAGNI, 100 unit tests passing in release locked profile | `cargo test --release --locked` exits 0 (100 passed) | **PASSED** |

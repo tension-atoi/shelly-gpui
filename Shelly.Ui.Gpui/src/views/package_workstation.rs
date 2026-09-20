@@ -1,11 +1,14 @@
 use crate::backend::models::UnifiedPackage;
+use crate::components::menu::MenuLifecycle;
 use crate::components::package_card::{PackageCard, PackageCardProps};
 use crate::components::package_table::PackageTable;
-use crate::components::query_workbench::{QueryWorkbench, QueryWorkbenchProps, WorkbenchMenu};
+use crate::components::query_workbench::{
+    ActiveMenuState, QueryWorkbench, QueryWorkbenchProps, WorkbenchMenu,
+};
 use crate::components::search_input::SearchInputView;
 use crate::components::unified_search::UnifiedSearch;
 use crate::state::console::{ConsoleEvent, ConsoleModel};
-use crate::state::query::{PackageStateFilter, SortMode, SourceScope};
+use crate::state::query::{PackageStateFilter, SortMode, SourceScope, WorkbenchBreakpoint};
 use crate::state::{
     canonical_install_command, AppSession, NavDestination, PackageKey, PackageSourceKind,
     PackageStore, PackageViewMode, ToastCenter, ToastKind,
@@ -16,6 +19,7 @@ use crate::views::inspector::{PackageInspectorProps, PackageInspectorView};
 use gpui::*;
 use gpui::{uniform_list, UniformListScrollHandle};
 use std::rc::Rc;
+use std::time::Duration;
 
 pub type PackageMutationHandler =
     Rc<dyn Fn(&UnifiedPackage, bool /* is_install */, &mut Window, &mut App) + 'static>;
@@ -104,7 +108,12 @@ pub struct PackageWorkstationView {
     pub flatpak_enabled: bool,
     pub appimage_enabled: bool,
     pub search_input: Entity<SearchInputView>,
-    pub active_menu: Option<WorkbenchMenu>,
+    pub active_menu: Option<ActiveMenuState>,
+    pub menu_epoch: usize,
+    pub filters_btn_focus: FocusHandle,
+    pub state_btn_focus: FocusHandle,
+    pub sort_btn_focus: FocusHandle,
+    pub menu_surface_focus: FocusHandle,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -177,6 +186,280 @@ impl PackageWorkstationView {
             appimage_enabled: config.appimage_enabled,
             search_input,
             active_menu: None,
+            menu_epoch: 0,
+            filters_btn_focus: cx.focus_handle(),
+            state_btn_focus: cx.focus_handle(),
+            sort_btn_focus: cx.focus_handle(),
+            menu_surface_focus: cx.focus_handle(),
+        }
+    }
+
+    pub fn toggle_menu(
+        &mut self,
+        target: Option<WorkbenchMenu>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match target {
+            None => self.close_menu(window, cx),
+            Some(menu) => {
+                if let Some(ref current) = self.active_menu {
+                    if current.menu == menu
+                        && current.lifecycle != MenuLifecycle::Closing
+                        && current.lifecycle != MenuLifecycle::Closed
+                    {
+                        self.close_menu(window, cx);
+                        return;
+                    }
+                }
+                self.open_menu(menu, window, cx);
+            }
+        }
+    }
+
+    pub fn open_menu(&mut self, menu: WorkbenchMenu, window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_epoch = self.menu_epoch.wrapping_add(1);
+        let epoch = self.menu_epoch;
+
+        if self.reduce_motion {
+            self.active_menu = Some(ActiveMenuState {
+                menu,
+                lifecycle: MenuLifecycle::Open,
+                anim_epoch: epoch,
+                highlighted_index: 0,
+            });
+            window.focus(&self.menu_surface_focus);
+            cx.notify();
+        } else {
+            self.active_menu = Some(ActiveMenuState {
+                menu,
+                lifecycle: MenuLifecycle::Opening,
+                anim_epoch: epoch,
+                highlighted_index: 0,
+            });
+            window.focus(&self.menu_surface_focus);
+            cx.notify();
+
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(150))
+                    .await;
+                let _ = this.update(cx, |view, cx| {
+                    if let Some(ref mut state) = view.active_menu {
+                        if state.lifecycle == MenuLifecycle::Opening && state.anim_epoch == epoch {
+                            state.lifecycle = MenuLifecycle::Open;
+                            cx.notify();
+                        }
+                    }
+                });
+            })
+            .detach();
+        }
+    }
+
+    pub fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(current) = self.active_menu else {
+            return;
+        };
+
+        if current.lifecycle == MenuLifecycle::Closing || current.lifecycle == MenuLifecycle::Closed
+        {
+            return;
+        }
+
+        match current.menu {
+            WorkbenchMenu::Filters => window.focus(&self.filters_btn_focus),
+            WorkbenchMenu::State => window.focus(&self.state_btn_focus),
+            WorkbenchMenu::Sort => window.focus(&self.sort_btn_focus),
+        }
+
+        if self.reduce_motion {
+            self.active_menu = None;
+            cx.notify();
+        } else {
+            self.menu_epoch = self.menu_epoch.wrapping_add(1);
+            let epoch = self.menu_epoch;
+
+            self.active_menu = Some(ActiveMenuState {
+                menu: current.menu,
+                lifecycle: MenuLifecycle::Closing,
+                anim_epoch: epoch,
+                highlighted_index: current.highlighted_index,
+            });
+            cx.notify();
+
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+                let _ = this.update(cx, |view, cx| {
+                    if let Some(ref state) = view.active_menu {
+                        if state.lifecycle == MenuLifecycle::Closing && state.anim_epoch == epoch {
+                            view.active_menu = None;
+                            cx.notify();
+                        }
+                    }
+                });
+            })
+            .detach();
+        }
+    }
+
+    pub fn menu_item_count(&self, menu: WorkbenchMenu, breakpoint: WorkbenchBreakpoint) -> usize {
+        match menu {
+            WorkbenchMenu::Filters => {
+                let mut count = 1; // ALPM
+                if self.aur_enabled {
+                    count += 1;
+                }
+                if self.flatpak_enabled {
+                    count += 1;
+                }
+                if self.appimage_enabled {
+                    count += 1;
+                }
+                if breakpoint == WorkbenchBreakpoint::Narrow {
+                    count += 4; // All, Installed, NotInstalled, UpdatesAvailable
+                }
+                count
+            }
+            WorkbenchMenu::State => 4,
+            WorkbenchMenu::Sort => 6,
+        }
+    }
+
+    pub fn navigate_menu(
+        &mut self,
+        key: &str,
+        breakpoint: WorkbenchBreakpoint,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(current) = self.active_menu else {
+            return;
+        };
+
+        let total = self.menu_item_count(current.menu, breakpoint);
+        if total == 0 {
+            return;
+        }
+
+        match key {
+            "up" => {
+                let next_idx = if current.highlighted_index == 0 {
+                    total - 1
+                } else {
+                    current.highlighted_index - 1
+                };
+                if let Some(ref mut st) = self.active_menu {
+                    st.highlighted_index = next_idx;
+                }
+                cx.notify();
+            }
+            "down" => {
+                let next_idx = (current.highlighted_index + 1) % total;
+                if let Some(ref mut st) = self.active_menu {
+                    st.highlighted_index = next_idx;
+                }
+                cx.notify();
+            }
+            "home" => {
+                if let Some(ref mut st) = self.active_menu {
+                    st.highlighted_index = 0;
+                }
+                cx.notify();
+            }
+            "end" => {
+                if let Some(ref mut st) = self.active_menu {
+                    st.highlighted_index = total - 1;
+                }
+                cx.notify();
+            }
+            "enter" | "space" => {
+                self.activate_menu_item(
+                    current.menu,
+                    current.highlighted_index,
+                    breakpoint,
+                    window,
+                    cx,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    pub fn activate_menu_item(
+        &mut self,
+        menu: WorkbenchMenu,
+        index: usize,
+        breakpoint: WorkbenchBreakpoint,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match menu {
+            WorkbenchMenu::Filters => {
+                let mut sources = vec![PackageSourceKind::Alpm];
+                if self.aur_enabled {
+                    sources.push(PackageSourceKind::Aur);
+                }
+                if self.flatpak_enabled {
+                    sources.push(PackageSourceKind::Flatpak);
+                }
+                if self.appimage_enabled {
+                    sources.push(PackageSourceKind::AppImage);
+                }
+
+                if index < sources.len() {
+                    let source = sources[index];
+                    self.session.update(cx, |s, cx| {
+                        s.toggle_source(source, cx);
+                    });
+                } else if breakpoint == WorkbenchBreakpoint::Narrow {
+                    let state_idx = index - sources.len();
+                    let states = [
+                        PackageStateFilter::All,
+                        PackageStateFilter::Installed,
+                        PackageStateFilter::NotInstalled,
+                        PackageStateFilter::UpdatesAvailable,
+                    ];
+                    if let Some(&state) = states.get(state_idx) {
+                        self.session.update(cx, |s, cx| {
+                            s.set_state_filter(state, cx);
+                        });
+                        self.close_menu(window, cx);
+                    }
+                }
+            }
+            WorkbenchMenu::State => {
+                let states = [
+                    PackageStateFilter::All,
+                    PackageStateFilter::Installed,
+                    PackageStateFilter::NotInstalled,
+                    PackageStateFilter::UpdatesAvailable,
+                ];
+                if let Some(&state) = states.get(index) {
+                    self.session.update(cx, |s, cx| {
+                        s.set_state_filter(state, cx);
+                    });
+                    self.close_menu(window, cx);
+                }
+            }
+            WorkbenchMenu::Sort => {
+                let sorts = [
+                    SortMode::Relevance,
+                    SortMode::NameAsc,
+                    SortMode::NameDesc,
+                    SortMode::Source,
+                    SortMode::InstalledFirst,
+                    SortMode::UpdatesFirst,
+                ];
+                if let Some(&sort) = sorts.get(index) {
+                    self.session.update(cx, |s, cx| {
+                        s.set_sort_mode(sort, cx);
+                    });
+                    self.close_menu(window, cx);
+                }
+            }
         }
     }
 
@@ -369,11 +652,13 @@ impl Render for PackageWorkstationView {
                 let on_sort = entity.clone();
                 let on_mode = entity_mode.clone();
                 let on_menu = entity.clone();
+                let on_nav_menu = entity.clone();
                 let on_retry = entity.clone();
                 let on_clear = entity.clone();
                 let aur_enabled = self.aur_enabled;
                 let flatpak_enabled = self.flatpak_enabled;
                 let appimage_enabled = self.appimage_enabled;
+                let breakpoint = WorkbenchBreakpoint::from_width(active_list_width);
                 let store = self.store.read(cx);
 
                 QueryWorkbench::render(&QueryWorkbenchProps {
@@ -383,7 +668,7 @@ impl Render for PackageWorkstationView {
                     state_filter,
                     sort_mode,
                     view_mode,
-                    active_menu: self.active_menu,
+                    active_menu_state: self.active_menu,
                     is_searching,
                     total_count: packages.len(),
                     reduce_motion: self.reduce_motion,
@@ -392,6 +677,10 @@ impl Render for PackageWorkstationView {
                     appimage_enabled: self.appimage_enabled,
                     source_health: &store.source_health,
                     theme: &theme,
+                    filters_btn_focus: self.filters_btn_focus.clone(),
+                    state_btn_focus: self.state_btn_focus.clone(),
+                    sort_btn_focus: self.sort_btn_focus.clone(),
+                    menu_surface_focus: self.menu_surface_focus.clone(),
                     on_toggle_source: Rc::new(move |kind, _w, cx| {
                         on_toggle_source.update(cx, |view, cx| {
                             view.session.update(cx, |s, cx| {
@@ -420,10 +709,14 @@ impl Render for PackageWorkstationView {
                             });
                         });
                     }),
-                    on_toggle_menu: Rc::new(move |menu, _w, cx| {
+                    on_toggle_menu: Rc::new(move |menu, window, cx| {
                         on_menu.update(cx, |view, cx| {
-                            view.active_menu = menu;
-                            cx.notify();
+                            view.toggle_menu(menu, window, cx);
+                        });
+                    }),
+                    on_navigate_menu: Rc::new(move |key, window, cx| {
+                        on_nav_menu.update(cx, |view, cx| {
+                            view.navigate_menu(key, breakpoint, window, cx);
                         });
                     }),
                     on_retry_source: Rc::new(move |kind, w, cx| {

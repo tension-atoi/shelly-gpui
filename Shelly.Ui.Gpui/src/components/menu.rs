@@ -4,24 +4,43 @@ use gpui::*;
 use std::rc::Rc;
 
 pub type MenuActionHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
+pub type MenuKeyHandler = Rc<dyn Fn(&str, &mut Window, &mut App) + 'static>;
 
-/// Conteneur de surface de menu popup (ancré, différé, bloquant et fermable au clic extérieur)
+/// Cycle de vie cinématique d'un menu déroulant de station de travail
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuLifecycle {
+    Opening,
+    Open,
+    Closing,
+    Closed,
+}
+
+pub struct MenuSurfaceProps<'a> {
+    pub id: ElementId,
+    pub theme: &'a Theme,
+    pub min_width: Pixels,
+    pub reduce_motion: bool,
+    pub lifecycle: MenuLifecycle,
+    pub anim_epoch: usize,
+    pub focus_handle: Option<FocusHandle>,
+    pub on_close: MenuActionHandler,
+    pub on_key_navigate: Option<MenuKeyHandler>,
+    pub children: Vec<AnyElement>,
+}
+
+/// Conteneur de surface de menu desktop natif (ancré, animé, focalisable avec navigation clavier roving)
 pub struct MenuSurface;
 
 impl MenuSurface {
-    pub fn render(
-        id: ElementId,
-        theme: &Theme,
-        min_width: Pixels,
-        reduce_motion: bool,
-        on_close: MenuActionHandler,
-        children: Vec<AnyElement>,
-    ) -> impl IntoElement {
-        let on_close_out = on_close.clone();
-        let on_close_key = on_close.clone();
+    pub fn render(props: MenuSurfaceProps) -> impl IntoElement {
+        let theme = props.theme;
+        let on_close_out = props.on_close.clone();
+        let on_close_key = props.on_close.clone();
+        let on_nav = props.on_key_navigate.clone();
 
-        let base = div()
-            .id(id)
+        let mut base = div()
+            .id(props.id)
+            .relative()
             .occlude()
             .key_context("MenuSurface")
             .focusable()
@@ -30,13 +49,20 @@ impl MenuSurface {
                 on_close_out(window, cx);
             })
             .on_key_down(move |event, window, cx| {
-                if event.keystroke.key.as_str() == "escape" {
-                    on_close_key(window, cx);
+                let key = event.keystroke.key.as_str();
+                match key {
+                    "escape" => on_close_key(window, cx),
+                    "up" | "down" | "home" | "end" | "enter" | "space" => {
+                        if let Some(ref nav) = on_nav {
+                            nav(key, window, cx);
+                        }
+                    }
+                    _ => {}
                 }
             })
             .flex()
             .flex_col()
-            .min_w(min_width)
+            .min_w(props.min_width)
             .max_w(px(340.0))
             .p_1p5()
             .bg(theme.bg_surface)
@@ -44,18 +70,44 @@ impl MenuSurface {
             .border_color(theme.border)
             .rounded_md()
             .shadow_lg()
-            .children(children);
+            .children(props.children);
 
-        if reduce_motion {
-            base.into_any_element()
+        if let Some(ref fh) = props.focus_handle {
+            base = base.track_focus(fh);
+        }
+
+        if props.reduce_motion {
+            match props.lifecycle {
+                MenuLifecycle::Closing | MenuLifecycle::Closed => div().into_any_element(),
+                _ => base.opacity(1.0).into_any_element(),
+            }
         } else {
-            base.with_animation(
-                ("menu_surface_anim", 0usize),
-                Animation::new(crate::state::MotionDurations::FAST)
-                    .with_easing(gpui::ease_out_quint()),
-                |el, delta| el.opacity(delta),
-            )
-            .into_any_element()
+            match props.lifecycle {
+                MenuLifecycle::Opening => base
+                    .with_animation(
+                        ("menu_open_anim", props.anim_epoch),
+                        Animation::new(std::time::Duration::from_millis(150))
+                            .with_easing(gpui::ease_out_quint()),
+                        |el, delta| {
+                            let offset_y = px(-4.0 * (1.0 - delta));
+                            el.opacity(delta).top(offset_y)
+                        },
+                    )
+                    .into_any_element(),
+                MenuLifecycle::Open => base.opacity(1.0).into_any_element(),
+                MenuLifecycle::Closing => base
+                    .with_animation(
+                        ("menu_close_anim", props.anim_epoch),
+                        Animation::new(std::time::Duration::from_millis(100))
+                            .with_easing(gpui::ease_out_quint()),
+                        |el, delta| {
+                            let offset_y = px(-2.0 * delta);
+                            el.opacity(1.0 - delta).top(offset_y)
+                        },
+                    )
+                    .into_any_element(),
+                MenuLifecycle::Closed => div().into_any_element(),
+            }
         }
     }
 }
@@ -84,14 +136,15 @@ impl MenuSection {
     }
 }
 
-/// Élément de sélection exclusive type radio (ex: filtre d'état de paquet)
-pub struct MenuRadioItem;
+/// Élément de sélection exclusive avec checkmark desktop natif (pas de radio circle)
+pub struct MenuCheckmarkItem;
 
-impl MenuRadioItem {
+impl MenuCheckmarkItem {
     pub fn render(
         id: ElementId,
         label: impl Into<SharedString>,
         is_selected: bool,
+        is_highlighted: bool,
         theme: &Theme,
         on_select: MenuActionHandler,
     ) -> impl IntoElement {
@@ -112,14 +165,19 @@ impl MenuRadioItem {
             })
             .flex()
             .items_center()
-            .gap_2()
+            .gap(px(8.0))
             .px_2p5()
             .py_1p5()
             .rounded_sm()
             .cursor_pointer()
             .text_xs()
+            .bg(if is_highlighted {
+                theme.bg_surface_hover
+            } else {
+                gpui::rgba(0x00000000)
+            })
             .text_color(if is_selected {
-                theme.text_primary
+                theme.accent
             } else {
                 theme.text_secondary
             })
@@ -128,24 +186,21 @@ impl MenuRadioItem {
             } else {
                 FontWeight::NORMAL
             })
-            .hover(move |s| s.bg(hover_bg))
+            .hover(move |s| s.bg(hover_bg).text_color(theme.text_primary))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_center()
-                    .size_3()
-                    .rounded_full()
-                    .border_1()
-                    .border_color(if is_selected {
-                        theme.accent
-                    } else {
-                        theme.border
-                    })
+                    .size(px(14.0))
                     .child(if is_selected {
-                        div().size(px(6.0)).rounded_full().bg(theme.accent)
+                        svg()
+                            .path(AppIcon::Check.path())
+                            .size(px(12.0))
+                            .text_color(theme.accent)
+                            .into_any_element()
                     } else {
-                        div().size(px(6.0))
+                        div().size(px(12.0)).into_any_element()
                     }),
             )
             .child(label.into())
@@ -158,8 +213,10 @@ impl MenuRadioItem {
 /// Propriétés d'un élément de sélection multiple de menu
 pub struct MenuCheckItemProps<'a> {
     pub id: ElementId,
+    pub retry_id: ElementId,
     pub label: SharedString,
     pub is_checked: bool,
+    pub is_highlighted: bool,
     pub health_label: Option<&'static str>,
     pub is_failed: bool,
     pub theme: &'a Theme,
@@ -167,7 +224,7 @@ pub struct MenuCheckItemProps<'a> {
     pub on_retry: Option<MenuActionHandler>,
 }
 
-/// Élément de sélection multiple type case à cocher avec état de santé et action Retry optionnelle
+/// Élément de sélection multiple type case à cocher avec état de santé et action Retry accessible au clavier
 pub struct MenuCheckItem;
 
 impl MenuCheckItem {
@@ -182,7 +239,19 @@ impl MenuCheckItem {
             let retry_hover = theme.accent_hover;
             Some(
                 div()
-                    .id(ElementId::NamedInteger("menu_retry_btn".into(), 0))
+                    .id(props.retry_id)
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(border_focus))
+                    .on_key_down({
+                        let cb_key = cb.clone();
+                        move |event, window, cx| {
+                            let key = event.keystroke.key.as_str();
+                            if key == "enter" || key == "space" {
+                                cb_key(window, cx);
+                            }
+                        }
+                    })
                     .px_1p5()
                     .py(px(2.0))
                     .rounded_sm()
@@ -225,6 +294,11 @@ impl MenuCheckItem {
             .rounded_sm()
             .cursor_pointer()
             .text_xs()
+            .bg(if props.is_highlighted {
+                theme.bg_surface_hover
+            } else {
+                gpui::rgba(0x00000000)
+            })
             .text_color(theme.text_primary)
             .hover(move |s| s.bg(hover_bg))
             .child(
@@ -282,5 +356,18 @@ impl MenuCheckItem {
             .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                 (props.on_toggle)(window, cx);
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::prelude::v1::test;
+
+    #[test]
+    fn test_menu_lifecycle_transitions() {
+        assert_ne!(MenuLifecycle::Opening, MenuLifecycle::Open);
+        assert_ne!(MenuLifecycle::Open, MenuLifecycle::Closing);
+        assert_ne!(MenuLifecycle::Closing, MenuLifecycle::Closed);
     }
 }

@@ -125,13 +125,6 @@ pub enum PackageViewMode {
 }
 
 impl PackageViewMode {
-    pub fn label(&self) -> &'static str {
-        match self {
-            PackageViewMode::Cards => "Cards",
-            PackageViewMode::Table => "Table",
-        }
-    }
-
     pub fn icon(&self) -> AppIcon {
         match self {
             PackageViewMode::Cards => AppIcon::Cards,
@@ -434,8 +427,6 @@ mod tests {
 
     #[test]
     fn test_view_mode_and_inspector_tab_metadata() {
-        assert_eq!(PackageViewMode::Cards.label(), "Cards");
-        assert_eq!(PackageViewMode::Table.label(), "Table");
         assert_eq!(PackageViewMode::Cards.icon(), AppIcon::Cards);
         assert_eq!(PackageViewMode::Table.icon(), AppIcon::Table);
 

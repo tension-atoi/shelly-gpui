@@ -88,6 +88,54 @@ A comprehensive visual and interactive audit was conducted across all 18 live Wa
 
 ---
 
-## 3. Transition to Phase UX-03
+## 3. Phase UX-02P: Command Surface Productization
 
-Phase UX-02 has successfully delivered a clean, professional, native query surface with zero pills and robust state controls. The runtime critique clearly isolates the remaining ergonomic deficiency to the **package cards themselves** (clipping, density, hierarchy), which is the exact and exclusive mandate of **Phase UX-03**.
+Phase UX-02P addresses the final 15% refinement of the Query Workbench to achieve professional native desktop workstation standards before proceeding to Cards in Phase UX-03.
+
+### 12 User Mandates Implemented:
+1. **Unboxed Command Toolbar (Row 2)**:
+   - Eliminated heavy perimeter bounding boxes around every command at rest.
+   - Replaced with calm transparent backgrounds and subtle hover fills (`theme.bg_surface_hover`).
+   - Active/open states highlight dynamically with `theme.bg_surface_active` and `theme.border`.
+2. **Permanent Status Rail (Row 3, 24px Fixed Height)**:
+   - Package count removed from Row 2 and placed in Row 3.
+   - Row 3 is a permanent, fixed-height 24px container guaranteeing **strictly zero layout shift** between default, searching, filtered, and partial failure states.
+   - Text formatting:
+     - Default: `"{count} packages"` (with thousand grouping separators, e.g. `1,808 packages`).
+     - Searching: `"Searching {sources}…"`
+     - Filtered: `"{count} packages • {sources} • {state} [Clear filters]"`
+     - Partial failure: `"{count} packages • {source} unavailable [Retry]"`
+3. **Non-Redundant Filtering Across Breakpoints**:
+   - In Wide & Medium breakpoints: `Filters` contains exclusively package sources (distribution backends). `State: ... ▾` lives in Row 2.
+   - In Narrow breakpoint (<600px): `State: ... ▾` is omitted from Row 2 and dynamically appended into the `Filters` menu with a divider.
+4. **Desktop Native Checkmark Menus**:
+   - Radio circle inputs eradicated.
+   - Single-select menus (`Sort` and `State`) use native desktop checkmark items with `✓` glyph on active option and alignment spacers on inactive options.
+5. **Kinematic Menu Lifecycle**:
+   - Four-phase lifecycle: `Opening` -> `Open` -> `Closing` -> `Closed`.
+   - Open animation: 150ms ease-out quint with opacity 0 -> 1 and translateY -4px -> 0px.
+   - Close animation: 100ms ease-out quint with opacity 1 -> 0 and translateY 0px -> -2px.
+   - Deferred unmounting until close animation completes.
+6. **Complete Keyboard Contract**:
+   - Full roving navigation inside menus: `↑`, `↓`, `Home`, `End`, `Enter`, `Space`, `Escape`.
+   - Automatic focus restoration to the opening trigger button (`filters_btn_focus`, `state_btn_focus`, `sort_btn_focus`) upon menu dismissal.
+   - Unique ElementId and `focusable().tab_stop(true)` for Source Retry button.
+7. **Local Search Focus Interpolation**:
+   - 110ms smooth transition for search container focus with subtle lift shadow and dynamic icon tinting (`theme.accent` when focused or searching).
+8. **Compact Activity Indicator in Search Field**:
+   - Replaced verbose `"Searching..."` text with a compact 14px centered container holding a 7px pulsing accent dot.
+   - Resting empty state renders a keyboard shortcut hint `"/"`.
+9. **Accessible Clear Search Button (`×`)**:
+   - Implemented with `focusable()`, `tab_stop(true)`, and Enter/Space keyboard listeners.
+10. **Responsive Breakpoints**:
+    - Handled via `WorkbenchBreakpoint` (`Wide` >= 820px, `Medium` 600-819px, `Narrow` < 600px).
+11. **Dark and Light Theme Parity**:
+    - Unboxed commands and status rail validated across both themes.
+12. **Exact-SHA Build & Package**:
+    - Packaged and verified with pacman.
+
+---
+
+## 4. Transition to Phase UX-03 (Cards)
+
+With Phase UX-02 and UX-02P fully verified, the Query Workbench, Status Rail, and Menus are complete. The workstation is ready for **Phase UX-03 (Cards)** to address package card layout, typography baselines, action triggers, and density.

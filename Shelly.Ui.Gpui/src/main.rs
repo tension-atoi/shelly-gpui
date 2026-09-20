@@ -2,7 +2,7 @@
 #![deny(unused_variables)]
 #![deny(unused_imports)]
 #![deny(unused_must_use)]
-#![recursion_limit = "2048"]
+#![recursion_limit = "8192"]
 
 mod backend;
 mod components;
