@@ -15,7 +15,9 @@ pub struct Theme {
     pub accent: Rgba,
     pub accent_hover: Rgba,
     pub success: Rgba,
+    pub success_text: Rgba,
     pub warning: Rgba,
+    pub warning_text: Rgba,
     pub danger: Rgba,
     pub danger_hover: Rgba,
     pub badge_alpm: Rgba,
@@ -42,11 +44,13 @@ impl Theme {
             border_focus: rgb(0x38bdf8),      // Electric cyan focus glow
             text_primary: rgb(0xf1f5f9),      // Crisp high-contrast slate-50
             text_secondary: rgb(0x94a3b8),    // Balanced legible secondary text
-            text_muted: rgb(0x64748b),        // Subtle hints and captions
+            text_muted: rgb(0x94a3b8),        // Legible WCAG AA hints and captions (6.87:1)
             accent: rgb(0x38bdf8),            // Electric cyan
             accent_hover: rgb(0x7dd3fc),      // Luminous cyan highlight
-            success: rgb(0x10b981),           // Vibrant emerald
-            warning: rgb(0xf59e0b),           // Bright amber
+            success: rgb(0x10b981),           // Vibrant emerald accent dot
+            success_text: rgb(0x34d399),      // High-contrast emerald text label (9.16:1)
+            warning: rgb(0xf59e0b),           // Bright amber accent dot
+            warning_text: rgb(0xfbbf24),      // High-contrast amber text label (10.55:1)
             danger: rgb(0xf43f5e),            // Vivid ruby rose
             danger_hover: rgb(0xfb7185),      // Luminous ruby highlight
             badge_alpm: rgb(0x38bdf8),        // Electric Cyan (Official ALPM)
@@ -67,11 +71,13 @@ impl Theme {
             border_focus: rgb(0x0284c7),
             text_primary: rgb(0x0f172a),
             text_secondary: rgb(0x475569),
-            text_muted: rgb(0x94a3b8),
+            text_muted: rgb(0x64748b), // WCAG AA compliant muted text (4.76:1)
             accent: rgb(0x0284c7),
             accent_hover: rgb(0x0369a1),
-            success: rgb(0x059669),
-            warning: rgb(0xd97706),
+            success: rgb(0x059669),      // Emerald accent dot
+            success_text: rgb(0x047857), // WCAG AA compliant emerald text (5.48:1)
+            warning: rgb(0xd97706),      // Amber accent dot
+            warning_text: rgb(0xb45309), // WCAG AA compliant amber text (5.02:1)
             danger: rgb(0xe11d48),
             danger_hover: rgb(0xbe123c),
             badge_alpm: rgb(0x0284c7),
@@ -79,6 +85,30 @@ impl Theme {
             badge_flatpak: rgb(0x0891b2),
             badge_appimage: rgb(0xea580c),
         }
+    }
+
+    /// Calcule la luminance relative standard sRGB (WCAG 2.1)
+    #[cfg(test)]
+    pub fn relative_luminance(c: Rgba) -> f64 {
+        let channel = |v: f32| -> f64 {
+            let v = v as f64;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
+    }
+
+    /// Calcule le ratio de contraste WCAG 2.1 entre deux couleurs
+    #[cfg(test)]
+    pub fn contrast_ratio(c1: Rgba, c2: Rgba) -> f64 {
+        let l1 = Self::relative_luminance(c1);
+        let l2 = Self::relative_luminance(c2);
+        let lighter = l1.max(l2);
+        let darker = l1.min(l2);
+        (lighter + 0.05) / (darker + 0.05)
     }
 }
 
@@ -108,5 +138,62 @@ mod tests {
         let def = Theme::default();
         assert_eq!(def.bg_app, dark.bg_app);
         assert_eq!(def.accent, dark.accent);
+    }
+
+    #[test]
+    fn test_wcag_21_aa_contrast_ratios_mathematical_guarantee() {
+        let themes = [("dark", Theme::dark()), ("light", Theme::light())];
+
+        for (name, theme) in themes {
+            // Text tokens must achieve >= 4.5:1 against both surface and app background
+            let surfaces = [("surface", theme.bg_surface), ("app", theme.bg_app)];
+
+            for (surf_name, bg) in surfaces {
+                let primary_ratio = Theme::contrast_ratio(theme.text_primary, bg);
+                assert!(
+                    primary_ratio >= 4.5,
+                    "{} theme text_primary on {} ratio {} < 4.5:1",
+                    name,
+                    surf_name,
+                    primary_ratio
+                );
+
+                let secondary_ratio = Theme::contrast_ratio(theme.text_secondary, bg);
+                assert!(
+                    secondary_ratio >= 4.5,
+                    "{} theme text_secondary on {} ratio {} < 4.5:1",
+                    name,
+                    surf_name,
+                    secondary_ratio
+                );
+
+                let muted_ratio = Theme::contrast_ratio(theme.text_muted, bg);
+                assert!(
+                    muted_ratio >= 4.5,
+                    "{} theme text_muted on {} ratio {} < 4.5:1",
+                    name,
+                    surf_name,
+                    muted_ratio
+                );
+
+                let success_text_ratio = Theme::contrast_ratio(theme.success_text, bg);
+                assert!(
+                    success_text_ratio >= 4.5,
+                    "{} theme success_text on {} ratio {} < 4.5:1",
+                    name,
+                    surf_name,
+                    success_text_ratio
+                );
+
+                let warning_text_ratio = Theme::contrast_ratio(theme.warning_text, bg);
+                assert!(
+                    warning_text_ratio >= 4.5,
+                    "{} theme warning_text on {} ratio {} < 4.5:1",
+                    name,
+                    surf_name,
+                    warning_text_ratio
+                );
+            }
+        }
     }
 }

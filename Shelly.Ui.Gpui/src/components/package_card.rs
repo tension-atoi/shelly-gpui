@@ -133,7 +133,7 @@ impl PackageCard {
                                                 .text_xs()
                                                 .font_family("monospace")
                                                 .font_weight(FontWeight::BOLD)
-                                                .text_color(theme.warning)
+                                                .text_color(theme.warning_text)
                                                 .child(format!("→ {}", new_ver)),
                                         )
                                     })
@@ -184,7 +184,7 @@ impl PackageCard {
                                     .flex()
                                     .items_center()
                                     .gap_1()
-                                    .text_color(theme.warning)
+                                    .text_color(theme.warning_text)
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(div().size(px(5.0)).rounded_full().bg(theme.warning))
                                     .child("Update available"),
@@ -195,7 +195,7 @@ impl PackageCard {
                                     .flex()
                                     .items_center()
                                     .gap_1()
-                                    .text_color(theme.success)
+                                    .text_color(theme.success_text)
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(div().size(px(5.0)).rounded_full().bg(theme.success))
                                     .child("Installed"),

@@ -356,6 +356,7 @@ impl WorkspaceView {
                             .into_iter()
                             .map(UnifiedPackage::from_update)
                             .collect();
+                        crate::components::package_identity::PackageIdentity::preload(&unified);
                         st.updates_error = None;
                         st.set_updates_packages(unified, cx);
                     }
@@ -378,6 +379,7 @@ impl WorkspaceView {
                             .into_iter()
                             .map(|p| UnifiedPackage::from_alpm(p, true))
                             .collect();
+                        crate::components::package_identity::PackageIdentity::preload(&unified);
                         st.installed_error = None;
                         st.set_installed_packages(unified, cx);
                     }
@@ -437,6 +439,7 @@ impl WorkspaceView {
                             .into_iter()
                             .map(|p| UnifiedPackage::from_alpm(p, true))
                             .collect();
+                        crate::components::package_identity::PackageIdentity::preload(&unified);
                         st.installed_error = None;
                         st.set_installed_packages(unified, cx);
                     }
@@ -464,6 +467,7 @@ impl WorkspaceView {
                             .into_iter()
                             .map(UnifiedPackage::from_update)
                             .collect();
+                        crate::components::package_identity::PackageIdentity::preload(&unified);
                         st.updates_error = None;
                         st.set_updates_packages(unified, cx);
                     }
