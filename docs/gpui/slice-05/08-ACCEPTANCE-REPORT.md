@@ -4,8 +4,8 @@
 
 **Slice:** SLICE-05 — Visual System, Desktop Adaptation, Settings IA & Product Finishing  
 **Baseline Git Commit:** `85db099617808905934e234c9c3f7bcf60b30fae`  
-**Preliminary Review Git Commit:** `c812696771979685e13d9bb60b1348270b28dd41`  
-**Final Ratification Fixes Git Commit:** (Current HEAD on `main`)  
+**Preliminary Review Git Commit:** `c8126967719796c9652725dcb0851e4debc9165d`  
+**Final Ratification Fixes Implementation Git Commit:** `8f61a6961c08a3238554ad6adae5a95492697d8e`  
 **Pinned Dependency:** `gpui = "0.2.2"`  
 **Evaluation Date:** 2026-09-20  
 **Status:** **READY FOR OPERATOR RATIFICATION**
@@ -157,6 +157,21 @@ Verification findings:
 ---
 
 ## 5. Packaging & Artifact Checklist
+
+### Staged Packaging Verification
+Execution of `prepare()`, `build()`, `check()`, and `package()` in an isolated non-destructive temporary environment (`pkgdir`):
+```
+$ find "$pkgdir" -type f | sort
+usr/bin/shelly-gpui
+usr/lib/shelly/shelly
+usr/lib/shelly/shelly-gpui-bin
+usr/share/applications/com.shellyorg.shelly-gpui.desktop
+usr/share/icons/hicolor/scalable/apps/shelly-gpui.svg
+usr/share/licenses/shelly-gpui-git/LICENSE
+usr/share/polkit-1/actions/com.shellyorg.shelly-gpui.policy
+```
+Verification status: **RUNTIME/STAGED PACKAGE VERIFIED**  
+All binaries, wrapper script, desktop entry, SVG icon, license, and Polkit policy are correctly staged and permissions properly set without modifying the live host environment.
 
 - [x] **XDG Desktop File (`com.shellyorg.shelly-gpui.desktop`)**:
   - English default entries for `GenericName` and `Comment`.

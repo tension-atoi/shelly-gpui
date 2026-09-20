@@ -163,22 +163,22 @@ impl Render for OperationConsoleView {
             copied_feedback: self.logs_copied_feedback,
             scroll_handle: &console_read.scroll_handle,
             theme: &self.theme,
-            on_toggle: Some(Rc::new(move |_e, _w, cx| {
+            on_toggle: Some(Rc::new(move |_w, cx| {
                 entity_toggle.update(cx, |this, cx| {
                     this.console.update(cx, |c, cx| c.toggle_drawer(cx));
                 });
             })),
-            on_copy: Some(Rc::new(move |_e, _w, cx| {
+            on_copy: Some(Rc::new(move |_w, cx| {
                 entity_copy.update(cx, |this, cx| {
                     this.copy_logs(cx);
                 });
             })),
-            on_clear: Some(Rc::new(move |_e, _w, cx| {
+            on_clear: Some(Rc::new(move |_w, cx| {
                 entity_clear.update(cx, |this, cx| {
                     this.console.update(cx, |c, cx| c.clear_logs(cx));
                 });
             })),
-            on_toggle_autoscroll: Some(Rc::new(move |_e, _w, cx| {
+            on_toggle_autoscroll: Some(Rc::new(move |_w, cx| {
                 entity_auto.update(cx, |this, cx| {
                     this.console.update(cx, |c, cx| c.toggle_auto_scroll(cx));
                 });

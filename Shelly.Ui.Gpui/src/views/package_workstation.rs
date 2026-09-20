@@ -460,8 +460,23 @@ impl Render for PackageWorkstationView {
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(theme.text_muted)
                                     .child("Upgrade All")
+                                    .into_any_element()
                             } else {
+                                let focus_border = theme.border_focus;
+                                let on_upgrade_key = on_upgrade_cb.clone();
                                 div()
+                                    .id("upgrade_all_btn")
+                                    .focusable()
+                                    .tab_stop(true)
+                                    .focus(move |s| s.border_1().border_color(focus_border))
+                                    .on_key_down(move |event, window, cx| {
+                                        let key = event.keystroke.key.as_str();
+                                        if key == "enter" || key == "space" {
+                                            if let Some(ref cb) = on_upgrade_key {
+                                                cb(window, cx);
+                                            }
+                                        }
+                                    })
                                     .px_3()
                                     .py_1()
                                     .rounded_md()
@@ -480,6 +495,7 @@ impl Render for PackageWorkstationView {
                                             cb(w, cx);
                                         }
                                     })
+                                    .into_any_element()
                             })
                             .child(mode_switcher),
                     )

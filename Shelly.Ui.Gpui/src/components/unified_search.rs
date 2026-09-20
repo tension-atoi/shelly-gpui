@@ -34,7 +34,28 @@ impl UnifiedSearch {
         let is_active = filter == active_filter;
         let label = filter.label();
 
+        let element_id = match filter {
+            SourceFilter::All => "source_filter_all",
+            SourceFilter::Alpm => "source_filter_alpm",
+            SourceFilter::Aur => "source_filter_aur",
+            SourceFilter::Flatpak => "source_filter_flatpak",
+            SourceFilter::AppImage => "source_filter_appimage",
+        };
+
+        let focus_border = theme.border_focus;
+        let on_select_key = on_select.clone();
+
         let base = div()
+            .id(element_id)
+            .focusable()
+            .tab_stop(true)
+            .focus(move |s| s.border_1().border_color(focus_border))
+            .on_key_down(move |event, window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    on_select_key(filter, window, cx);
+                }
+            })
             .px(px(8.0))
             .py(px(3.0))
             .rounded_md()

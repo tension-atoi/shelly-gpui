@@ -33,7 +33,7 @@ impl LogEntry {
     }
 }
 
-pub type MouseHandler = Rc<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>;
+pub type LogActionHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 
 pub struct LogDrawerProps<'a> {
     pub logs: &'a [LogEntry],
@@ -44,10 +44,10 @@ pub struct LogDrawerProps<'a> {
     pub copied_feedback: bool,
     pub scroll_handle: &'a ScrollHandle,
     pub theme: &'a Theme,
-    pub on_toggle: Option<MouseHandler>,
-    pub on_copy: Option<MouseHandler>,
-    pub on_clear: Option<MouseHandler>,
-    pub on_toggle_autoscroll: Option<MouseHandler>,
+    pub on_toggle: Option<LogActionHandler>,
+    pub on_copy: Option<LogActionHandler>,
+    pub on_clear: Option<LogActionHandler>,
+    pub on_toggle_autoscroll: Option<LogActionHandler>,
 }
 
 pub struct LogDrawer;
@@ -100,9 +100,22 @@ impl LogDrawer {
         // Bouton Copier les logs
         let copy_btn = {
             let on_copy = props.on_copy.clone();
+            let on_copy_key = props.on_copy.clone();
             let hover_bg = theme.bg_surface_hover;
             let border_focus = theme.border_focus;
             let mut btn = div()
+                .id("console_copy_logs_btn")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(border_focus))
+                .on_key_down(move |event, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "enter" || key == "space" {
+                        if let Some(ref handler) = on_copy_key {
+                            handler(window, cx);
+                        }
+                    }
+                })
                 .flex()
                 .items_center()
                 .gap_1p5()
@@ -146,7 +159,7 @@ impl LogDrawer {
                 });
 
             if let Some(handler) = on_copy {
-                btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));
+                btn = btn.on_mouse_down(MouseButton::Left, move |_e, w, cx| handler(w, cx));
             }
             btn
         };
@@ -154,9 +167,22 @@ impl LogDrawer {
         // Bouton Effacer
         let clear_btn = {
             let on_clear = props.on_clear.clone();
+            let on_clear_key = props.on_clear.clone();
             let hover_bg = theme.bg_surface_hover;
             let border_focus = theme.border_focus;
             let mut btn = div()
+                .id("console_clear_btn")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(border_focus))
+                .on_key_down(move |event, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "enter" || key == "space" {
+                        if let Some(ref handler) = on_clear_key {
+                            handler(window, cx);
+                        }
+                    }
+                })
                 .flex()
                 .items_center()
                 .gap_1p5()
@@ -180,7 +206,7 @@ impl LogDrawer {
                 .child("Clear");
 
             if let Some(handler) = on_clear {
-                btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));
+                btn = btn.on_mouse_down(MouseButton::Left, move |_e, w, cx| handler(w, cx));
             }
             btn
         };
@@ -188,9 +214,22 @@ impl LogDrawer {
         // Bouton Défilement automatique
         let autoscroll_btn = {
             let on_toggle_autoscroll = props.on_toggle_autoscroll.clone();
+            let on_autoscroll_key = props.on_toggle_autoscroll.clone();
             let hover_bg = theme.bg_surface_hover;
             let border_focus = theme.border_focus;
             let mut btn = div()
+                .id("console_autoscroll_toggle")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(border_focus))
+                .on_key_down(move |event, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "enter" || key == "space" {
+                        if let Some(ref handler) = on_autoscroll_key {
+                            handler(window, cx);
+                        }
+                    }
+                })
                 .px_2()
                 .py_1()
                 .rounded_sm()
@@ -221,7 +260,7 @@ impl LogDrawer {
                 });
 
             if let Some(handler) = on_toggle_autoscroll {
-                btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));
+                btn = btn.on_mouse_down(MouseButton::Left, move |_e, w, cx| handler(w, cx));
             }
             btn
         };
@@ -229,7 +268,21 @@ impl LogDrawer {
         // Bouton de masquage/affichage du tiroir
         let toggle_btn = {
             let on_toggle = props.on_toggle.clone();
+            let on_toggle_key = props.on_toggle.clone();
+            let border_focus = theme.border_focus;
             let mut btn = div()
+                .id("console_toggle_btn")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(border_focus))
+                .on_key_down(move |event, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "enter" || key == "space" {
+                        if let Some(ref handler) = on_toggle_key {
+                            handler(window, cx);
+                        }
+                    }
+                })
                 .flex()
                 .items_center()
                 .gap_1p5()
@@ -254,7 +307,7 @@ impl LogDrawer {
                 .child(if is_open { "Hide" } else { "Show" });
 
             if let Some(handler) = on_toggle {
-                btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));
+                btn = btn.on_mouse_down(MouseButton::Left, move |_e, w, cx| handler(w, cx));
             }
             btn
         };

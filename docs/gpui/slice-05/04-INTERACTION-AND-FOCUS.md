@@ -77,6 +77,19 @@ To provide accessibility and clear spatial orientation without manufacturing tra
    - **Inspector Action Buttons** (`inspector_remove_btn`, `inspector_install_btn`, `inspector_copy_cmd_btn`):
      - Focus ring with `border_focus`.
      - Keyboard activation: `Enter` or `Space` triggers package mutation or copies install command to clipboard.
+   - **Unified Search Source Filter Pills** (`source_filter_all`, `source_filter_alpm`, `source_filter_aur`, `source_filter_flatpak`, `source_filter_appimage`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` selects the filter.
+   - **Upgrade All Action Button** (`upgrade_all_btn`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` initiates system upgrade.
+     - Disabled state guarantee: when system is busy (`is_busy`), the button remains non-focusable and non-interactive.
+   - **Log Drawer Controls** (`console_copy_logs_btn`, `console_clear_btn`, `console_autoscroll_toggle`, `console_toggle_btn`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` triggers log copying, log clearing, auto-scroll toggle, or drawer visibility toggle.
+   - **Toast Notification Actions** (`toast_dismiss`, `toast_action`):
+     - Focus ring with `border_focus`.
+     - Keyboard activation: `Enter` or `Space` dismisses the notification or executes the `Open Logs` action.
 4. **Package List Non-Tab Stop Guarantee**:
    - Virtual list items (cards and rows) do **not** register as tab stops.
    - They remain navigable strictly via Up/Down arrow keys and click selection, preventing keyboard trap in large lists.

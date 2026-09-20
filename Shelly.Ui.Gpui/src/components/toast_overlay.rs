@@ -77,8 +77,20 @@ impl ToastOverlay {
                                 .child(toast.title.clone()),
                         ),
                 )
-                .child(
+                .child({
+                    let on_dismiss_key = on_dismiss.clone();
+                    let border_focus = theme.border_focus;
                     div()
+                        .id(ElementId::NamedInteger("toast_dismiss".into(), toast_id))
+                        .focusable()
+                        .tab_stop(true)
+                        .focus(move |s| s.border_1().border_color(border_focus))
+                        .on_key_down(move |event, window, cx| {
+                            let key = event.keystroke.key.as_str();
+                            if key == "enter" || key == "space" {
+                                on_dismiss_key(toast_id, window, cx);
+                            }
+                        })
                         .cursor_pointer()
                         .text_xs()
                         .text_color(theme.text_muted)
@@ -91,8 +103,8 @@ impl ToastOverlay {
                         )
                         .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
                             on_dismiss(toast_id, window, cx);
-                        }),
-                );
+                        })
+                });
 
             toast_el = toast_el.child(header);
 
@@ -107,8 +119,21 @@ impl ToastOverlay {
             // Action optionnelle (ex: Ouvrir les logs)
             if let Some(action) = &toast.action {
                 let act = action.clone();
+                let act_key = action.clone();
+                let on_action_key = on_action.clone();
+                let border_focus = theme.border_focus;
                 let action_btn = div().flex().justify_end().mt_2().child(
                     div()
+                        .id(ElementId::NamedInteger("toast_action".into(), toast_id))
+                        .focusable()
+                        .tab_stop(true)
+                        .focus(move |s| s.border_1().border_color(border_focus))
+                        .on_key_down(move |event, window, cx| {
+                            let key = event.keystroke.key.as_str();
+                            if key == "enter" || key == "space" {
+                                on_action_key(act_key.clone(), window, cx);
+                            }
+                        })
                         .px_2()
                         .py_1()
                         .rounded_sm()
@@ -120,7 +145,7 @@ impl ToastOverlay {
                         .text_color(theme.accent)
                         .cursor_pointer()
                         .hover(move |s| s.bg(theme.bg_surface_hover))
-                        .child("Voir les journaux")
+                        .child("Open Logs")
                         .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
                             on_action(act.clone(), window, cx);
                         }),
