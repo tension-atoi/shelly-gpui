@@ -75,6 +75,7 @@ impl WorkspaceView {
         let console = cx.new(|_cx| {
             let mut c = ConsoleModel::new();
             c.is_open = gpui_config.log_drawer_open;
+            c.auto_open = gpui_config.log_drawer_open;
             c
         });
         let toast_center = cx.new(|_cx| ToastCenter::new());
@@ -178,14 +179,8 @@ impl WorkspaceView {
         })
         .detach();
 
-        cx.subscribe(&console, |this, _emitter, event, cx| match event {
-            ConsoleEvent::LogAppended(_) => {
-                cx.notify();
-            }
-            ConsoleEvent::OperationStarted(_) => {
-                cx.notify();
-            }
-            ConsoleEvent::OperationFinished(status) => {
+        cx.subscribe(&console, |this, _emitter, event, cx| {
+            if let ConsoleEvent::OperationFinished(status) = event {
                 let reduce = this.gpui_config.reduce_motion;
                 let (kind, title, msg, action) = match status {
                     crate::state::OperationStatus::Success(m) => {
@@ -202,15 +197,6 @@ impl WorkspaceView {
                 this.toast_center.update(cx, |tc, cx| {
                     tc.post(kind, title, msg, action, reduce, cx);
                 });
-                cx.notify();
-            }
-            ConsoleEvent::Toggled(_) => {
-                cx.notify();
-            }
-            ConsoleEvent::AutoScrollToggled(_) => {
-                cx.notify();
-            }
-            ConsoleEvent::LogsCleared => {
                 cx.notify();
             }
         })
@@ -782,6 +768,10 @@ impl WorkspaceView {
                     cv.set_configured_height(self.gpui_config.log_drawer_height, cx);
                 });
 
+                self.console.update(cx, |c, _| {
+                    c.set_auto_open(self.gpui_config.log_drawer_open);
+                });
+
                 self.toast_center.update(cx, |tc, cx| {
                     tc.post(
                         ToastKind::Success,
@@ -1014,6 +1004,8 @@ impl Render for WorkspaceView {
                             Rc::new(move |_w, cx| {
                                 e.update(cx, |view, cx| {
                                     view.settings.toggle_log_drawer_auto_open();
+                                    let auto_open = view.settings.draft_gpui.log_drawer_open;
+                                    view.console.update(cx, |c, _| c.set_auto_open(auto_open));
                                     cx.notify();
                                 })
                             })

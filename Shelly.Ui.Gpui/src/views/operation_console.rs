@@ -38,33 +38,23 @@ impl OperationConsoleView {
         let console_sub = cx.subscribe(&console, |this, _console, event, cx| match event {
             ConsoleEvent::Toggled(open) => {
                 let target = if *open { this.configured_height } else { 0.0 };
-                this.height_scalar.retarget(
-                    target,
-                    MotionDurations::STANDARD,
-                    Instant::now(),
-                    this.reduce_motion,
-                );
+                let duration = if *open
+                    && matches!(
+                        this.console.read(cx).status,
+                        crate::state::OperationStatus::Error(_)
+                    ) {
+                    MotionDurations::EMPHASIS
+                } else {
+                    MotionDurations::STANDARD
+                };
+                this.height_scalar
+                    .retarget(target, duration, Instant::now(), this.reduce_motion);
                 cx.notify();
             }
             ConsoleEvent::OperationStarted(_) => {
-                let target = this.configured_height;
-                this.height_scalar.retarget(
-                    target,
-                    MotionDurations::STANDARD,
-                    Instant::now(),
-                    this.reduce_motion,
-                );
                 cx.notify();
             }
-            ConsoleEvent::OperationFinished(status) => {
-                if matches!(status, crate::state::OperationStatus::Error(_)) {
-                    this.height_scalar.retarget(
-                        this.configured_height,
-                        MotionDurations::EMPHASIS,
-                        Instant::now(),
-                        this.reduce_motion,
-                    );
-                }
+            ConsoleEvent::OperationFinished(_) => {
                 cx.notify();
             }
             _ => {

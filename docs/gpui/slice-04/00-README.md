@@ -31,12 +31,17 @@ It purposefully delivers:
    - `WorkspaceView::render` performs **zero** continuous frame requests.
 6. **Bounded Toast Center & Feedback Overlay (`ToastCenter` & `ToastOverlay`)**:
    - Monotonic IDs, bounded maximum of 3 concurrent visible notifications.
-   - Deterministic FIFO eviction policy strictly preserving high-severity error notifications.
+   - Deterministic eviction preferentially preserving error notifications when non-error items exist.
+   - Race-free lifecycle (`transition_lifecycle`) strictly enforcing forward-only progression (`Entering -> Visible`, `Entering -> Exiting`, `Visible -> Exiting`).
    - 120ms entering fade-in, 3500ms visible steady state, and 120ms exiting fade-out via GPUI `with_animation`.
-7. **Strict Compiler Enforcement & Zero Scaffolding**:
+7. **Console State Single Authority & Log Isolation**:
+   - `ConsoleModel.is_open` is the sole authority for log drawer disclosure; `OperationConsoleView` height strictly derives from `ConsoleEvent::Toggled`.
+   - "Ouvrir automatiquement le tiroir de logs lors d'une action" (`log_drawer_open`) is honored on operation start and immediately synchronized.
+   - Redundant log-stream subscriptions eliminated from `WorkspaceView`, protecting root from continuous invalidation during subprocess runs.
+8. **Strict Compiler Enforcement & Zero Scaffolding**:
    - Hard `#![deny(dead_code)]`, `#![deny(unused_variables)]`, `#![deny(unused_imports)]`, `#![deny(unused_must_use)]`.
    - Zero test hooks or screenshot environment variables in production code.
-   - 0 warnings, pinned GPUI 0.2.2 compatibility.
+   - 0 warnings, pinned GPUI 0.2.2 compatibility, 52 passing unit tests.
 
 ---
 
@@ -69,4 +74,4 @@ Functional upstream authority:
 - [`04-FEEDBACK-MODEL.md`](04-FEEDBACK-MODEL.md): Notification overlay system, GPUI animation lifecycle, search telemetry, and dirty-state feedback.
 - [`05-PERFORMANCE-EVIDENCE.md`](05-PERFORMANCE-EVIDENCE.md): Pointer drag isolation, zero-copy Arc slices, isolated RAF loops, and zero scaffolding audit.
 - [`06-ACCEPTANCE-MATRIX.md`](06-ACCEPTANCE-MATRIX.md): Comprehensive verification matrix mapping requirements to evidence classes and empirical proofs.
-- [`07-ACCEPTANCE-REPORT.md`](07-ACCEPTANCE-REPORT.md): Final acceptance signoff with 48 automated test results and native Wayland framebuffer evidence.
+- [`07-ACCEPTANCE-REPORT.md`](07-ACCEPTANCE-REPORT.md): Final acceptance signoff with 52 automated test results and native Wayland framebuffer evidence.

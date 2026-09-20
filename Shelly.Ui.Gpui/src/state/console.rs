@@ -16,6 +16,7 @@ pub struct ConsoleModel {
     pub logs: Vec<LogEntry>,
     pub status: OperationStatus,
     pub is_open: bool,
+    pub auto_open: bool,
     pub auto_scroll: bool,
     pub scroll_handle: ScrollHandle,
 }
@@ -28,9 +29,14 @@ impl ConsoleModel {
             logs: Vec::new(),
             status: OperationStatus::Idle,
             is_open: true,
+            auto_open: true,
             auto_scroll: true,
             scroll_handle: ScrollHandle::new(),
         }
+    }
+
+    pub fn set_auto_open(&mut self, auto_open: bool) {
+        self.auto_open = auto_open;
     }
 
     pub fn append_stdout(&mut self, line: &str, cx: &mut Context<Self>) {
@@ -53,21 +59,48 @@ impl ConsoleModel {
         cx.notify();
     }
 
-    pub fn start_operation(&mut self, op_name: &str, cx: &mut Context<Self>) {
+    /// Mutation d'état pure pour l'initialisation d'opération
+    pub fn start_operation_state(&mut self, op_name: &str) -> bool {
         self.status = OperationStatus::Running(op_name.to_string());
-        self.is_open = true;
+        if self.auto_open {
+            self.set_open_state(true)
+        } else {
+            false
+        }
+    }
+
+    pub fn start_operation(&mut self, op_name: &str, cx: &mut Context<Self>) {
+        let opened = self.start_operation_state(op_name);
         self.append_stdout(&format!(">>> Démarrage de l'opération : {}", op_name), cx);
+        if opened {
+            cx.emit(ConsoleEvent::Toggled(true));
+        }
         cx.emit(ConsoleEvent::OperationStarted(op_name.to_string()));
         cx.notify();
     }
 
-    pub fn finish_operation(&mut self, success: bool, message: &str, cx: &mut Context<Self>) {
+    /// Mutation d'état pure pour la terminaison d'opération
+    pub fn finish_operation_state(
+        &mut self,
+        success: bool,
+        message: &str,
+    ) -> (OperationStatus, bool) {
         let status = if success {
             OperationStatus::Success(message.to_string())
         } else {
             OperationStatus::Error(message.to_string())
         };
         self.status = status.clone();
+        let opened = if !success {
+            self.set_open_state(true)
+        } else {
+            false
+        };
+        (status, opened)
+    }
+
+    pub fn finish_operation(&mut self, success: bool, message: &str, cx: &mut Context<Self>) {
+        let (status, opened) = self.finish_operation_state(success, message);
         let log_line = if success {
             format!(">>> Succès : {}", message)
         } else {
@@ -78,19 +111,29 @@ impl ConsoleModel {
         } else {
             self.append_stderr(&log_line, cx);
         }
+        if opened {
+            cx.emit(ConsoleEvent::Toggled(true));
+        }
         cx.emit(ConsoleEvent::OperationFinished(status));
         cx.notify();
     }
 
+    pub fn set_open_state(&mut self, open: bool) -> bool {
+        if self.is_open != open {
+            self.is_open = open;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn toggle_drawer(&mut self, cx: &mut Context<Self>) {
-        self.is_open = !self.is_open;
-        cx.emit(ConsoleEvent::Toggled(self.is_open));
-        cx.notify();
+        let new_state = !self.is_open;
+        self.set_open(new_state, cx);
     }
 
     pub fn set_open(&mut self, open: bool, cx: &mut Context<Self>) {
-        if self.is_open != open {
-            self.is_open = open;
+        if self.set_open_state(open) {
             cx.emit(ConsoleEvent::Toggled(open));
             cx.notify();
         }
@@ -131,6 +174,7 @@ mod tests {
         assert!(console.logs.is_empty());
         assert_eq!(console.status, OperationStatus::Idle);
         assert!(console.is_open);
+        assert!(console.auto_open);
         assert!(console.auto_scroll);
     }
 
@@ -160,5 +204,64 @@ mod tests {
         console.clear_history();
         assert!(console.logs.is_empty());
         assert_eq!(console.status, OperationStatus::Success("Done".to_string()));
+    }
+
+    #[test]
+    fn test_start_operation_honors_auto_open_setting() {
+        let mut console = ConsoleModel::new();
+        console.is_open = false;
+
+        // 1. Avec auto_open = false, le démarrage d'une opération ne doit PAS ouvrir le tiroir
+        console.auto_open = false;
+        let opened = console.start_operation_state("pkg-build");
+        assert!(!opened);
+        assert!(
+            !console.is_open,
+            "Drawer must remain closed when auto_open is disabled"
+        );
+        assert_eq!(
+            console.status,
+            OperationStatus::Running("pkg-build".to_string())
+        );
+
+        // 2. Avec auto_open = true, le démarrage d'une opération doit ouvrir le tiroir
+        console.is_open = false;
+        console.auto_open = true;
+        let opened = console.start_operation_state("pkg-install");
+        assert!(opened);
+        assert!(
+            console.is_open,
+            "Drawer must be logically open when auto_open is enabled"
+        );
+    }
+
+    #[test]
+    fn test_finish_operation_failure_auto_discloses_logical_open() {
+        let mut console = ConsoleModel::new();
+        // L'utilisateur ferme manuellement la console pendant l'opération
+        console.is_open = false;
+        console.status = OperationStatus::Running("download".to_string());
+
+        // Si l'opération échoue, le tiroir DOIT être ouvert logiquement (ConsoleModel.is_open = true)
+        let (status, opened) = console.finish_operation_state(false, "Network failure");
+        assert!(opened, "Failure must trigger logical disclosure");
+        assert!(
+            console.is_open,
+            "ConsoleModel.is_open must be true on failure"
+        );
+        assert_eq!(
+            status,
+            OperationStatus::Error("Network failure".to_string())
+        );
+
+        // Si l'opération réussit alors qu'elle était fermée, elle reste fermée
+        console.is_open = false;
+        let (status, opened) = console.finish_operation_state(true, "All packages up to date");
+        assert!(!opened);
+        assert!(!console.is_open);
+        assert_eq!(
+            status,
+            OperationStatus::Success("All packages up to date".to_string())
+        );
     }
 }

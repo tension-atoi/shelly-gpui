@@ -102,10 +102,41 @@ impl ToastCenter {
         id
     }
 
-    pub fn set_lifecycle(&mut self, id: u64, lifecycle: ToastLifecycle) {
-        if let Some(toast) = self.toasts.iter_mut().find(|t| t.id == id) {
-            toast.lifecycle = lifecycle;
+    /// Vérifie si une transition de cycle de vie est autorisée.
+    /// Les transitions autorisées sont strictement :
+    /// - `Entering -> Visible`
+    /// - `Entering -> Exiting`
+    /// - `Visible  -> Exiting`
+    ///
+    /// Toute régression (ex. `Exiting -> Visible`) est formellement interdite.
+    pub fn is_valid_transition(from: ToastLifecycle, to: ToastLifecycle) -> bool {
+        matches!(
+            (from, to),
+            (ToastLifecycle::Entering, ToastLifecycle::Visible)
+                | (ToastLifecycle::Entering, ToastLifecycle::Exiting)
+                | (ToastLifecycle::Visible, ToastLifecycle::Exiting)
+        )
+    }
+
+    /// Transitionne le cycle de vie de manière conditionnelle si l'état actuel correspond exactement à `expected`
+    /// et si la transition est formellement valide.
+    /// Garantit qu'un toast marqué `Exiting` ne régresse jamais vers `Visible`.
+    pub fn transition_lifecycle(
+        &mut self,
+        id: u64,
+        expected: ToastLifecycle,
+        next: ToastLifecycle,
+    ) -> bool {
+        if !Self::is_valid_transition(expected, next) {
+            return false;
         }
+        if let Some(toast) = self.toasts.iter_mut().find(|t| t.id == id) {
+            if toast.lifecycle == expected {
+                toast.lifecycle = next;
+                return true;
+            }
+        }
+        false
     }
 
     pub fn remove_toast(&mut self, id: u64) {
@@ -165,17 +196,44 @@ impl ToastCenter {
                 cx.background_executor()
                     .timer(TOAST_ANIMATION_DURATION)
                     .await;
-                let _ = this.update(cx, |center, cx| {
-                    center.set_lifecycle(id, ToastLifecycle::Visible);
-                    cx.notify();
-                });
+                let transitioned = this
+                    .update(cx, |center, cx| {
+                        let ok = center.transition_lifecycle(
+                            id,
+                            ToastLifecycle::Entering,
+                            ToastLifecycle::Visible,
+                        );
+                        if ok {
+                            cx.notify();
+                        }
+                        ok
+                    })
+                    .unwrap_or(false);
+
+                // Si le toast n'est plus en Entering (ex. déjà Exiting suite à dismiss ou supprimé), abandonner la suite
+                if !transitioned {
+                    return;
+                }
 
                 // Durée d'affichage (3.5s)
                 cx.background_executor().timer(TOAST_DISPLAY_DURATION).await;
-                let _ = this.update(cx, |center, cx| {
-                    center.set_lifecycle(id, ToastLifecycle::Exiting);
-                    cx.notify();
-                });
+                let transitioned = this
+                    .update(cx, |center, cx| {
+                        let ok = center.transition_lifecycle(
+                            id,
+                            ToastLifecycle::Visible,
+                            ToastLifecycle::Exiting,
+                        );
+                        if ok {
+                            cx.notify();
+                        }
+                        ok
+                    })
+                    .unwrap_or(false);
+
+                if !transitioned {
+                    return;
+                }
 
                 // Transition de sortie (120ms) puis suppression
                 cx.background_executor()
@@ -257,10 +315,13 @@ mod tests {
         let id = center.push_toast(ToastKind::Info, "T", "M", None, now, false);
         assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Entering);
 
-        center.set_lifecycle(id, ToastLifecycle::Visible);
+        let ok1 =
+            center.transition_lifecycle(id, ToastLifecycle::Entering, ToastLifecycle::Visible);
+        assert!(ok1);
         assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Visible);
 
-        center.set_lifecycle(id, ToastLifecycle::Exiting);
+        let ok2 = center.transition_lifecycle(id, ToastLifecycle::Visible, ToastLifecycle::Exiting);
+        assert!(ok2);
         assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Exiting);
 
         center.remove_toast(id);
@@ -299,7 +360,52 @@ mod tests {
         let now = Instant::now();
         let id = center.push_toast(ToastKind::Info, "T", "M", None, now, false);
         assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Entering);
-        center.set_lifecycle(id, ToastLifecycle::Exiting);
+        let ok = center.transition_lifecycle(id, ToastLifecycle::Entering, ToastLifecycle::Exiting);
+        assert!(ok);
         assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Exiting);
+    }
+
+    #[test]
+    fn test_toast_dismiss_during_entering_prevents_visible_regression() {
+        let mut center = ToastCenter::new();
+        let now = Instant::now();
+        let id = center.push_toast(ToastKind::Info, "T", "M", None, now, false);
+        assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Entering);
+
+        // L'utilisateur clique sur fermer (dismiss) pendant les 120ms d'Entering
+        let ok = center.transition_lifecycle(id, ToastLifecycle::Entering, ToastLifecycle::Exiting);
+        assert!(ok);
+        assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Exiting);
+
+        // Le timer d'entrée réveillé après 120ms tente de passer Entering -> Visible
+        let transitioned =
+            center.transition_lifecycle(id, ToastLifecycle::Entering, ToastLifecycle::Visible);
+        // La régression vers Visible doit être strictement rejetée
+        assert!(!transitioned);
+        assert_eq!(center.toasts[0].lifecycle, ToastLifecycle::Exiting);
+
+        // Vérification des transitions interdites : Exiting ne peut pas devenir Visible
+        let invalid_transition =
+            center.transition_lifecycle(id, ToastLifecycle::Exiting, ToastLifecycle::Visible);
+        assert!(!invalid_transition);
+    }
+
+    #[test]
+    fn test_toast_deterministic_eviction_all_errors_evicts_oldest() {
+        let mut center = ToastCenter::new();
+        let now = Instant::now();
+        let err1 = center.push_toast(ToastKind::Error, "E1", "M1", None, now, false);
+        let err2 = center.push_toast(ToastKind::Error, "E2", "M2", None, now, false);
+        let err3 = center.push_toast(ToastKind::Error, "E3", "M3", None, now, false);
+        assert_eq!(center.toasts.len(), 3);
+
+        // Si une 4ème erreur arrive alors que la file n'a que des erreurs,
+        // la file bornée doit nécessairement évincer la plus ancienne (err1)
+        let err4 = center.push_toast(ToastKind::Error, "E4", "M4", None, now, false);
+        assert_eq!(center.toasts.len(), 3);
+        assert_eq!(center.toasts[0].id, err2);
+        assert_eq!(center.toasts[1].id, err3);
+        assert_eq!(center.toasts[2].id, err4);
+        assert!(!center.toasts.iter().any(|t| t.id == err1));
     }
 }

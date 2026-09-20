@@ -121,3 +121,20 @@ Shelly respects user motion preferences via `GpuiUiConfig.reduce_motion`:
 2. **Animation Bypass**: Discrete element transitions bypass `.with_animation(...)` and render at static opacity 1.0.
 3. **Toast Snapping**: Toasts render at full opacity immediately on post and dismiss instantaneously without exiting fade.
 4. **Live Synchronization**: Toggling Reduce Motion in `SettingsView` immediately updates `WorkspaceView`, `PackageWorkstationView`, `SidebarView`, and `OperationConsoleView`, snapping any in-flight transitions without requiring disk save.
+
+---
+
+## 6. Context7 & GPUI API Boundary
+
+1. **Documented GPUI Motion APIs**:
+   The motion engine builds on documented GPUI primitives:
+   - `Animation::new`
+   - `.repeat()`
+   - `.with_easing(...)`
+   - `AnimationExt::with_animation(...)`
+   - `Window::request_animation_frame()`
+   - `Window::on_next_frame(...)`
+2. **Version Pinning & Epistemic Boundary**:
+   Context7 queries resolve current/latest GPUI documentation rather than a versioned 0.2.2 bundle. Exact GPUI 0.2.2 compatibility is established strictly by the pinned repository dependency (`gpui = "0.2.2"`) and passing compile/test gates.
+3. **No Native OS Motion Query**:
+   Neither GPUI 0.2.2 nor latest exposes a cross-platform OS query for `prefers-reduced-motion`. The `reduce_motion` preference is Shelly-owned, stored in `GpuiUiConfig`, and toggled by the user in Settings with immediate live propagation.

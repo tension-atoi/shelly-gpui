@@ -12,7 +12,7 @@ Feedback mechanisms in Shelly GPUI provide continuous, low-latency sensory verif
 - **Monotonic ID Generation**: Every toast receives a strictly increasing `u64` identifier (`next_id += 1`).
 - **Bounded Concurrency**: A hard maximum of 3 concurrent visible toasts (`TOAST_MAX_VISIBLE = 3`).
 - **Deterministic Eviction**:
-  - When a 4th toast arrives, `ToastCenter` evicts the oldest non-error notification:
+  - When a 4th toast arrives, `ToastCenter` preferentially preserves Error toasts when a non-error candidate exists:
     ```rust
     let evict_idx = self
         .toasts
@@ -21,9 +21,9 @@ Feedback mechanisms in Shelly GPUI provide continuous, low-latency sensory verif
         .unwrap_or(0);
     self.toasts.remove(evict_idx);
     ```
-  - High-severity errors remain visible until either explicitly dismissed by the user or timed out naturally.
+  - If all 3 visible toasts are Errors and a 4th arrives, the oldest Error (index 0) is evicted. Errors are never immortal in the bounded queue.
 
-### 2.2 Lifecycle & GPUI Animation Binding
+### 2.2 Lifecycle & Race-Free Transitions
 Toasts progress through three distinct states:
 1. **`Entering`**:
    - Duration: 120 ms (`MotionDurations::FAST`).
@@ -49,6 +49,15 @@ Toasts progress through three distinct states:
      )
      ```
    - On completion of the 120ms exit timer, the toast entity is removed from memory.
+
+#### Race Condition Prevention (`transition_lifecycle`)
+A toast lifecycle must never move backward. Allowed transitions are strictly:
+- `Entering -> Visible`
+- `Entering -> Exiting`
+- `Visible -> Exiting`
+
+Any regression (such as `Exiting -> Visible`) is strictly rejected by `is_valid_transition`.
+When an entrance timer fires, `transition_lifecycle(id, ToastLifecycle::Entering, ToastLifecycle::Visible)` verifies that the toast is currently in `Entering`. If the user clicked dismiss in the first 120ms, the toast is already `Exiting`, the transition is rejected, and the normal lifetime sequence terminates immediately.
 
 ### 2.3 Reduced Motion Invariance
 When `reduce_motion = true`:
