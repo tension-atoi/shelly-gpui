@@ -1,4 +1,3 @@
-use crate::icons::AppIcon;
 use crate::state::session::PackageViewMode;
 use crate::theme::Theme;
 use gpui::*;
@@ -17,12 +16,9 @@ pub struct ViewModeSwitcher;
 impl ViewModeSwitcher {
     pub fn render(props: ViewModeSwitcherProps) -> impl IntoElement {
         let theme = props.theme;
-        let is_cards = props.current_mode == PackageViewMode::Cards;
-        let is_table = props.current_mode == PackageViewMode::Table;
-        let on_cards = props.on_select_mode.clone();
-        let on_table = props.on_select_mode.clone();
+        let modes = [PackageViewMode::Cards, PackageViewMode::Table];
 
-        div()
+        let mut container = div()
             .flex()
             .items_center()
             .bg(theme.bg_app)
@@ -30,8 +26,12 @@ impl ViewModeSwitcher {
             .border_color(theme.border)
             .rounded_md()
             .p(px(2.0))
-            .gap(px(2.0))
-            .child(
+            .gap(px(2.0));
+
+        for mode in modes {
+            let is_active = props.current_mode == mode;
+            let on_select = props.on_select_mode.clone();
+            container = container.child(
                 div()
                     .flex()
                     .items_center()
@@ -41,17 +41,17 @@ impl ViewModeSwitcher {
                     .rounded_sm()
                     .cursor_pointer()
                     .text_xs()
-                    .font_weight(if is_cards {
+                    .font_weight(if is_active {
                         FontWeight::BOLD
                     } else {
                         FontWeight::NORMAL
                     })
-                    .bg(if is_cards {
+                    .bg(if is_active {
                         theme.bg_surface_active
                     } else {
                         theme.bg_app
                     })
-                    .text_color(if is_cards {
+                    .text_color(if is_active {
                         theme.accent
                     } else {
                         theme.text_muted
@@ -59,59 +59,21 @@ impl ViewModeSwitcher {
                     .hover(move |s| s.text_color(theme.text_primary))
                     .child(
                         svg()
-                            .path(AppIcon::Cards.path())
+                            .path(mode.icon().path())
                             .size_3()
-                            .text_color(if is_cards {
+                            .text_color(if is_active {
                                 theme.accent
                             } else {
                                 theme.text_muted
                             }),
                     )
-                    .child("Cards")
+                    .child(mode.label())
                     .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                        on_cards(PackageViewMode::Cards, window, cx);
+                        on_select(mode, window, cx);
                     }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .px(px(6.0))
-                    .py(px(2.0))
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .text_xs()
-                    .font_weight(if is_table {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .bg(if is_table {
-                        theme.bg_surface_active
-                    } else {
-                        theme.bg_app
-                    })
-                    .text_color(if is_table {
-                        theme.accent
-                    } else {
-                        theme.text_muted
-                    })
-                    .hover(move |s| s.text_color(theme.text_primary))
-                    .child(
-                        svg()
-                            .path(AppIcon::Table.path())
-                            .size_3()
-                            .text_color(if is_table {
-                                theme.accent
-                            } else {
-                                theme.text_muted
-                            }),
-                    )
-                    .child("Table")
-                    .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                        on_table(PackageViewMode::Table, window, cx);
-                    }),
-            )
+            );
+        }
+
+        container
     }
 }

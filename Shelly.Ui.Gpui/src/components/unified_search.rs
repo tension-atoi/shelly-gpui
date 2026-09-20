@@ -13,6 +13,9 @@ pub struct UnifiedSearchProps<'a> {
     pub is_searching: bool,
     pub total_count: usize,
     pub view_mode: PackageViewMode,
+    pub aur_enabled: bool,
+    pub flatpak_enabled: bool,
+    pub appimage_enabled: bool,
     pub theme: &'a Theme,
     pub on_select_filter: SourceFilterHandler,
     pub on_select_view_mode: ViewModeHandler,
@@ -81,6 +84,55 @@ impl UnifiedSearch {
             on_select_mode: props.on_select_view_mode.clone(),
         });
 
+        let mut pills = div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .child(Self::render_pill(
+                SourceFilter::All,
+                active,
+                None,
+                theme,
+                on_select.clone(),
+            ))
+            .child(Self::render_pill(
+                SourceFilter::Alpm,
+                active,
+                Some(theme.badge_alpm),
+                theme,
+                on_select.clone(),
+            ));
+
+        if props.aur_enabled {
+            pills = pills.child(Self::render_pill(
+                SourceFilter::Aur,
+                active,
+                Some(theme.badge_aur),
+                theme,
+                on_select.clone(),
+            ));
+        }
+
+        if props.flatpak_enabled {
+            pills = pills.child(Self::render_pill(
+                SourceFilter::Flatpak,
+                active,
+                Some(theme.badge_flatpak),
+                theme,
+                on_select.clone(),
+            ));
+        }
+
+        if props.appimage_enabled {
+            pills = pills.child(Self::render_pill(
+                SourceFilter::AppImage,
+                active,
+                Some(theme.badge_appimage),
+                theme,
+                on_select,
+            ));
+        }
+
         div()
             .flex()
             .items_center()
@@ -90,47 +142,7 @@ impl UnifiedSearch {
             .bg(theme.bg_surface)
             .border_b_1()
             .border_color(theme.border)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .child(Self::render_pill(
-                        SourceFilter::All,
-                        active,
-                        None,
-                        theme,
-                        on_select.clone(),
-                    ))
-                    .child(Self::render_pill(
-                        SourceFilter::Alpm,
-                        active,
-                        Some(theme.badge_alpm),
-                        theme,
-                        on_select.clone(),
-                    ))
-                    .child(Self::render_pill(
-                        SourceFilter::Aur,
-                        active,
-                        Some(theme.badge_aur),
-                        theme,
-                        on_select.clone(),
-                    ))
-                    .child(Self::render_pill(
-                        SourceFilter::Flatpak,
-                        active,
-                        Some(theme.badge_flatpak),
-                        theme,
-                        on_select.clone(),
-                    ))
-                    .child(Self::render_pill(
-                        SourceFilter::AppImage,
-                        active,
-                        Some(theme.badge_appimage),
-                        theme,
-                        on_select,
-                    )),
-            )
+            .child(pills)
             .child(
                 div()
                     .flex()

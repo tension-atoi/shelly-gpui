@@ -60,6 +60,9 @@ pub struct PackageWorkstationView {
     pub reduce_motion: bool,
     pub theme: Theme,
     pub compact: bool,
+    pub aur_enabled: bool,
+    pub flatpak_enabled: bool,
+    pub appimage_enabled: bool,
 }
 
 impl PackageWorkstationView {
@@ -71,6 +74,9 @@ impl PackageWorkstationView {
         theme: Theme,
         reduce_motion: bool,
         compact: bool,
+        aur_enabled: bool,
+        flatpak_enabled: bool,
+        appimage_enabled: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.subscribe(&session, |_this, _emitter, _event, cx| {
@@ -108,7 +114,23 @@ impl PackageWorkstationView {
             reduce_motion,
             theme,
             compact,
+            aur_enabled,
+            flatpak_enabled,
+            appimage_enabled,
         }
+    }
+
+    pub fn set_sources_enabled(
+        &mut self,
+        aur: bool,
+        flatpak: bool,
+        appimage: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.aur_enabled = aur;
+        self.flatpak_enabled = flatpak;
+        self.appimage_enabled = appimage;
+        cx.notify();
     }
 
     pub fn set_on_mutation(&mut self, handler: PackageMutationHandler) {
@@ -222,6 +244,9 @@ impl Render for PackageWorkstationView {
                 is_searching,
                 total_count: packages.len(),
                 view_mode,
+                aur_enabled: self.aur_enabled,
+                flatpak_enabled: self.flatpak_enabled,
+                appimage_enabled: self.appimage_enabled,
                 theme: &theme,
                 on_select_filter: {
                     let on_filter = entity_filter.clone();

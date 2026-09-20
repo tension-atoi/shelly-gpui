@@ -46,9 +46,9 @@ pub struct WorkspaceView {
 }
 
 impl WorkspaceView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+
+    pub fn with_config(gpui_config: GpuiUiConfig, cx: &mut Context<Self>) -> Self {
         let shelly_settings = ConfigManager::load_shelly_settings();
-        let gpui_config = ConfigManager::load_gpui_config();
         let theme = if gpui_config.dark_theme {
             Theme::dark()
         } else {
@@ -61,13 +61,7 @@ impl WorkspaceView {
             if gpui_config.compact_view {
                 s.sidebar_collapsed = true;
             }
-            s.destination = match gpui_config.last_selected_tab {
-                1 => NavDestination::Installed,
-                2 => NavDestination::Updates,
-                3 => NavDestination::News,
-                4 => NavDestination::Settings,
-                _ => NavDestination::Browse,
-            };
+            s.destination = NavDestination::from_config_index(gpui_config.last_selected_tab);
             s
         });
         let store = cx.new(|_cx| PackageStore::new(client));
@@ -81,6 +75,10 @@ impl WorkspaceView {
 
         let reduce_motion = gpui_config.reduce_motion;
         let compact = gpui_config.compact_view;
+        let aur_enabled = shelly_settings.aur_enabled;
+        let flatpak_enabled = shelly_settings.flat_pack_enabled;
+        let appimage_enabled = shelly_settings.app_image_enabled;
+
         let workstation = cx.new(|cx| {
             PackageWorkstationView::new(
                 session.clone(),
@@ -90,6 +88,9 @@ impl WorkspaceView {
                 theme,
                 reduce_motion,
                 compact,
+                aur_enabled,
+                flatpak_enabled,
+                appimage_enabled,
                 cx,
             )
         });
@@ -541,47 +542,55 @@ impl WorkspaceView {
             s.next_search_generation()
         });
 
+        let aur_enabled = self.shelly_settings.aur_enabled;
+        let flatpak_enabled = self.shelly_settings.flat_pack_enabled;
+        let appimage_enabled = self.shelly_settings.app_image_enabled;
+
         let client = self.store.read(cx).client.clone();
         let query_clone = trimmed.clone();
 
         cx.spawn(async move |this, cx| {
             let results: Vec<UnifiedPackage> = match filter {
                 SourceFilter::All => {
-                    let (alpm_res, aur_res, flatpak_res) = client.search_all(&query_clone).await;
-                    let appimage_res = client.list_appimages().await;
                     let mut combined = Vec::new();
 
-                    if let Ok(pkgs) = alpm_res {
+                    if let Ok(pkgs) = client.search_standard(&query_clone).await {
                         for p in pkgs {
                             combined.push(UnifiedPackage::from_alpm(p, false));
                         }
                     }
-                    if let Ok(pkgs) = aur_res {
-                        for p in pkgs {
-                            combined.push(UnifiedPackage::from_aur(p, false));
+                    if aur_enabled {
+                        if let Ok(pkgs) = client.search_aur(&query_clone).await {
+                            for p in pkgs {
+                                combined.push(UnifiedPackage::from_aur(p, false));
+                            }
                         }
                     }
-                    if let Ok(pkgs) = flatpak_res {
-                        for p in pkgs {
-                            combined.push(UnifiedPackage::from_flatpak(p, false));
+                    if flatpak_enabled {
+                        if let Ok(pkgs) = client.search_flatpak(&query_clone).await {
+                            for p in pkgs {
+                                combined.push(UnifiedPackage::from_flatpak(p, false));
+                            }
                         }
                     }
-                    if let Ok(appimages) = appimage_res {
-                        let q_lower = query_clone.to_lowercase();
-                        for ai in appimages {
-                            let matches = ai.name.to_lowercase().contains(&q_lower)
-                                || ai
-                                    .desktop_name
-                                    .as_ref()
-                                    .map(|d| d.to_lowercase().contains(&q_lower))
-                                    .unwrap_or(false)
-                                || ai
-                                    .description
-                                    .as_ref()
-                                    .map(|d| d.to_lowercase().contains(&q_lower))
-                                    .unwrap_or(false);
-                            if matches {
-                                combined.push(UnifiedPackage::from_appimage(ai));
+                    if appimage_enabled {
+                        if let Ok(appimages) = client.list_appimages().await {
+                            let q_lower = query_clone.to_lowercase();
+                            for ai in appimages {
+                                let matches = ai.name.to_lowercase().contains(&q_lower)
+                                    || ai
+                                        .desktop_name
+                                        .as_ref()
+                                        .map(|d| d.to_lowercase().contains(&q_lower))
+                                        .unwrap_or(false)
+                                    || ai
+                                        .description
+                                        .as_ref()
+                                        .map(|d| d.to_lowercase().contains(&q_lower))
+                                        .unwrap_or(false);
+                                if matches {
+                                    combined.push(UnifiedPackage::from_appimage(ai));
+                                }
                             }
                         }
                     }
@@ -594,40 +603,56 @@ impl WorkspaceView {
                     .into_iter()
                     .map(|p| UnifiedPackage::from_alpm(p, false))
                     .collect(),
-                SourceFilter::Aur => client
-                    .search_aur(&query_clone)
-                    .await
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|p| UnifiedPackage::from_aur(p, false))
-                    .collect(),
-                SourceFilter::Flatpak => client
-                    .search_flatpak(&query_clone)
-                    .await
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|p| UnifiedPackage::from_flatpak(p, false))
-                    .collect(),
+                SourceFilter::Aur => {
+                    if aur_enabled {
+                        client
+                            .search_aur(&query_clone)
+                            .await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|p| UnifiedPackage::from_aur(p, false))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                }
+                SourceFilter::Flatpak => {
+                    if flatpak_enabled {
+                        client
+                            .search_flatpak(&query_clone)
+                            .await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|p| UnifiedPackage::from_flatpak(p, false))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                }
                 SourceFilter::AppImage => {
-                    let appimages = client.list_appimages().await.unwrap_or_default();
-                    let q_lower = query_clone.to_lowercase();
-                    appimages
-                        .into_iter()
-                        .filter(|ai| {
-                            ai.name.to_lowercase().contains(&q_lower)
-                                || ai
-                                    .desktop_name
-                                    .as_ref()
-                                    .map(|d| d.to_lowercase().contains(&q_lower))
-                                    .unwrap_or(false)
-                                || ai
-                                    .description
-                                    .as_ref()
-                                    .map(|d| d.to_lowercase().contains(&q_lower))
-                                    .unwrap_or(false)
-                        })
-                        .map(UnifiedPackage::from_appimage)
-                        .collect()
+                    if appimage_enabled {
+                        let appimages = client.list_appimages().await.unwrap_or_default();
+                        let q_lower = query_clone.to_lowercase();
+                        appimages
+                            .into_iter()
+                            .filter(|ai| {
+                                ai.name.to_lowercase().contains(&q_lower)
+                                    || ai
+                                        .desktop_name
+                                        .as_ref()
+                                        .map(|d| d.to_lowercase().contains(&q_lower))
+                                        .unwrap_or(false)
+                                    || ai
+                                        .description
+                                        .as_ref()
+                                        .map(|d| d.to_lowercase().contains(&q_lower))
+                                        .unwrap_or(false)
+                            })
+                            .map(UnifiedPackage::from_appimage)
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
                 }
             };
 
@@ -676,7 +701,9 @@ impl WorkspaceView {
                 client.install_package(&name, is_aur, is_flatpak, tx);
             }
             MutationAction::Remove { is_flatpak } => {
-                client.remove_package(&name, is_flatpak, tx);
+                let cascade = self.shelly_settings.package_management_cascade_delete;
+                let remove_configs = self.shelly_settings.package_management_remove_configs;
+                client.remove_package(&name, is_flatpak, cascade, remove_configs, tx);
             }
             MutationAction::UpgradeSystem => {
                 client.upgrade_system(tx);
@@ -685,7 +712,7 @@ impl WorkspaceView {
 
         cx.spawn(async move |this, cx| {
             let mut final_status = false;
-            let mut final_msg = String::from("Opération terminée");
+            let mut final_msg = String::from("Operation completed");
 
             while let Some(event) = rx.recv().await {
                 match event {
@@ -702,9 +729,9 @@ impl WorkspaceView {
                     LogStreamEvent::Finished(success, code) => {
                         final_status = success;
                         final_msg = if success {
-                            format!("Succès (code {:?})", code)
+                            format!("Success (exit code {:?})", code)
                         } else {
-                            format!("Échec de l'opération (code {:?})", code)
+                            format!("Operation failed (exit code {:?})", code)
                         };
                     }
                 }
@@ -735,9 +762,47 @@ impl WorkspaceView {
     }
 
     /// Sauvegarde les paramètres modifiés et met à jour l'application
-    pub fn save_settings(&mut self, cx: &mut Context<Self>) {
+    pub fn save_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let bounds = window.window_bounds();
+        if let WindowBounds::Windowed(b) = bounds {
+            let raw_w = b.size.width / px(1.0);
+            let raw_h = b.size.height / px(1.0);
+            let (w, h) = ConfigManager::sanitize_window_size(raw_w, raw_h);
+            self.settings.draft_gpui.window_width = w;
+            self.settings.draft_gpui.window_height = h;
+        }
+
+        self.settings.draft_gpui.last_selected_tab = self
+            .session
+            .read(cx)
+            .last_workspace_destination
+            .workspace_config_index()
+            .unwrap_or(0);
+
+        let draft_aur = self.settings.draft_shelly.aur_enabled;
+        let draft_flatpak = self.settings.draft_shelly.flat_pack_enabled;
+        let draft_appimage = self.settings.draft_shelly.app_image_enabled;
+
+        let current_filter = self.session.read(cx).source_filter;
+        let filter_invalidated = match current_filter {
+            SourceFilter::Aur if !draft_aur => true,
+            SourceFilter::Flatpak if !draft_flatpak => true,
+            SourceFilter::AppImage if !draft_appimage => true,
+            _ => false,
+        };
+
+        if filter_invalidated {
+            self.session.update(cx, |s, cx| {
+                s.set_source_filter(SourceFilter::All, cx);
+            });
+        }
+
         match self.settings.save() {
             Ok(()) => {
+                let sources_changed = self.shelly_settings.aur_enabled != draft_aur
+                    || self.shelly_settings.flat_pack_enabled != draft_flatpak
+                    || self.shelly_settings.app_image_enabled != draft_appimage;
+
                 self.shelly_settings = self.settings.draft_shelly.clone();
                 self.gpui_config = self.settings.draft_gpui.clone();
                 self.theme = if self.gpui_config.dark_theme {
@@ -755,6 +820,7 @@ impl WorkspaceView {
                     ws.set_theme(theme, cx);
                     ws.set_reduce_motion(reduce, cx);
                     ws.set_compact(self.gpui_config.compact_view, cx);
+                    ws.set_sources_enabled(draft_aur, draft_flatpak, draft_appimage, cx);
                 });
 
                 self.sidebar.update(cx, |sb, cx| {
@@ -772,11 +838,21 @@ impl WorkspaceView {
                     c.set_auto_open(self.gpui_config.log_drawer_open);
                 });
 
+                if sources_changed {
+                    self.store.update(cx, |st, _| {
+                        st.search_cache.clear();
+                    });
+                    let query = self.session.read(cx).search_query.clone();
+                    if !query.trim().is_empty() {
+                        self.execute_search(query, cx);
+                    }
+                }
+
                 self.toast_center.update(cx, |tc, cx| {
                     tc.post(
                         ToastKind::Success,
-                        "Paramètres enregistrés",
-                        "Vos préférences ont été sauvegardées sur le disque.",
+                        "Settings saved",
+                        "Your preferences have been saved to disk.",
                         None,
                         reduce,
                         cx,
@@ -789,7 +865,7 @@ impl WorkspaceView {
                 self.toast_center.update(cx, |tc, cx| {
                     tc.post(
                         ToastKind::Error,
-                        "Erreur de sauvegarde",
+                        "Failed to save settings",
                         format!("{}", e),
                         Some(ToastAction::OpenLogs),
                         reduce,
@@ -1015,9 +1091,9 @@ impl Render for WorkspaceView {
                         },
                         on_save: {
                             let e = entity_st.clone();
-                            Rc::new(move |_w, cx| {
+                            Rc::new(move |w, cx| {
                                 e.update(cx, |view, cx| {
-                                    view.save_settings(cx);
+                                    view.save_settings(w, cx);
                                 })
                             })
                         },

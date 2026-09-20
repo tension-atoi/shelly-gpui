@@ -78,7 +78,7 @@ build() {
 check() {
     cd "${srcdir}/${pkgname}/Shelly.Ui.Gpui"
     export CARGO_TARGET_DIR="target"
-    cargo test --release 2>/dev/null || true
+    cargo test --release
 }
 
 package() {

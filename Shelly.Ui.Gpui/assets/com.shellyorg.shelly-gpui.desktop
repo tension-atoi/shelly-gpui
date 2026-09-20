@@ -1,17 +1,18 @@
 [Desktop Entry]
 Type=Application
-Name=Shelly GPUI
-Name[fr]=Shelly GPUI
-GenericName=Gestionnaire de paquets
+Name=Shelly
+Name[fr]=Shelly
+GenericName=Package Manager
 GenericName[en]=Package Manager
 GenericName[fr]=Gestionnaire de paquets Arch Linux
-Comment=Gestionnaire de paquets Arch Linux — dépôts officiels, AUR, Flatpak et AppImage
-Comment[en]=Arch Linux package manager — official repos, AUR, Flatpak and AppImage
+Comment=Universal package manager for Arch Linux, AUR, Flatpak, and AppImage
+Comment[en]=Universal package manager for Arch Linux, AUR, Flatpak, and AppImage
+Comment[fr]=Gestionnaire de paquets universel pour Arch Linux, AUR, Flatpak et AppImage
 Exec=shelly-gpui
 Icon=shelly-gpui
 Terminal=false
 Categories=System;PackageManager;
-Keywords=pacman;package;manager;aur;flatpak;arch;linux;shelly;alpm;
+Keywords=pacman;package;manager;aur;flatpak;arch;linux;shelly;alpm;appimage;
 StartupWMClass=shelly-gpui
 StartupNotify=true
 X-GNOME-UsesNotifications=false

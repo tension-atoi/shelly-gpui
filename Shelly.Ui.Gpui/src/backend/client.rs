@@ -53,22 +53,6 @@ impl ShellyClient {
         Self::parse_alpm_results(&raw)
     }
 
-    /// Recherche simultanément et en parallèle dans les dépôts officiels, l'AUR et Flatpak
-    pub async fn search_all(
-        &self,
-        query: &str,
-    ) -> (
-        Result<Vec<AlpmPackage>>,
-        Result<Vec<AurPackage>>,
-        Result<Vec<FlatpakHit>>,
-    ) {
-        tokio::join!(
-            self.search_standard(query),
-            self.search_aur(query),
-            self.search_flatpak(query)
-        )
-    }
-
     /// Recherche les paquets installés localement
     pub async fn search_installed(&self, query: &str) -> Result<Vec<AlpmPackage>> {
         let args = if query.trim().is_empty() {
@@ -215,6 +199,8 @@ impl ShellyClient {
         &self,
         name: &str,
         is_flatpak: bool,
+        cascade: bool,
+        remove_configs: bool,
         tx: mpsc::UnboundedSender<LogStreamEvent>,
     ) {
         let mut args = vec!["remove".to_string()];
@@ -224,6 +210,12 @@ impl ShellyClient {
             args.push("standard".to_string());
         }
         args.push(name.to_string());
+        if !is_flatpak && cascade {
+            args.push("--cascade".to_string());
+        }
+        if !is_flatpak && remove_configs {
+            args.push("--remove-config".to_string());
+        }
         args.push("--ui-mode".to_string());
         args.push("--no-confirm".to_string());
 

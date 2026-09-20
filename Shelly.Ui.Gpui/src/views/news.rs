@@ -1,4 +1,5 @@
 use crate::backend::models::ArchNewsItem;
+use crate::icons::AppIcon;
 use crate::theme::Theme;
 use gpui::*;
 
@@ -67,8 +68,9 @@ impl NewsView {
             );
         }
 
-        for item in props.news.iter() {
-            let card = div()
+        for (idx, item) in props.news.iter().enumerate() {
+            let mut card = div()
+                .id(("news_card", idx))
                 .flex()
                 .flex_col()
                 .p_4()
@@ -76,7 +78,18 @@ impl NewsView {
                 .rounded_md()
                 .bg(theme.bg_surface)
                 .border_1()
-                .border_color(theme.border)
+                .border_color(theme.border);
+
+            if let Some(url) = item.url.clone() {
+                card = card
+                    .cursor_pointer()
+                    .hover(|s| s.border_color(theme.accent))
+                    .on_mouse_down(MouseButton::Left, move |_ev, _window, cx| {
+                        cx.open_url(&url);
+                    });
+            }
+
+            card = card
                 .child(
                     div()
                         .flex()
@@ -113,6 +126,25 @@ impl NewsView {
                         "Click to read the full announcement on archlinux.org".to_string()
                     }),
                 ));
+
+            if item.url.is_some() {
+                card = card.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .text_xs()
+                        .text_color(theme.accent)
+                        .mt_2()
+                        .child(
+                            svg()
+                                .path(AppIcon::ExternalUrl.path())
+                                .size_3()
+                                .text_color(theme.accent),
+                        )
+                        .child("Open in browser"),
+                );
+            }
 
             root = root.child(card);
         }
