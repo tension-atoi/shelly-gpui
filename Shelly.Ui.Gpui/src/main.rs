@@ -13,6 +13,7 @@ mod theme;
 pub mod ui_metrics;
 mod views;
 
+use crate::components::search_input::*;
 use gpui::*;
 use views::WorkspaceView;
 
@@ -31,6 +32,26 @@ fn main() {
     Application::new()
         .with_assets(crate::icons::AppIcons::new())
         .run(move |cx: &mut App| {
+            cx.bind_keys([
+                KeyBinding::new("backspace", Backspace, Some("SearchInput")),
+                KeyBinding::new("delete", Delete, Some("SearchInput")),
+                KeyBinding::new("left", Left, Some("SearchInput")),
+                KeyBinding::new("right", Right, Some("SearchInput")),
+                KeyBinding::new("shift-left", SelectLeft, Some("SearchInput")),
+                KeyBinding::new("shift-right", SelectRight, Some("SearchInput")),
+                KeyBinding::new("ctrl-a", SelectAll, Some("SearchInput")),
+                KeyBinding::new("cmd-a", SelectAll, Some("SearchInput")),
+                KeyBinding::new("home", Home, Some("SearchInput")),
+                KeyBinding::new("end", End, Some("SearchInput")),
+                KeyBinding::new("ctrl-v", Paste, Some("SearchInput")),
+                KeyBinding::new("cmd-v", Paste, Some("SearchInput")),
+                KeyBinding::new("ctrl-c", Copy, Some("SearchInput")),
+                KeyBinding::new("cmd-c", Copy, Some("SearchInput")),
+                KeyBinding::new("ctrl-x", Cut, Some("SearchInput")),
+                KeyBinding::new("cmd-x", Cut, Some("SearchInput")),
+                KeyBinding::new("escape", Escape, Some("SearchInput")),
+                KeyBinding::new("enter", Enter, Some("SearchInput")),
+            ]);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds {
                     origin: Point::default(),

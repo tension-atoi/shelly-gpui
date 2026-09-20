@@ -131,7 +131,23 @@ impl WorkspaceView {
             }
             SessionEvent::SearchQueryChanged(q) => {
                 log::debug!("Requête de recherche mise à jour : '{}'", q);
+                this.workstation.update(cx, |ws, cx| {
+                    ws.search_input.update(cx, |si, cx| {
+                        if si.text() != q {
+                            si.set_text(q.clone(), cx);
+                        }
+                    });
+                });
                 this.on_search_input(q.clone(), cx);
+                cx.notify();
+            }
+            SessionEvent::SearchingStateChanged(searching) => {
+                let searching_val = *searching;
+                this.workstation.update(cx, |ws, cx| {
+                    ws.search_input.update(cx, |si, cx| {
+                        si.set_is_searching(searching_val, cx);
+                    });
+                });
                 cx.notify();
             }
             SessionEvent::PackageSelected(opt_key) => {
@@ -163,6 +179,31 @@ impl WorkspaceView {
                 cx.notify();
             }
         })
+        .detach();
+
+        // Abonnement réactif à SearchInput de PackageWorkstationView
+        let entity_ws_search = cx.entity().clone();
+        let search_input_ent = workstation.read(cx).search_input.clone();
+        cx.subscribe(
+            &search_input_ent,
+            move |_this, _emitter, event, cx| match event {
+                crate::components::search_input::SearchEvent::Changed(query) => {
+                    entity_ws_search.update(cx, |view, cx| {
+                        view.on_search_input(query.clone(), cx);
+                    });
+                }
+                crate::components::search_input::SearchEvent::Submitted(query) => {
+                    entity_ws_search.update(cx, |view, cx| {
+                        view.execute_search(query.clone(), cx);
+                    });
+                }
+                crate::components::search_input::SearchEvent::Cleared => {
+                    entity_ws_search.update(cx, |view, cx| {
+                        view.on_search_input(String::new(), cx);
+                    });
+                }
+            },
+        )
         .detach();
 
         // Abonnements réactifs typés aux événements du magasin de paquets et de la console
@@ -908,6 +949,15 @@ impl WorkspaceView {
                 window.focus_next();
             }
             return;
+        }
+
+        if key == "/" && !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt {
+            let search_input = self.workstation.read(cx).search_input.clone();
+            let is_focused = search_input.read(cx).is_focused(window);
+            if !is_focused {
+                search_input.update(cx, |si, _cx| si.focus(window));
+                return;
+            }
         }
 
         let packages = self.current_display_packages(cx);

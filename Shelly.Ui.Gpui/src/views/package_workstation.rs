@@ -1,6 +1,7 @@
 use crate::backend::models::UnifiedPackage;
 use crate::components::package_card::{PackageCard, PackageCardProps};
 use crate::components::package_table::PackageTable;
+use crate::components::search_input::SearchInputView;
 use crate::components::unified_search::UnifiedSearch;
 use crate::state::console::{ConsoleEvent, ConsoleModel};
 use crate::state::{
@@ -63,6 +64,7 @@ pub struct PackageWorkstationView {
     pub aur_enabled: bool,
     pub flatpak_enabled: bool,
     pub appimage_enabled: bool,
+    pub search_input: Entity<SearchInputView>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -102,6 +104,15 @@ impl PackageWorkstationView {
         })
         .detach();
 
+        let search_input = cx.new(|cx| {
+            SearchInputView::new(
+                "Search packages and apps...",
+                config.theme,
+                config.reduce_motion,
+                cx,
+            )
+        });
+
         Self {
             session,
             store,
@@ -120,6 +131,7 @@ impl PackageWorkstationView {
             aur_enabled: config.aur_enabled,
             flatpak_enabled: config.flatpak_enabled,
             appimage_enabled: config.appimage_enabled,
+            search_input,
         }
     }
 
@@ -181,6 +193,8 @@ impl PackageWorkstationView {
 
     pub fn set_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
         self.theme = theme;
+        self.search_input
+            .update(cx, |si, cx| si.set_theme(theme, cx));
         cx.notify();
     }
 
@@ -296,90 +310,16 @@ impl Render for PackageWorkstationView {
         };
 
         let top_bar = match destination {
-            crate::state::NavDestination::Browse => {
-                let entity_input = entity.clone();
-                let search_input = div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_4()
-                    .py_2p5()
-                    .bg(theme.bg_sidebar)
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .child(
-                        svg()
-                            .path(crate::icons::AppIcon::Search.path())
-                            .size_4()
-                            .text_color(theme.text_muted),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_sm()
-                            .text_color(theme.text_primary)
-                            .child(if search_query.is_empty() {
-                                div()
-                                    .text_color(theme.text_muted)
-                                    .child("Search packages (e.g. ripgrep, firefox)...")
-                            } else {
-                                div().child(search_query.clone())
-                            }),
-                    )
-                    .child(if is_searching {
-                        if self.reduce_motion {
-                            div()
-                                .text_xs()
-                                .text_color(theme.accent)
-                                .child("Searching...")
-                                .into_any_element()
-                        } else {
-                            div()
-                                .id("searching_indicator")
-                                .text_xs()
-                                .text_color(theme.accent)
-                                .child("Searching...")
-                                .with_animation(
-                                    ("search_pulse", 0usize),
-                                    Animation::new(std::time::Duration::from_millis(800))
-                                        .repeat()
-                                        .with_easing(gpui::pulsating_between(0.4, 1.0)),
-                                    |el, delta| el.opacity(delta),
-                                )
-                                .into_any_element()
-                        }
-                    } else if !packages.is_empty() {
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child(format!("{} results", packages.len()))
-                            .into_any_element()
-                    } else {
-                        div().into_any_element()
-                    })
-                    .on_key_down(move |event, _w, cx| {
-                        let key = event.keystroke.key.as_str();
-                        entity_input.update(cx, |view, cx| {
-                            let mut cur = view.session.read(cx).search_query.clone();
-                            if key == "backspace" {
-                                cur.pop();
-                                view.session.update(cx, |s, cx| s.set_search_query(cur, cx));
-                            } else if key == "escape" {
-                                view.session
-                                    .update(cx, |s, cx| s.set_search_query(String::new(), cx));
-                            } else if event.keystroke.key.chars().count() == 1 {
-                                cur.push_str(key);
-                                view.session.update(cx, |s, cx| s.set_search_query(cur, cx));
-                            }
-                        });
-                    });
-
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(search_input)
-                    .child(filter_bar)
-            }
+            crate::state::NavDestination::Browse => div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .p_2()
+                .bg(theme.bg_sidebar)
+                .border_b_1()
+                .border_color(theme.border)
+                .child(self.search_input.clone())
+                .child(filter_bar),
             crate::state::NavDestination::Installed => div()
                 .flex()
                 .items_center()

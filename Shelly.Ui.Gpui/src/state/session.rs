@@ -199,6 +199,7 @@ pub enum SessionEvent {
     SidebarToggled(bool),
     ViewModeChanged(PackageViewMode),
     InspectorTabChanged(InspectorTab),
+    SearchingStateChanged(bool),
 }
 
 /// Entité GPUI gérant l'état de navigation et d'intention de l'utilisateur
@@ -311,8 +312,11 @@ impl AppSession {
     }
 
     pub fn set_searching(&mut self, searching: bool, cx: &mut Context<Self>) {
-        self.is_searching = searching;
-        cx.notify();
+        if self.is_searching != searching {
+            self.is_searching = searching;
+            cx.emit(SessionEvent::SearchingStateChanged(searching));
+            cx.notify();
+        }
     }
 }
 
