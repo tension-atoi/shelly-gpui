@@ -3,7 +3,7 @@
 # Paquet: frontend GPUI natif Rust pour le gestionnaire de paquets Shelly (ALPM + AUR + Flatpak + AppImage)
 
 pkgname=shelly-gpui-git
-pkgver=r0.git
+pkgver=r4636.g45997563
 pkgrel=1
 pkgdesc="Frontend GPUI natif Rust pour Shelly — gestionnaire de paquets Arch Linux (ALPM, AUR, Flatpak, AppImage)"
 arch=('x86_64')
@@ -50,7 +50,6 @@ pkgver() {
 
 prepare() {
     cd "${srcdir}/${pkgname}"
-    # Pré-charge les dépendances Cargo sans accès réseau à l'étape build
     cd Shelly.Ui.Gpui
     cargo fetch --locked 2>/dev/null || cargo fetch
 }
@@ -68,7 +67,6 @@ build() {
     echo ">>> Compilation du frontend GPUI (Rust)..."
     cd Shelly.Ui.Gpui
     export CARGO_TARGET_DIR="target"
-    # Pointe SHELLY_BIN vers le CLI local compilé pour les tests éventuels
     SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \
         cargo build --release --locked 2>/dev/null || \
     SHELLY_BIN="${srcdir}/${pkgname}/Shelly.Cli.Zig/zig-out/bin/shelly" \

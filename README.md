@@ -1,323 +1,146 @@
-![shelly_banner.png](shelly_banner.png)
+# ⚡ Shelly GPUI
 
-### Powered by
+<div align="center">
 
-<a href="https://jb.gg/OpenSource">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://www.jetbrains.com/company/brand/img/logo_jb_dos_3.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg">
-    <img alt="JetBrains logo." src="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg">
-  </picture>
-</a>
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
+[![Zig](https://img.shields.io/badge/Zig-0.13%20%7C%200.14%20%7C%200.16-f7a41d.svg)](https://ziglang.org/)
+[![GPUI](https://img.shields.io/badge/UI-GPUI%200.2-blueviolet.svg)](https://github.com/zed-industries/zed/tree/main/crates/gpui)
+[![Arch Linux](https://img.shields.io/badge/Arch%20Linux-ALPM%20%2B%20AUR-1793d1.svg)](https://archlinux.org/)
 
-## About
+**Gestionnaire de paquets unifié haute performance pour Arch Linux, accéléré par GPU.**  
+*Dépôts officiels (ALPM), AUR, Flatpaks et AppImages réunis dans une interface réactive inspirée de Zed.*
 
-Shelly is a modern package manager for Arch Linux designed to be a more user-friendly alternative. Offering a visual interface with a focus on user experience and ease of use. Shelly interfaces directly with `libalpm`. It is a complete reimagination of how a user interacts with their Arch Linux system, providing a more intuitive experience.
+[Fonctionnalités](#-fonctionnalités) •
+[Architecture](#-architecture) •
+[Installation & Compilation](#-installation--compilation) •
+[Raccourcis & Utilisation](#-raccourcis--utilisation) •
+[Packaging AUR](#-packaging-aur) •
+[Crédits](#-crédits)
 
-## Quick Install
+</div>
 
-The recommended installation method for Shelly is for CachyOS or using CachyOS packages
+---
 
-```bash
-sudo pacman -S shelly
+## 🚀 Fonctionnalités
+
+- ⚡ **Accélération matérielle native GPU** : Construit sur le framework **GPUI** (le moteur graphique de Zed), garantissant un rendu fluide à 120+ FPS via Vulkan/Wayland/Blade Graphics.
+- 📦 **Support multi-backends unifié** :
+  - **Dépôts officiels Arch Linux** (via libalpm / Shelly CLI)
+  - **AUR** (clones git, builds sécurisés en chroot)
+  - **Flatpaks** (gestion des catalogues Flathub et permissions)
+  - **AppImages** (détection et indexation automatique)
+- 🔍 **Recherche en direct interactive (`TextInput`)** : Saisie fluide avec debounce prédictif de 300 ms sans bloquer le thread graphique.
+- 📋 **Volet des détails enrichi** : Dépendances, dépendances optionnelles, reverse dependencies ("Requis par"), paquet de base, motifs d'installation, licences et tailles réelles.
+- 📟 **Terminal embarqué & Streaming de logs** : Tiroir inférieur repliable permettant de suivre chaque transaction `pacman`, build AUR ou installation Flatpak en temps réel avec élévation Polkit.
+- 🔄 **Rafraîchissement automatique** : Synchronisation immédiate des compteurs et listes dès la complétion réussie d'une transaction.
+- 🎨 **Thème moderne Catppuccin Mocha** : Typographie soignée, contrastes travaillés, badges contextuels par source.
+
+---
+
+## 🏗 Architecture
+
+Shelly GPUI adopte une séparation stricte des responsabilités entre la vue et le moteur de transaction système :
+
+```mermaid
+graph TD
+    subgraph Frontend [Shelly.Ui.Gpui (Rust)]
+        GPUI[GPUI / Blade Renderer] --> Workspace[WorkspaceView & Panes]
+        Workspace --> LiveSearch[Live Search / Debounce 300ms]
+        Workspace --> LogDrawer[Terminal Log Drawer]
+        LogDrawer --> Stream[Tokio Async Streaming Process]
+    end
+
+    subgraph Backend [Shelly.Cli.Zig (Zig)]
+        Stream -->|shelly --ui-mode -j| CLI[Shelly CLI Engine]
+        CLI --> ALPM[libalpm / Pacman Engine]
+        CLI --> AUR[AUR RPC / Git Builder]
+        CLI --> FP[Flatpak Engine]
+        CLI --> AI[AppImage Manager]
+        CLI --> Polkit[Polkit / pkexec Auth]
+    end
 ```
 
-This will download and install the latest release, including the UI and CLI tools.
+- **Frontend (`Shelly.Ui.Gpui`)** : Application Rust compilée avec GPUI 0.2, gérant le rendu vectoriel direct sur GPU, la disposition flexible et l'état réactif de l'interface.
+- **Backend (`Shelly.Cli.Zig`)** : Moteur natif Zig interagissant directement avec `libalpm.so` et les sources externes. Il émet des flux JSON structurés pour les requêtes de lecture et des flux encadrés `--ui-mode` pour les opérations avec logs en direct.
 
-To install with an AUR helper like yay or paru.
+---
 
-```bash
-yay -S shelly
-```
+## 🛠 Installation & Compilation
 
-or
+### Prérequis
 
-```bash
-paru -S shelly
-```
-
-## Uninstall
-
-#### For standard package removal
+Sur Arch Linux ou dérivés :
 
 ```bash
-sudo pacman -Rns shelly
+sudo pacman -S --needed base-devel git rust cargo zig pacman libglvnd fontconfig freetype2 wayland mesa vulkan-icd-loader polkit
 ```
 
-#### If installed from AUR
+### 1. Compilation et lancement rapide avec `make`
+
+Le dépôt inclut un `Makefile` universel qui compile automatiquement le backend Zig et lance le frontend :
 
 ```bash
-yay -Rns shelly
+git clone https://github.com/tension-atoi/shelly-gpui.git
+cd shelly-gpui
+
+# Lance directement l'application en mode développement
+make run
+
+# Ou compiler le binaire de release optimisé
+make build
 ```
 
-or
+Les commandes du Makefile :
+- `make run` : compile le backend Zig si nécessaire et lance `cargo run`
+- `make build` : produit le binaire release optimisé (`shelly-gpui`)
+- `make check` : vérifie la validité du code Rust sans étape de link
+- `make install` : installe les binaires et fichiers de bureau dans `/usr/local`
+- `make package` : teste la création du paquet Arch Linux via `makepkg`
+- `make clean` : nettoie les caches et artefacts de compilation
+
+---
+
+## ⌨ Raccourcis & Utilisation
+
+| Touche / Action | Contexte | Effet |
+|---|---|---|
+| **Clic sur recherche** | Volet gauche | Active la saisie avec curseur visuel `▌` |
+| **Saisie texte** | Barre de recherche | Recherche live avec debounce automatique de 300 ms |
+| **Entrée** | Barre de recherche | Force la recherche immédiatement (bypass debounce) |
+| **Échap** | Barre de recherche | Efface la requête et désactive le focus clavier |
+| **Clic sur la barre du bas** | Partout | Ouvre / ferme le tiroir de logs du terminal |
+| **Onglets (Haut)** | Navigation | Bascule entre ALPM, AUR, Flatpaks, AppImages, Mises à jour, News, Paramètres |
+
+---
+
+## 📦 Packaging Arch Linux (AUR)
+
+Un fichier [`PKGBUILD-gpui`](PKGBUILD-gpui) ainsi qu'un répertoire [`packaging/aur/`](packaging/aur/) sont fournis pour installer l'application proprement via pacman :
 
 ```bash
-paru -Rns shelly
+# Compilation du paquet localement
+makepkg -si --noconfirm
 ```
 
-## Features
+Le paquet installe :
+- `/usr/bin/shelly-gpui` : lanceur système avec détection automatique de l'environnement
+- `/usr/lib/shelly/shelly` : moteur backend Zig
+- `/usr/lib/shelly/shelly-gpui-bin` : binaire graphique GPUI Rust
+- `/usr/share/applications/com.shellyorg.shelly-gpui.desktop` : intégration au menu d'applications
+- `/usr/share/icons/hicolor/scalable/apps/shelly-gpui.svg` : icône vectorielle Catppuccin
+- `/usr/share/polkit-1/actions/com.shellyorg.shelly-gpui.policy` : règles d'élévation Polkit pour l'installation/suppression sans mot de passe intempestif
 
-- **Modern-CLI**: Provides a command-line interface for advanced users and automation, with a focus on ease of use.
-- **Native Arch Integration**: Directly interacts with `libalpm` for accurate and fast package management.
-- **Native Wayland Support**: Front end built using GTK4.
-- **Package Management**: Supports searching and filtering for, installing, updating, and removing packages.
-- **Repository Management**: Synchronizes with official repositories to keep package lists up to date.
-- **AUR Support**: Integration with the Arch User Repository for a wider range of software.
-- **Optional Flatpak Support**: Install `shelly-flatpak-backend` to manage
-  Flatpak applications alongside native packages without making Flatpak a
-  runtime dependency of the base Shelly package.
+---
 
-## AUR package availability
+## 🤝 Crédits & Remerciements
 
-`shelly install aur` (`shelly -Ia`) requires the requested package and any AUR
-build dependencies to be listed by the configured AUR service. Cached checkouts
-and surviving Git repositories do not authorize building a removed package.
-This also applies to `--version` installs. If availability cannot be verified
-because the service is unreachable, retry once the connection is restored.
+- [Seafoam-Labs/Shelly-ALPM](https://github.com/Seafoam-Labs/Shelly-ALPM) pour le moteur initial Shelly et son architecture Zig / ALPM.
+- [Zed Industries](https://github.com/zed-industries/zed) pour le framework graphique [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui).
+- La communauté [Catppuccin](https://github.com/catppuccin/catppuccin) pour la palette de couleurs Mocha.
 
-When an unavailable AUR package has an exact match in a configured repository,
-Shelly suggests `shelly -Is <package>`. Explicit local builds with
-`shelly build /path/to/PKGBUILD` and removal of installed packages remain
-available without an AUR availability check.
+---
 
-## PKGBUILD review
+## 📄 Licence
 
-Terminal PKGBUILD reviews show changed lines with three unchanged lines of
-context before and after each change. Nearby changes share their context;
-omitted sections are marked with the number of hidden lines. First reviews
-without a previous PKGBUILD show the complete file.
-
-`CollapsePkgbuildDiff` defaults to `true`, including for existing configurations
-that do not contain the setting. To show the full file during review:
-
-```bash
-shelly config set CollapsePkgbuildDiff false
-```
-
-Restore the collapsed view with `shelly config set CollapsePkgbuildDiff true`.
-Security warnings, attached source files, and approval prompts are always
-handled as before. This setting controls terminal review output; GUI reviews
-continue to receive the complete diff.
-
-## AppImage checks during combined upgrades
-
-To skip AppImage update checks and upgrades during `shelly upgrade all`:
-
-```bash
-shelly config set DisableAppImageUpdateCheck true
-```
-
-This also applies to combined-upgrade aliases, including bare `shelly` and
-`shelly -U`. The setting defaults to `false`; restore AppImage checks with
-`shelly config set DisableAppImageUpdateCheck false`. Explicit
-`shelly upgrade appimage` and `shelly list-updates` checks remain available.
-The one-time `shelly upgrade all --no-appimage` flag also skips AppImages.
-
-## Flatpak checks during combined upgrades
-
-To skip Flatpak update checks and upgrades during `shelly upgrade all`:
-
-```bash
-shelly config set DisableFlatpakUpdateCheck true
-```
-
-This also applies to combined-upgrade aliases, including bare `shelly` and
-`shelly -U`. The setting defaults to `false`; restore Flatpak checks with
-`shelly config set DisableFlatpakUpdateCheck false`. Explicit
-`shelly upgrade flatpak` and `shelly list-updates` checks remain available.
-The one-time `shelly upgrade all --no-flatpak` flag also skips Flatpak.
-This preference can be used together with `DisableAppImageUpdateCheck`.
-
-## Upgrade cache cleaning
-
-To skip the package-cache cleanup prompt and deletion during `shelly upgrade all`:
-
-```bash
-shelly config set DisableCacheClean true
-```
-
-This also applies to upgrade-all aliases and takes precedence over
-`AutoConfirmCacheClean`. The setting defaults to `false`; restore the existing
-cleanup behavior with `shelly config set DisableCacheClean false`.
-Standalone `shelly upgrade standard` keeps its existing cleanup behavior.
-You can still clean the cache manually with `shelly purify standard --cache`.
-
-Add `--aur-cache` to also delete **all** built AUR package archives and their
-matching signatures from the invoking user's `$XDG_CACHE_HOME/Shelly` cache
-(default: `~/.cache/Shelly`):
-
-```bash
-shelly purify standard --cache --aur-cache --dry-run
-shelly purify standard --cache --aur-cache
-```
-
-The command previews the files and asks for confirmation before deleting them.
-`--aur-cache` can also be used without `--cache`; standard purify still checks
-for corrupted archives. AUR PKGBUILDs, checkout history, source files, and build
-directories are retained. Archives in custom build output destinations outside
-Shelly's cache are not included.
-
-## Roadmap
-
-Upcoming features and development targets:
-
-- **Repository Modification**: Allow modification of supported repositories (In progress).
-- **Offline Updates**: Similar functionality to pacman-offline script
-- **Layout Customization**: Allow for customization of the individual user experience.
-
-## Prerequisites
-
-- **Arch Linux** (or an Arch-based distribution)
-- **zig 0.16.0** (for building)
-- **vala** (for building)
-- **libalpm** (provided by `pacman`)
-
-#### Optional Prerequisites
-
-- **Flatpak support**: Install both `flatpak` and
-  `shelly-flatpak-backend`. The backend is loaded only for a Flatpak operation.
-  A base-only Shelly installation keeps ALPM, AUR, AppImage, help, version, and
-  completion commands available.
-
-## Installation
-
-### Using PKGBUILD
-
-Since Shelly is designed for Arch Linux, you can build and install it using the provided git `PKGBUILD`:
-
-```bash
-git clone https://github.com/Seafoam-Labs/Shelly-ALPM.git
-cd Shelly-ALPM
-cp PKGBUILD-git PKGBUILD
-makepkg -si
-```
-
-### Manual Build
-
-The native Zig components can be built and tested independently:
-
-```bash
-(cd Shelly.Flatpak.Backend && zig build integration-test)
-(cd Shelly.Http && zig build test)
-(cd Shelly.PackageManager && zig build test)
-(cd Shelly.Cli.Zig && zig build test)
-(cd Shelly.Ui.Gtk && zig build test)
-```
-
-To build both optional configurations and verify their ELF boundaries:
-
-```bash
-scripts/test-flatpak-separation.sh
-```
-
-## Usage
-
-Run the application from your terminal:
-
-For ui:
-
-```bash
-shelly-ui
-```
-
-For cli:
-
-```bash
-shelly
-```
-
-Notifications will be started with the ui, or it can be configured to launch at startup using your systems startup
-configuration to run:
-
-```bash
-shelly-notifications
-```
-
-## Shelly-CLI
-
-Shelly also includes a command-line interface (`shelly-cli`) for users who prefer terminal-based package management. The
-CLI provides the same core functionality as the UI but in a scriptable, terminal-friendly format.
-
-### CLI Commands
-
-Full documentation can be viewed on the [Shelly CLI Reference](https://www.seafoam-labs.org/shelly-alpm/docs/cli-reference/) page.
-
-Use `--needed` with standard installs to skip same-version reinstalls while still
-installing missing packages and allowing upgrades. The flag works before or after
-package names, and `-n` remains the separate no-confirm option:
-
-```bash
-shelly -Is zed --needed
-shelly -Is --needed zed git -n
-```
-
-This also applies to local Arch package archives. URL archives are downloaded
-before their package metadata can be checked. Without `--needed`, reinstall
-behavior is unchanged; AUR builds and Shelly binary archives are unaffected.
-
-The versioned JSON contracts used by unattended package-building services are
-documented in [Remora automation contract](docs/remora-automation.md). Probe an
-installed binary with `shelly --version --json` before scheduling a build.
-
-Generate makepkg-compatible SRCINFO from a reviewed PKGBUILD without running
-its build lifecycle:
-
-```bash
-shelly build --makesrcinfo --reviewed PKGBUILD > .SRCINFO
-```
-
-The AUR builder extracts source archives and decompresses standalone gzip/Unix
-compress (`.gz`, `.z`, `.Z`), bzip2 (`.bz2`, `.bz`), xz (`.xz`), and zstd (`.zst`)
-files before running `prepare()`. Standalone files must have matching compression
-content and extensions. The output uses the source alias with its compression
-extension removed: `dsearch-x86_64-1.6.0.gz` becomes `dsearch-x86_64-1.6.0`.
-The original compressed file remains in `src`, and `noextract` entries stay
-compressed. Decompression rejects output collisions and files exceeding 4 GiB;
-failed source preparation discards the staging tree.
-
-### CLI Configuration
-
-Shelly-CLI uses a JSON configuration file to customize its behavior. On the first run, it automatically creates a
-default configuration file at:
-
-`~/.config/shelly/config.json`
-
-#### Configuration Options
-
-These are listed on the [Shelly Configuration](https://www.seafoam-labs.org/shelly-alpm/docs/config/) page.
-
-## Development
-
-Shelly is structured into several components:
-
-- **Shelly.Ui.Gtk**: The native GTK4 desktop application.
-- **Shelly.Cli.Zig**: Command-line interface for terminal and UI operations.
-- **Shelly.Flatpak.Backend**: Optional versioned shared library containing all
-  libflatpak/GLib-native implementation details.
-- **Shelly.Http**: Standalone HTTP client with a compatibility TLS implementation.
-- **Shelly-Notifications**: Tray service to manage notifactions the Shelly-UI.
-- **Shelly.PackageManager**: Core libalpm/AUR/AppImage logic plus the
-  backend-neutral Flatpak facade and secure loader.
-
-### Building for Development
-
-```bash
-scripts/test-flatpak-separation.sh
-```
-
-### Running Tests
-
-```bash
-(cd Shelly.Flatpak.Backend && zig build test abi-test parity-test integration-test)
-(cd Shelly.Http && zig build test)
-(cd Shelly.PackageManager && zig build test)
-(cd Shelly.Cli.Zig && zig build test)
-```
-
-The backend ABI, memory ownership, discovery rules, and version-bump procedure
-are documented in [docs/flatpak-backend-abi.md](docs/flatpak-backend-abi.md).
-
-## License
-
-This project is licensed under the GPL-3.0 License – see the [LICENSE](LICENSE) file for details.
+Ce projet est distribué sous licence **GPL-3.0**. Consultez le fichier [LICENSE](LICENSE) pour plus de détails.

@@ -1,0 +1,102 @@
+name: CI & Release
+
+on:
+  push:
+    branches: [ "main", "feature/**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test (Arch Linux Container)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - name: Update system & Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git rust cargo zig pkgconf clang \
+            pacman libglvnd fontconfig freetype2 wayland mesa vulkan-icd-loader polkit
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Compile Zig Backend (Shelly.Cli.Zig)
+        run: |
+          cd Shelly.Cli.Zig
+          zig build -Doptimize=ReleaseSafe
+
+      - name: Verify Shelly CLI
+        run: |
+          ./Shelly.Cli.Zig/zig-out/bin/shelly --version
+
+      - name: Cargo Check & Test (Shelly.Ui.Gpui)
+        run: |
+          cd Shelly.Ui.Gpui
+          export CARGO_TARGET_DIR="target"
+          SHELLY_BIN="../Shelly.Cli.Zig/zig-out/bin/shelly" cargo check
+          SHELLY_BIN="../Shelly.Cli.Zig/zig-out/bin/shelly" cargo test --release
+
+      - name: Cargo Build Release
+        run: |
+          cd Shelly.Ui.Gpui
+          export CARGO_TARGET_DIR="target"
+          SHELLY_BIN="../Shelly.Cli.Zig/zig-out/bin/shelly" cargo build --release
+
+      - name: Prepare Release Artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p dist/usr/bin dist/usr/lib/shelly dist/usr/share/applications dist/usr/share/icons/hicolor/scalable/apps dist/usr/share/polkit-1/actions
+
+          # Binaires
+          install -Dm755 Shelly.Cli.Zig/zig-out/bin/shelly dist/usr/lib/shelly/shelly
+          install -Dm755 Shelly.Ui.Gpui/target/release/shelly-gpui dist/usr/lib/shelly/shelly-gpui-bin
+
+          cat > dist/usr/bin/shelly-gpui << 'EOF'
+          #!/bin/sh
+          SHELLY_BIN=/usr/lib/shelly/shelly exec /usr/lib/shelly/shelly-gpui-bin "$@"
+          EOF
+          chmod 755 dist/usr/bin/shelly-gpui
+
+          # Intégration bureau
+          install -Dm644 Shelly.Ui.Gpui/assets/com.shellyorg.shelly-gpui.desktop dist/usr/share/applications/
+          install -Dm644 Shelly.Ui.Gpui/assets/shelly-gpui.svg dist/usr/share/icons/hicolor/scalable/apps/
+          install -Dm644 Shelly.Ui.Gpui/assets/com.shellyorg.shelly-gpui.policy dist/usr/share/polkit-1/actions/
+
+          cd dist
+          tar -czvf ../shelly-gpui-linux-x86_64.tar.gz usr/
+
+      - name: Upload Binary Artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: shelly-gpui-linux-x86_64
+          path: shelly-gpui-linux-x86_64.tar.gz
+
+  release:
+    name: GitHub Release
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: shelly-gpui-linux-x86_64
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: shelly-gpui-linux-x86_64.tar.gz
+          generate_release_notes: true
