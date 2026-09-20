@@ -4,6 +4,9 @@
 
 This matrix maps every commitment defined in `02-WORK-CONTRACT.md` and `03-MOTION-SPECIFICATION.md` to concrete source code locations, unit test telemetry, and empirical runtime Wayland framebuffer evidence.
 
+**Baseline HEAD**: `9d2d1c76f729a6bf57f53339c13074a6d4247783`  
+**Closure Git HEAD**: `7571e8bd0a8bd65698f5c6290fb3a01733c8601a`  
+
 Evidence Classes:
 - **`TEST VERIFIED`**: Covered by deterministic automated unit tests in `cargo test`.
 - **`COMPILER VERIFIED`**: Enforced at compile time under `#![deny(dead_code, unused_variables, unused_imports, unused_must_use)]`.

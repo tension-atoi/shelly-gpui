@@ -5,6 +5,7 @@
 **Slice Designation**: SLICE-04 — Motion, Interaction Polish, Feedback & High-Frequency UI Isolation  
 **Repository**: `tension-atoi/shelly-gpui`  
 **Branch**: `main`  
+**Closure Git HEAD**: `7571e8bd0a8bd65698f5c6290fb3a01733c8601a`  
 **Status**: **ACCEPTED & CLOSED**  
 **Evidence Standard**: Multi-tier (Compile-Time Hard Enforcement + Unit Test Telemetry + Native Wayland Compositor Framebuffer Captures)
 
