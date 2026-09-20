@@ -251,11 +251,7 @@ impl LogDrawer {
                         .size_3()
                         .text_color(theme.text_secondary),
                 )
-                .child(if is_open {
-                    "Hide"
-                } else {
-                    "Show"
-                });
+                .child(if is_open { "Hide" } else { "Show" });
 
             if let Some(handler) = on_toggle {
                 btn = btn.on_mouse_down(MouseButton::Left, move |e, w, cx| handler(e, w, cx));

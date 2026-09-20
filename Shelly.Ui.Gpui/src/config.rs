@@ -224,7 +224,8 @@ mod tests {
         assert_eq!(h_valid, 1000.0);
 
         // Boundary test at exact minimums
-        let (w_min, h_min) = ConfigManager::sanitize_window_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT);
+        let (w_min, h_min) =
+            ConfigManager::sanitize_window_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT);
         assert_eq!(w_min, 1024.0);
         assert_eq!(h_min, 680.0);
     }

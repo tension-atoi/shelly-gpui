@@ -169,12 +169,9 @@ impl SettingsView {
                                 .child("Up to Date")
                         }),
                 )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child("Configuration of package sources, desktop preferences, and motion policy."),
-                ),
+                .child(div().text_xs().text_color(theme.text_muted).child(
+                    "Configuration of package sources, desktop preferences, and motion policy.",
+                )),
         );
 
         // Section 1: PACKAGE SOURCES
@@ -589,7 +586,10 @@ mod tests {
 
         settings.reset_to(initial_shelly.clone(), initial_gpui.clone());
         assert!(!settings.is_dirty);
-        assert_eq!(settings.draft_shelly.aur_enabled, initial_shelly.aur_enabled);
+        assert_eq!(
+            settings.draft_shelly.aur_enabled,
+            initial_shelly.aur_enabled
+        );
         assert_eq!(settings.draft_gpui.dark_theme, initial_gpui.dark_theme);
     }
 }

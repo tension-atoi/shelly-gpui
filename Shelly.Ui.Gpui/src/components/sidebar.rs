@@ -70,12 +70,7 @@ impl Sidebar {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(
-                    svg()
-                        .path(icon.path())
-                        .size_4()
-                        .text_color(icon_color),
-                ),
+                .child(svg().path(icon.path()).size_4().text_color(icon_color)),
         );
 
         if !is_collapsed {

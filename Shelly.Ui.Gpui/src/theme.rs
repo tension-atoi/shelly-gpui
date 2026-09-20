@@ -84,8 +84,8 @@ impl Theme {
 
 #[cfg(test)]
 mod tests {
-    use core::prelude::v1::test;
     use super::*;
+    use core::prelude::v1::test;
 
     #[test]
     fn test_theme_dark_and_light_parity_and_contrast() {
@@ -110,4 +110,3 @@ mod tests {
         assert_eq!(def.accent, dark.accent);
     }
 }
-

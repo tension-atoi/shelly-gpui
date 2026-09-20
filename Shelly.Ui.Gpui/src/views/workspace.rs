@@ -11,7 +11,7 @@ use crate::state::{
 use crate::theme::Theme;
 use crate::views::news::{NewsView, NewsViewProps};
 use crate::views::operation_console::OperationConsoleView;
-use crate::views::package_workstation::PackageWorkstationView;
+use crate::views::package_workstation::{PackageWorkstationConfig, PackageWorkstationView};
 use crate::views::settings::{SettingsView, SettingsViewProps};
 use crate::views::sidebar::SidebarView;
 use gpui::ScrollStrategy;
@@ -46,7 +46,6 @@ pub struct WorkspaceView {
 }
 
 impl WorkspaceView {
-
     pub fn with_config(gpui_config: GpuiUiConfig, cx: &mut Context<Self>) -> Self {
         let shelly_settings = ConfigManager::load_shelly_settings();
         let theme = if gpui_config.dark_theme {
@@ -85,12 +84,14 @@ impl WorkspaceView {
                 store.clone(),
                 console.clone(),
                 toast_center.clone(),
-                theme,
-                reduce_motion,
-                compact,
-                aur_enabled,
-                flatpak_enabled,
-                appimage_enabled,
+                PackageWorkstationConfig {
+                    theme,
+                    reduce_motion,
+                    compact,
+                    aur_enabled,
+                    flatpak_enabled,
+                    appimage_enabled,
+                },
                 cx,
             )
         });

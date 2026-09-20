@@ -65,18 +65,23 @@ pub struct PackageWorkstationView {
     pub appimage_enabled: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct PackageWorkstationConfig {
+    pub theme: Theme,
+    pub reduce_motion: bool,
+    pub compact: bool,
+    pub aur_enabled: bool,
+    pub flatpak_enabled: bool,
+    pub appimage_enabled: bool,
+}
+
 impl PackageWorkstationView {
     pub fn new(
         session: Entity<AppSession>,
         store: Entity<PackageStore>,
         console: Entity<ConsoleModel>,
         toast_center: Entity<ToastCenter>,
-        theme: Theme,
-        reduce_motion: bool,
-        compact: bool,
-        aur_enabled: bool,
-        flatpak_enabled: bool,
-        appimage_enabled: bool,
+        config: PackageWorkstationConfig,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.subscribe(&session, |_this, _emitter, _event, cx| {
@@ -89,13 +94,11 @@ impl PackageWorkstationView {
         })
         .detach();
 
-        cx.subscribe(&console, |_this, _emitter, event, cx| {
-            match event {
-                ConsoleEvent::OperationStarted(_) | ConsoleEvent::OperationFinished(_) => {
-                    cx.notify();
-                }
-                _ => {}
+        cx.subscribe(&console, |_this, _emitter, event, cx| match event {
+            ConsoleEvent::OperationStarted(_) | ConsoleEvent::OperationFinished(_) => {
+                cx.notify();
             }
+            _ => {}
         })
         .detach();
 
@@ -111,12 +114,12 @@ impl PackageWorkstationView {
             on_upgrade_all: None,
             copy_cmd_feedback: false,
             is_loading_pkgbuild: false,
-            reduce_motion,
-            theme,
-            compact,
-            aur_enabled,
-            flatpak_enabled,
-            appimage_enabled,
+            reduce_motion: config.reduce_motion,
+            theme: config.theme,
+            compact: config.compact,
+            aur_enabled: config.aur_enabled,
+            flatpak_enabled: config.flatpak_enabled,
+            appimage_enabled: config.appimage_enabled,
         }
     }
 
@@ -149,8 +152,12 @@ impl PackageWorkstationView {
     ) {
         if let Some(drag) = self.drag_state {
             let current_x = event.position.x.to_f64() as f32;
-            let new_width =
-                compute_splitter_width(drag.start_width, drag.start_pointer_x, current_x, window_width);
+            let new_width = compute_splitter_width(
+                drag.start_width,
+                drag.start_pointer_x,
+                current_x,
+                window_width,
+            );
             if (new_width - self.list_pane_width).abs() >= 1.0 {
                 self.list_pane_width = new_width;
                 cx.notify();
@@ -830,11 +837,13 @@ mod tests {
         // Sidebar collapsed (56px) vs expanded (190px)
         let collapsed_start_x = 56.0 + 460.0; // 516
         let collapsed_current_x = 56.0 + 520.0; // 576
-        let width_collapsed = compute_splitter_width(460.0, collapsed_start_x, collapsed_current_x, 1280.0);
+        let width_collapsed =
+            compute_splitter_width(460.0, collapsed_start_x, collapsed_current_x, 1280.0);
 
         let expanded_start_x = 190.0 + 460.0; // 650
         let expanded_current_x = 190.0 + 520.0; // 710
-        let width_expanded = compute_splitter_width(460.0, expanded_start_x, expanded_current_x, 1280.0);
+        let width_expanded =
+            compute_splitter_width(460.0, expanded_start_x, expanded_current_x, 1280.0);
 
         assert_eq!(width_collapsed, 520.0);
         assert_eq!(width_expanded, 520.0);
@@ -850,7 +859,8 @@ mod tests {
         // max list = (1024 - 190 - 5 - 320).min(700) = 509
         let width_1024 = compute_splitter_width(460.0, 650.0, 1200.0, 1024.0);
         assert_eq!(width_1024, 509.0);
-        let inspector_1024 = 1024.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1024;
+        let inspector_1024 =
+            1024.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1024;
         assert!(
             inspector_1024 >= UiMetrics::INSPECTOR_MIN_WIDTH,
             "Inspector must have at least 320px at 1024px viewport (got {})",
@@ -860,7 +870,8 @@ mod tests {
         // Reference size 2: 1280x840
         let width_1280 = compute_splitter_width(460.0, 650.0, 1200.0, 1280.0);
         assert_eq!(width_1280, 700.0);
-        let inspector_1280 = 1280.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1280;
+        let inspector_1280 =
+            1280.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1280;
         assert!(
             inspector_1280 >= UiMetrics::INSPECTOR_MIN_WIDTH,
             "Inspector must have at least 320px at 1280px viewport (got {})",
@@ -870,7 +881,8 @@ mod tests {
         // Reference size 3: 1600x1000
         let width_1600 = compute_splitter_width(460.0, 650.0, 1200.0, 1600.0);
         assert_eq!(width_1600, 700.0);
-        let inspector_1600 = 1600.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1600;
+        let inspector_1600 =
+            1600.0 - UiMetrics::SIDEBAR_EXPANDED - UiMetrics::SPLITTER_WIDTH - width_1600;
         assert!(
             inspector_1600 >= UiMetrics::INSPECTOR_MIN_WIDTH,
             "Inspector must have at least 320px at 1600px viewport (got {})",

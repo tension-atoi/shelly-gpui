@@ -81,6 +81,7 @@ impl AppIcon {
     }
 }
 
+#[derive(Default)]
 pub struct AppIcons;
 
 impl AppIcons {
@@ -154,8 +155,7 @@ mod tests {
             assert!(
                 is_svg,
                 "Icon {:?} at path '{}' must be valid SVG content",
-                icon,
-                path
+                icon, path
             );
         }
     }

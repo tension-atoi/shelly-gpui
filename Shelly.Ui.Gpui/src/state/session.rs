@@ -400,11 +400,20 @@ mod tests {
         assert_eq!(NavDestination::Settings.workspace_config_index(), None);
 
         assert_eq!(NavDestination::from_config_index(0), NavDestination::Browse);
-        assert_eq!(NavDestination::from_config_index(1), NavDestination::Installed);
-        assert_eq!(NavDestination::from_config_index(2), NavDestination::Updates);
+        assert_eq!(
+            NavDestination::from_config_index(1),
+            NavDestination::Installed
+        );
+        assert_eq!(
+            NavDestination::from_config_index(2),
+            NavDestination::Updates
+        );
         assert_eq!(NavDestination::from_config_index(3), NavDestination::News);
         assert_eq!(NavDestination::from_config_index(4), NavDestination::Browse); // legacy settings maps to browse
-        assert_eq!(NavDestination::from_config_index(99), NavDestination::Browse);
+        assert_eq!(
+            NavDestination::from_config_index(99),
+            NavDestination::Browse
+        );
     }
 
     #[test]
@@ -420,7 +429,10 @@ mod tests {
         // Navigating to Settings does NOT update last_workspace_destination
         session.destination = NavDestination::Settings;
         // last_workspace_destination remains Installed
-        assert_eq!(session.last_workspace_destination, NavDestination::Installed);
+        assert_eq!(
+            session.last_workspace_destination,
+            NavDestination::Installed
+        );
         assert_eq!(
             session.last_workspace_destination.workspace_config_index(),
             Some(1)
