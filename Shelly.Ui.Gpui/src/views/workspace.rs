@@ -29,6 +29,11 @@ pub struct WorkspaceView {
     pub theme: Theme,
     pub active_tab: usize,
     pub search_query: String,
+    /// FocusHandle qui rend la barre de recherche réceptive aux touches clavier
+    pub search_focus: FocusHandle,
+    /// Compteur de génération pour le debounce : chaque frappe l'incrémente ;
+    /// la tâche async ne lance la recherche que si la génération correspond encore.
+    pub search_generation: u64,
     pub packages: Vec<UnifiedPackage>,
     pub selected_index: Option<usize>,
     /// Détails complets ALPM chargés via `get_package_details` pour enrichir le volet droit
@@ -62,6 +67,8 @@ impl WorkspaceView {
             theme,
             active_tab,
             search_query: String::new(),
+            search_focus: cx.focus_handle(),
+            search_generation: 0,
             packages: Vec::new(),
             selected_index: None,
             selected_alpm_details: None,
@@ -509,10 +516,92 @@ impl WorkspaceView {
         })
         .detach();
     }
+
+    /// Traite une frappe clavier dans la barre de recherche.
+    ///
+    /// - Caractère imprimable (len == 1, sans Ctrl/Alt/Platform) → ajouté à la requête
+    /// - `backspace` → supprime le dernier caractère Unicode
+    /// - `escape`    → vide la requête et relâche le focus
+    /// - `enter`     → recherche immédiate, bypass debounce
+    ///
+    /// Debounce 300 ms via compteur de génération : la tâche async ne
+    /// déclenche la recherche que si `search_generation` n'a pas changé.
+    pub fn handle_search_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let key = event.keystroke.key.as_str();
+        let modifiers = &event.keystroke.modifiers;
+
+        // Ignorer les combinaisons système (Ctrl, Alt, Platform/Super)
+        if modifiers.control || modifiers.alt || modifiers.platform {
+            return;
+        }
+
+        match key {
+            "backspace" => {
+                // Supprime le dernier graphème Unicode
+                let mut chars = self.search_query.chars();
+                chars.next_back();
+                self.search_query = chars.as_str().to_string();
+            }
+            "escape" => {
+                self.search_query.clear();
+                window.blur();
+                cx.notify();
+                return;
+            }
+            "enter" => {
+                // Recherche immédiate — bypass debounce
+                let query = self.search_query.clone();
+                let tab = self.active_tab;
+                self.search_generation = self.search_generation.wrapping_add(1);
+                cx.notify();
+                self.fire_search(query, tab, cx);
+                return;
+            }
+            k if k.len() == 1 => {
+                self.search_query.push_str(k);
+            }
+            _ => return,
+        }
+
+        cx.notify();
+
+        // ── Debounce 300 ms ──────────────────────────────────────────────────
+        self.search_generation = self.search_generation.wrapping_add(1);
+        let generation = self.search_generation;
+        let query = self.search_query.clone();
+        let tab = self.active_tab;
+
+        cx.spawn(async move |this, cx| {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+            let _ = this.update(cx, |view, cx| {
+                if view.search_generation == generation {
+                    view.fire_search(query, tab, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Déclenche la recherche pour l'onglet actif (ALPM / AUR / Flatpak uniquement).
+    /// AppImages, Updates, News et Settings n'ont pas de recherche textuelle live.
+    fn fire_search(&mut self, query: String, tab: usize, cx: &mut Context<Self>) {
+        match tab {
+            TAB_ALPM => self.perform_search(query, cx),
+            TAB_AUR => self.search_aur_tab(query, cx),
+            TAB_FLATPAK => self.search_flatpak_tab(query, cx),
+            _ => {}
+        }
+    }
 }
 
 impl Render for WorkspaceView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let active_tab = self.active_tab;
         let updates_count = self.updates_count;
@@ -646,30 +735,80 @@ impl Render for WorkspaceView {
                 .border_color(theme.border)
                 .bg(theme.bg_app);
 
+            // ── Barre de recherche interactive ──────────────────────────────
+            // Clique → focus → touches → debounce 300 ms → recherche live
+            let search_focus = self.search_focus.clone();
+            let is_search_focused = self.search_focus.is_focused(window);
+            let search_query = self.search_query.clone();
+            let is_searching = self.is_searching;
+
+            // Bordure colorée si la barre est active
+            let border_color = if is_search_focused {
+                theme.border_focus
+            } else {
+                theme.border
+            };
+
+            // Texte affiché : requête en cours, ou placeholder si vide
+            let display_text = if search_query.is_empty() {
+                if is_search_focused {
+                    "⌨  Tapez votre recherche...".to_string()
+                } else {
+                    "Rechercher  (cliquez ou tapez)".to_string()
+                }
+            } else if is_search_focused {
+                // Curseur visuel en fin de saisie
+                format!("{}▌", search_query)
+            } else {
+                search_query.clone()
+            };
+
+            let text_color = if search_query.is_empty() {
+                theme.text_muted
+            } else {
+                theme.text_primary
+            };
+
             let search_bar = div()
+                .id("search_bar")
+                .track_focus(&search_focus)
                 .flex()
                 .items_center()
                 .justify_between()
                 .p_3()
                 .border_b_1()
-                .border_color(theme.border)
-                .bg(theme.bg_surface)
+                .border_color(border_color)
+                .bg(if is_search_focused { theme.bg_surface_active } else { theme.bg_surface })
+                // Clic → focus clavier
+                .on_mouse_down(MouseButton::Left, {
+                    let sf = search_focus.clone();
+                    move |_, window, _cx| {
+                        window.focus(&sf);
+                    }
+                })
+                // Capture des touches clavier
+                .on_key_down(cx.listener(|this, event, window, cx| {
+                    this.handle_search_key(event, window, cx);
+                }))
                 .child(
                     div()
+                        .flex_grow()
                         .text_xs()
-                        .text_color(theme.text_muted)
-                        .child(if self.search_query.is_empty() {
-                            "Rechercher un paquet (ex: firefox, rust, git)...".to_string()
-                        } else {
-                            self.search_query.clone()
-                        }),
+                        .text_color(text_color)
+                        .child(display_text),
                 )
                 .child(
                     div()
                         .text_xs()
                         .font_weight(FontWeight::BOLD)
-                        .text_color(theme.accent)
-                        .child(if self.is_searching { "Recherche..." } else { "Ctrl+K" }),
+                        .text_color(if is_search_focused { theme.accent } else { theme.text_muted })
+                        .child(if is_searching {
+                            "Recherche..."
+                        } else if is_search_focused {
+                            "Esc pour annuler"
+                        } else {
+                            "Clic pour saisir"
+                        }),
                 );
 
             list_pane = list_pane.child(search_bar);
