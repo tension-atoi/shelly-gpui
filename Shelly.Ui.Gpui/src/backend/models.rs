@@ -125,18 +125,7 @@ pub struct FlatpakSearchResult {
     pub total_hits: usize,
 }
 
-/// Représente un AppImage détecté ou géré
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "PascalCase")]
-pub struct AppImagePackage {
-    pub name: String,
-    #[serde(default)]
-    pub version: Option<String>,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    pub description: Option<String>,
-}
+
 
 /// Représente un élément d'actualité Arch Linux
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -176,7 +165,6 @@ pub enum UnifiedPackageSource {
     Standard(AlpmPackage),
     Aur(AurPackage),
     Flatpak(FlatpakHit),
-    AppImage(AppImagePackage),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -234,22 +222,6 @@ impl UnifiedPackage {
             has_update: false,
             new_version: None,
             inner: UnifiedPackageSource::Flatpak(hit),
-        }
-    }
-
-    pub fn from_appimage(pkg: AppImagePackage) -> Self {
-        let version = pkg.version.clone().unwrap_or_else(|| "—".to_string());
-        let description = pkg.description.clone().unwrap_or_default();
-        Self {
-            name: pkg.name.clone(),
-            version,
-            description,
-            source_type: "AppImage".to_string(),
-            repository_or_remote: "local".to_string(),
-            is_installed: true,
-            has_update: false,
-            new_version: None,
-            inner: UnifiedPackageSource::AppImage(pkg),
         }
     }
 }

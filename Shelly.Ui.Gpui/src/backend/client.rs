@@ -53,6 +53,22 @@ impl ShellyClient {
         Self::parse_alpm_results(&raw)
     }
 
+    /// Recherche simultanément et en parallèle dans les dépôts officiels, l'AUR et Flatpak
+    pub async fn search_all(
+        &self,
+        query: &str,
+    ) -> (
+        Result<Vec<AlpmPackage>>,
+        Result<Vec<AurPackage>>,
+        Result<Vec<FlatpakHit>>,
+    ) {
+        tokio::join!(
+            self.search_standard(query),
+            self.search_aur(query),
+            self.search_flatpak(query)
+        )
+    }
+
     /// Recherche les paquets installés localement
     pub async fn search_installed(&self, query: &str) -> Result<Vec<AlpmPackage>> {
         let args = if query.trim().is_empty() {
@@ -134,24 +150,7 @@ impl ShellyClient {
         }
     }
 
-    /// Liste les AppImages gérées par Shelly
-    pub async fn list_appimages(&self) -> Result<Vec<AppImagePackage>> {
-        let raw = ProcessRunner::run_json_command(
-            &self.binary_path,
-            &["list", "appimage", "-j"],
-        )
-        .await?;
 
-        if raw.trim().starts_with('[') {
-            serde_json::from_str::<Vec<AppImagePackage>>(&raw)
-                .context("Désérialisation de la liste AppImage")
-        } else if raw.trim().starts_with('{') {
-            let pkg: AppImagePackage = serde_json::from_str(raw.trim())?;
-            Ok(vec![pkg])
-        } else {
-            Ok(Vec::new())
-        }
-    }
 
     /// Récupère la fiche détaillée d'un paquet ALPM
     pub async fn get_package_details(&self, name: &str) -> Result<Option<AlpmPackage>> {
@@ -240,5 +239,26 @@ impl ShellyClient {
         } else {
             Ok(Vec::new())
         }
+    }
+
+    /// Liste les fichiers installés par un paquet via `pacman -Ql`
+    pub async fn list_package_files(&self, name: &str) -> Vec<String> {
+        if let Ok(output) = tokio::process::Command::new("pacman")
+            .args(["-Ql", name])
+            .output()
+            .await
+        {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                return text
+                    .lines()
+                    .filter_map(|line| {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        parts.get(1).map(|s| s.to_string())
+                    })
+                    .collect();
+            }
+        }
+        Vec::new()
     }
 }
