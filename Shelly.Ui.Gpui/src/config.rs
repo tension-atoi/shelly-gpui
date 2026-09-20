@@ -54,6 +54,8 @@ pub struct GpuiUiConfig {
     pub log_drawer_open: bool,
     pub log_drawer_height: f32,
     pub last_selected_tab: usize,
+    #[serde(default)]
+    pub reduce_motion: bool,
 }
 
 impl Default for GpuiUiConfig {
@@ -66,6 +68,7 @@ impl Default for GpuiUiConfig {
             log_drawer_open: false,
             log_drawer_height: 220.0,
             last_selected_tab: 0,
+            reduce_motion: false,
         }
     }
 }
@@ -119,5 +122,57 @@ impl ConfigManager {
         let content = serde_json::to_string_pretty(config)?;
         fs::write(path, content)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gpui_config_backward_compatibility_without_reduce_motion() {
+        let legacy_json = r#"{
+            "dark_theme": true,
+            "window_width": 1280.0,
+            "window_height": 840.0,
+            "compact_view": true,
+            "log_drawer_open": true,
+            "log_drawer_height": 250.0,
+            "last_selected_tab": 2
+        }"#;
+
+        let parsed: GpuiUiConfig = serde_json::from_str(legacy_json)
+            .expect("Legacy config without reduce_motion should deserialize successfully");
+
+        assert!(parsed.dark_theme);
+        assert_eq!(parsed.window_width, 1280.0);
+        assert_eq!(parsed.window_height, 840.0);
+        assert!(parsed.compact_view);
+        assert!(parsed.log_drawer_open);
+        assert_eq!(parsed.log_drawer_height, 250.0);
+        assert_eq!(parsed.last_selected_tab, 2);
+        assert!(
+            !parsed.reduce_motion,
+            "Default for reduce_motion must be false"
+        );
+    }
+
+    #[test]
+    fn test_gpui_config_with_explicit_reduce_motion() {
+        let json_with_reduce = r#"{
+            "dark_theme": false,
+            "window_width": 1024.0,
+            "window_height": 768.0,
+            "compact_view": false,
+            "log_drawer_open": false,
+            "log_drawer_height": 200.0,
+            "last_selected_tab": 0,
+            "reduce_motion": true
+        }"#;
+
+        let parsed: GpuiUiConfig = serde_json::from_str(json_with_reduce)
+            .expect("Config with reduce_motion should deserialize successfully");
+
+        assert!(parsed.reduce_motion);
     }
 }

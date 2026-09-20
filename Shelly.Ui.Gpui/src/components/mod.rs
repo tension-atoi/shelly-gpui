@@ -5,4 +5,5 @@ pub mod package_table;
 pub mod semantic_value;
 pub mod sidebar;
 pub mod status_pill;
+pub mod toast_overlay;
 pub mod unified_search;

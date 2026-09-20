@@ -191,6 +191,8 @@ pub struct AppSession {
     pub sidebar_collapsed: bool,
     pub view_mode: PackageViewMode,
     pub inspector_tab: InspectorTab,
+    pub destination_epoch: u64,
+    pub inspector_tab_epoch: u64,
 }
 
 impl EventEmitter<SessionEvent> for AppSession {}
@@ -207,12 +209,15 @@ impl AppSession {
             sidebar_collapsed: false,
             view_mode: PackageViewMode::Cards,
             inspector_tab: InspectorTab::Overview,
+            destination_epoch: 0,
+            inspector_tab_epoch: 0,
         }
     }
 
     pub fn set_destination(&mut self, dest: NavDestination, cx: &mut Context<Self>) {
         if self.destination != dest {
             self.destination = dest;
+            self.destination_epoch = self.destination_epoch.wrapping_add(1);
             cx.emit(SessionEvent::DestinationChanged(dest));
             cx.notify();
         }
@@ -251,15 +256,22 @@ impl AppSession {
     pub fn set_inspector_tab(&mut self, tab: InspectorTab, cx: &mut Context<Self>) {
         if self.inspector_tab != tab {
             self.inspector_tab = tab;
+            self.inspector_tab_epoch = self.inspector_tab_epoch.wrapping_add(1);
             cx.emit(SessionEvent::InspectorTabChanged(tab));
             cx.notify();
         }
     }
 
+    pub fn set_sidebar_collapsed(&mut self, collapsed: bool, cx: &mut Context<Self>) {
+        if self.sidebar_collapsed != collapsed {
+            self.sidebar_collapsed = collapsed;
+            cx.emit(SessionEvent::SidebarToggled(self.sidebar_collapsed));
+            cx.notify();
+        }
+    }
+
     pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
-        self.sidebar_collapsed = !self.sidebar_collapsed;
-        cx.emit(SessionEvent::SidebarToggled(self.sidebar_collapsed));
-        cx.notify();
+        self.set_sidebar_collapsed(!self.sidebar_collapsed, cx);
     }
 
     pub fn next_search_generation(&mut self) -> usize {
@@ -402,5 +414,21 @@ mod tests {
         assert_eq!(session.search_query, "libalpm.so");
         assert!(!session.search_query.contains(">=14"));
         assert!(!session.search_query.contains("Arch package"));
+    }
+
+    #[test]
+    fn test_session_epochs_increment() {
+        let mut session = AppSession::new();
+        assert_eq!(session.destination_epoch, 0);
+        assert_eq!(session.inspector_tab_epoch, 0);
+
+        // Manually simulate epoch increments as in set_destination and set_inspector_tab
+        session.destination = NavDestination::News;
+        session.destination_epoch += 1;
+        assert_eq!(session.destination_epoch, 1);
+
+        session.inspector_tab = InspectorTab::Dependencies;
+        session.inspector_tab_epoch += 1;
+        assert_eq!(session.inspector_tab_epoch, 1);
     }
 }

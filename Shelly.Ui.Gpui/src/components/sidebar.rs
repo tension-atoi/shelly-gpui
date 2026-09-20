@@ -11,6 +11,7 @@ pub struct SidebarProps<'a> {
     pub active_destination: NavDestination,
     pub updates_count: usize,
     pub is_collapsed: bool,
+    pub current_width: f32,
     pub theme: &'a Theme,
     pub on_select_destination: NavDestinationHandler,
     pub on_toggle_collapse: WindowActionHandler,
@@ -40,6 +41,7 @@ impl Sidebar {
             .mx(px(6.0))
             .rounded_md()
             .cursor_pointer()
+            .overflow_hidden()
             .text_sm();
 
         let styled = if is_active {
@@ -65,7 +67,7 @@ impl Sidebar {
         );
 
         if !is_collapsed {
-            item = item.child(div().flex_1().child(label));
+            item = item.child(div().flex_1().overflow_hidden().child(label));
 
             if badge_count > 0 {
                 item = item.child(StatusPill::badge_count(badge_count, theme));
@@ -80,7 +82,7 @@ impl Sidebar {
     pub fn render(props: SidebarProps) -> impl IntoElement {
         let theme = props.theme;
         let is_collapsed = props.is_collapsed;
-        let width = if is_collapsed { px(56.0) } else { px(190.0) };
+        let width = px(props.current_width);
 
         let destinations = [
             NavDestination::Browse,
@@ -120,6 +122,7 @@ impl Sidebar {
                 .mx(px(6.0))
                 .rounded_md()
                 .cursor_pointer()
+                .overflow_hidden()
                 .text_xs()
                 .text_color(theme.text_muted)
                 .hover(move |s| s.bg(hover_bg).text_color(theme.text_primary))
@@ -135,6 +138,7 @@ impl Sidebar {
             .justify_between()
             .w(width)
             .h_full()
+            .overflow_hidden()
             .bg(theme.bg_sidebar)
             .border_r_1()
             .border_color(theme.border)

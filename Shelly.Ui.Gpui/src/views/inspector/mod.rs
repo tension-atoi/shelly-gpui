@@ -34,7 +34,11 @@ pub struct PackageInspectorProps<'a> {
 pub struct PackageInspectorView;
 
 impl PackageInspectorView {
-    pub fn render(props: PackageInspectorProps) -> AnyElement {
+    pub fn render_with_motion(
+        props: PackageInspectorProps,
+        reduce_motion: bool,
+        tab_epoch: u64,
+    ) -> AnyElement {
         let theme = props.theme;
 
         let Some(pkg) = props.package else {
@@ -94,6 +98,24 @@ impl PackageInspectorView {
             .into_any_element(),
         };
 
+        let animated_body = if reduce_motion {
+            div()
+                .id("inspector_tab_body")
+                .child(body)
+                .into_any_element()
+        } else {
+            div()
+                .id("inspector_tab_body")
+                .child(body)
+                .with_animation(
+                    ("tab-fade", tab_epoch as usize),
+                    Animation::new(crate::state::MotionDurations::FAST)
+                        .with_easing(gpui::ease_out_quint()),
+                    |elem, delta| elem.opacity(delta),
+                )
+                .into_any_element()
+        };
+
         div()
             .id("inspector_scroll")
             .flex()
@@ -103,7 +125,7 @@ impl PackageInspectorView {
             .p_6()
             .overflow_scroll()
             .child(header)
-            .child(body)
+            .child(animated_body)
             .into_any_element()
     }
 }

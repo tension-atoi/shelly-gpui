@@ -1,4 +1,4 @@
-use crate::components::log_drawer::{LogEntry, OperationStatus};
+pub use crate::components::log_drawer::{LogEntry, OperationStatus};
 use gpui::*;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,7 +17,6 @@ pub struct ConsoleModel {
     pub status: OperationStatus,
     pub is_open: bool,
     pub auto_scroll: bool,
-    pub height: f32,
     pub scroll_handle: ScrollHandle,
 }
 
@@ -30,7 +29,6 @@ impl ConsoleModel {
             status: OperationStatus::Idle,
             is_open: true,
             auto_scroll: true,
-            height: 180.0,
             scroll_handle: ScrollHandle::new(),
         }
     }
@@ -90,6 +88,14 @@ impl ConsoleModel {
         cx.notify();
     }
 
+    pub fn set_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.is_open != open {
+            self.is_open = open;
+            cx.emit(ConsoleEvent::Toggled(open));
+            cx.notify();
+        }
+    }
+
     pub fn toggle_auto_scroll(&mut self, cx: &mut Context<Self>) {
         self.auto_scroll = !self.auto_scroll;
         cx.emit(ConsoleEvent::AutoScrollToggled(self.auto_scroll));
@@ -126,7 +132,6 @@ mod tests {
         assert_eq!(console.status, OperationStatus::Idle);
         assert!(console.is_open);
         assert!(console.auto_scroll);
-        assert_eq!(console.height, 180.0);
     }
 
     #[test]

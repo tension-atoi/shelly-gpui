@@ -263,7 +263,7 @@ impl LogDrawer {
 
         let mut container = div().flex().flex_col().bg(theme.bg_sidebar).child(header);
 
-        if is_open {
+        if props.height > 1.0 {
             if auto_scroll && !props.logs.is_empty() {
                 props
                     .scroll_handle
