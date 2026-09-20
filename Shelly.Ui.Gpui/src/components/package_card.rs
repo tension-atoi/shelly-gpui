@@ -1,4 +1,6 @@
 use crate::backend::models::UnifiedPackage;
+use crate::components::package_identity::PackageIdentity;
+use crate::components::package_table::PackageTable;
 use crate::components::status_pill::StatusPill;
 use crate::theme::Theme;
 use crate::ui_metrics::UiMetrics;
@@ -38,14 +40,19 @@ impl PackageCard {
             UiMetrics::CARD_HEIGHT_NORMAL
         };
 
+        let avatar_size = if props.compact { 28.0 } else { 36.0 };
+        let avatar_radius = if props.compact { 4.0 } else { 6.0 };
+        let display_size = PackageTable::display_size(pkg);
+        let has_size = display_size != "—";
+
         div()
             .h(px(card_height))
             .w_full()
             .flex()
-            .flex_col()
-            .justify_between()
+            .items_center()
+            .gap_3()
             .px_3()
-            .py(if props.compact { px(4.0) } else { px(8.0) })
+            .py(if props.compact { px(3.0) } else { px(6.0) })
             .rounded_md()
             .border_1()
             .border_color(border_color)
@@ -54,62 +61,123 @@ impl PackageCard {
             .overflow_hidden()
             // Barre d'accentuation latérale pour le paquet sélectionné
             .when(is_selected, |el| el.border_l_4().border_color(theme.accent))
-            // Rétroaction immédiate au survol de la souris
+            // Rétroaction tactile au survol
             .when(!is_selected, |el| {
                 let hover_bg = theme.bg_surface_hover;
                 let hover_border = theme.border_focus;
                 el.hover(move |s| s.bg(hover_bg).border_color(hover_border))
             })
-            // Ligne 1 : Nom du paquet + Version
+            // Ancre visuelle : Avatar d'identité de paquet
+            .child(PackageIdentity::render_avatar(
+                pkg,
+                avatar_size,
+                avatar_radius,
+                theme,
+            ))
+            // Colonne de contenu structurée
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
                     .flex()
-                    .items_center()
+                    .flex_col()
                     .justify_between()
-                    .gap_2()
+                    .overflow_hidden()
+                    // Ligne 1 : En-tête (Nom à gauche, Version + Taille à droite)
                     .child(
                         div()
-                            .font_weight(FontWeight::BOLD)
-                            .text_sm()
-                            .text_color(if is_selected {
-                                theme.accent
-                            } else {
-                                theme.text_primary
-                            })
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_sm()
+                                    .text_color(if is_selected {
+                                        theme.accent
+                                    } else {
+                                        theme.text_primary
+                                    })
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .child(pkg.name.clone()),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .when(pkg.has_update, |el| {
+                                        let new_ver = pkg.new_version.clone().unwrap_or_default();
+                                        el.child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(FontWeight::BOLD)
+                                                .text_color(theme.warning)
+                                                .child(format!("→ {}", new_ver)),
+                                        )
+                                    })
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(theme.text_muted)
+                                            .child(pkg.version.clone()),
+                                    )
+                                    .when(has_size, |el| {
+                                        el.child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(FontWeight::NORMAL)
+                                                .text_color(theme.text_secondary)
+                                                .child(display_size),
+                                        )
+                                    }),
+                            ),
+                    )
+                    // Ligne 2 : Badges de métadonnées (Source + Dépôt + État)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .child(StatusPill::source_badge(&pkg.source_type, theme))
+                            .when(
+                                !pkg.repository_or_remote.is_empty()
+                                    && !pkg
+                                        .repository_or_remote
+                                        .eq_ignore_ascii_case(&pkg.source_type),
+                                |el| {
+                                    el.child(StatusPill::repo_badge(
+                                        &pkg.repository_or_remote,
+                                        theme,
+                                    ))
+                                },
+                            )
+                            .child(StatusPill::state_pill(
+                                pkg.is_installed,
+                                pkg.has_update,
+                                theme,
+                            )),
+                    )
+                    // Ligne 3 : Description aérée avec troncature propre
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_secondary)
                             .overflow_hidden()
                             .text_ellipsis()
-                            .child(pkg.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.text_muted)
-                            .child(pkg.version.clone()),
+                            .child(if pkg.description.is_empty() {
+                                "No description available for this package.".to_string()
+                            } else {
+                                pkg.description.clone()
+                            }),
                     ),
-            )
-            // Ligne 2 : Badges de source et d'état (alignés sans collision)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(StatusPill::source_badge(&pkg.source_type, theme))
-                    .child(StatusPill::installed_pill(pkg.is_installed, theme)),
-            )
-            // Ligne 3 : Description aérée tronquée proprement à 1 ligne pour uniformité stricte
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.text_secondary)
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .child(if pkg.description.is_empty() {
-                        "No description available for this package.".to_string()
-                    } else {
-                        pkg.description.clone()
-                    }),
             )
     }
 }

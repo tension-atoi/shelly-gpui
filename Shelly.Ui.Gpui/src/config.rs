@@ -1,3 +1,4 @@
+use crate::state::session::PackageViewMode;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -71,6 +72,8 @@ pub struct GpuiUiConfig {
     pub last_selected_tab: usize,
     #[serde(default)]
     pub reduce_motion: bool,
+    #[serde(default = "default_view_mode")]
+    pub view_mode: PackageViewMode,
 }
 
 pub const MIN_WINDOW_WIDTH: f32 = 1024.0;
@@ -104,6 +107,10 @@ fn default_last_selected_tab() -> usize {
     0
 }
 
+fn default_view_mode() -> PackageViewMode {
+    PackageViewMode::Table
+}
+
 impl Default for GpuiUiConfig {
     fn default() -> Self {
         Self {
@@ -115,6 +122,7 @@ impl Default for GpuiUiConfig {
             log_drawer_height: default_log_drawer_height(),
             last_selected_tab: default_last_selected_tab(),
             reduce_motion: false,
+            view_mode: default_view_mode(),
         }
     }
 }
@@ -212,6 +220,20 @@ mod tests {
         assert_eq!(parsed.log_drawer_height, 220.0);
         assert_eq!(parsed.last_selected_tab, 0);
         assert!(!parsed.reduce_motion);
+        assert_eq!(parsed.view_mode, PackageViewMode::Table);
+    }
+
+    #[test]
+    fn test_gpui_config_preserves_explicit_view_mode() {
+        let cards_json = r#"{"view_mode": "Cards"}"#;
+        let parsed: GpuiUiConfig =
+            serde_json::from_str(cards_json).expect("Should deserialize cards");
+        assert_eq!(parsed.view_mode, PackageViewMode::Cards);
+
+        let table_json = r#"{"view_mode": "Table"}"#;
+        let parsed: GpuiUiConfig =
+            serde_json::from_str(table_json).expect("Should deserialize table");
+        assert_eq!(parsed.view_mode, PackageViewMode::Table);
     }
 
     #[test]

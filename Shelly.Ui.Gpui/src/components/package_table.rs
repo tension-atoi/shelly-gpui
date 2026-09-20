@@ -1,4 +1,5 @@
 use crate::backend::models::{UnifiedPackage, UnifiedPackageSource};
+use crate::components::package_identity::PackageIdentity;
 use crate::components::status_pill::StatusPill;
 use crate::theme::Theme;
 use crate::ui_metrics::UiMetrics;
@@ -56,34 +57,38 @@ impl PackageTable {
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("NAME"),
             )
             .child(
                 div()
-                    .w(px(100.0))
+                    .w(px(110.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("VERSION"),
             )
             .child(
                 div()
-                    .w(px(80.0))
+                    .w(px(90.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("SOURCE"),
             )
             .child(
                 div()
-                    .w(px(70.0))
+                    .w(px(75.0))
+                    .flex()
+                    .justify_end()
+                    .pr_1()
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("SIZE"),
             )
             .child(
                 div()
-                    .w(px(75.0))
+                    .w(px(85.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .child("STATUS"),
@@ -130,44 +135,62 @@ impl PackageTable {
                 let hover_bg = theme.bg_surface_hover;
                 el.hover(move |s| s.bg(hover_bg))
             })
-            // Column 1: Name
+            // Column 1: Name avec icône d'identité de source en ligne
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap_2()
                     .overflow_hidden()
-                    .text_ellipsis()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_sm()
-                    .text_color(if is_selected {
-                        theme.accent
-                    } else {
-                        theme.text_primary
-                    })
-                    .child(pkg.name.clone()),
+                    .child(PackageIdentity::render_inline_glyph(pkg, 14.0, theme))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_sm()
+                            .text_color(if is_selected {
+                                theme.accent
+                            } else {
+                                theme.text_primary
+                            })
+                            .child(pkg.name.clone()),
+                    ),
             )
             // Column 2: Version
             .child(
                 div()
-                    .w(px(100.0))
+                    .w(px(110.0))
                     .overflow_hidden()
                     .text_ellipsis()
                     .text_xs()
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.text_muted)
-                    .child(pkg.version.clone()),
+                    .child(if pkg.has_update {
+                        format!("→ {}", pkg.new_version.as_deref().unwrap_or(&pkg.version))
+                    } else {
+                        pkg.version.clone()
+                    }),
             )
             // Column 3: Source Badge
             .child(
                 div()
-                    .w(px(80.0))
+                    .w(px(90.0))
                     .flex()
                     .items_center()
                     .child(StatusPill::source_badge(&pkg.source_type, theme)),
             )
-            // Column 4: Size
+            // Column 4: Size (aligné à droite pour comparaison visuelle stricte)
             .child(
                 div()
-                    .w(px(70.0))
+                    .w(px(75.0))
+                    .flex()
+                    .justify_end()
+                    .pr_1()
                     .overflow_hidden()
                     .text_ellipsis()
                     .text_xs()
@@ -177,10 +200,14 @@ impl PackageTable {
             // Column 5: Status
             .child(
                 div()
-                    .w(px(75.0))
+                    .w(px(85.0))
                     .flex()
                     .items_center()
-                    .child(StatusPill::installed_pill(pkg.is_installed, theme)),
+                    .child(StatusPill::state_pill(
+                        pkg.is_installed,
+                        pkg.has_update,
+                        theme,
+                    )),
             )
     }
 }

@@ -64,6 +64,7 @@ impl WorkspaceView {
             if gpui_config.compact_view {
                 s.sidebar_collapsed = true;
             }
+            s.view_mode = gpui_config.view_mode;
             s
         });
         let store = cx.new(|_cx| PackageStore::new(client));
@@ -173,7 +174,10 @@ impl WorkspaceView {
             SessionEvent::SidebarToggled(_) => {
                 cx.notify();
             }
-            SessionEvent::ViewModeChanged(_) => {
+            SessionEvent::ViewModeChanged(mode) => {
+                let mut config = crate::config::ConfigManager::load_gpui_config();
+                config.view_mode = *mode;
+                let _ = crate::config::ConfigManager::save_gpui_config(&config);
                 cx.notify();
             }
             SessionEvent::InspectorTabChanged(tab) => {

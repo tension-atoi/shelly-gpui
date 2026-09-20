@@ -48,6 +48,54 @@ impl StatusPill {
         }
     }
 
+    pub fn state_pill(is_installed: bool, has_update: bool, theme: &Theme) -> impl IntoElement {
+        if has_update {
+            div()
+                .px_2()
+                .py_0p5()
+                .rounded_md()
+                .bg(theme.warning)
+                .text_xs()
+                .font_weight(FontWeight::BOLD)
+                .text_color(theme.bg_app)
+                .child("Update")
+        } else if is_installed {
+            div()
+                .px_2()
+                .py_0p5()
+                .rounded_md()
+                .bg(theme.success)
+                .text_xs()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(theme.bg_app)
+                .child("Installed")
+        } else {
+            div()
+                .px_2()
+                .py_0p5()
+                .rounded_md()
+                .bg(theme.border)
+                .text_xs()
+                .font_weight(FontWeight::NORMAL)
+                .text_color(theme.text_muted)
+                .child("Available")
+        }
+    }
+
+    pub fn repo_badge(repo: &str, theme: &Theme) -> impl IntoElement {
+        div()
+            .px_1p5()
+            .py_0p5()
+            .rounded_sm()
+            .bg(theme.bg_app)
+            .border_1()
+            .border_color(theme.border)
+            .text_xs()
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(theme.text_secondary)
+            .child(repo.to_string())
+    }
+
     pub fn badge_count(count: usize, theme: &Theme) -> impl IntoElement {
         div()
             .px_1p5()
