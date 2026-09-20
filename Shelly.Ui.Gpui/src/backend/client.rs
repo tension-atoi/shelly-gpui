@@ -144,6 +144,17 @@ impl ShellyClient {
         }
     }
 
+    /// Liste les AppImages gérées localement par Shelly
+    pub async fn list_appimages(&self) -> Result<Vec<AppImageItem>> {
+        let raw =
+            ProcessRunner::run_json_command(&self.binary_path, &["list", "appimage", "-j"]).await?;
+        if raw.trim().starts_with('[') {
+            serde_json::from_str::<Vec<AppImageItem>>(&raw).context("Désérialisation des AppImages")
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
     /// Récupère la fiche détaillée d'un paquet ALPM
     pub async fn get_package_details(&self, name: &str) -> Result<Option<AlpmPackage>> {
         let raw = ProcessRunner::run_json_command(

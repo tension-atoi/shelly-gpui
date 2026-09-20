@@ -120,7 +120,7 @@ impl Sidebar {
                 .text_xs()
                 .text_color(theme.text_muted)
                 .hover(move |s| s.bg(hover_bg).text_color(theme.text_primary))
-                .child(if is_collapsed { "▶" } else { "◀ Réduire" })
+                .child(if is_collapsed { "▶" } else { "◀ Collapse" })
                 .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
                     on_toggle(window, cx);
                 })

@@ -208,4 +208,67 @@ mod tests {
         assert_eq!(cached.unwrap().len(), 1);
         assert_eq!(cached.unwrap()[0].name, "firefox");
     }
+
+    #[test]
+    fn test_appimage_filtering_and_key_identity() {
+        use crate::backend::models::AppImageItem;
+
+        let item = AppImageItem {
+            name: "Obsidian".into(),
+            desktop_name: Some("obsidian.desktop".into()),
+            version: Some("1.5.8".into()),
+            icon_name: Some("obsidian".into()),
+            description: Some("Knowledge base and note-taking app".into()),
+            size_on_disk: Some(120_000_000),
+            update_url: None,
+            repo_owner: None,
+            repo_name: None,
+            path: Some("/home/user/Applications/Obsidian.AppImage".into()),
+        };
+
+        let pkg = UnifiedPackage::from_appimage(item.clone());
+        assert_eq!(pkg.name, "Obsidian");
+        assert_eq!(pkg.version, "1.5.8");
+        assert_eq!(pkg.source_type, "AppImage");
+        assert_eq!(pkg.repository_or_remote, "appimage");
+        assert_eq!(pkg.key().source, PackageSourceKind::AppImage);
+        assert_eq!(pkg.key().name, "Obsidian");
+
+        // Test metadata filtering logic for non-empty queries
+        let q1 = "obsidian";
+        let q2 = "knowledge";
+        let q3 = "vlc";
+
+        let matches_q1 = item.name.to_lowercase().contains(q1)
+            || item
+                .description
+                .as_ref()
+                .map(|d| d.to_lowercase().contains(q1))
+                .unwrap_or(false);
+        let matches_q2 = item.name.to_lowercase().contains(q2)
+            || item
+                .description
+                .as_ref()
+                .map(|d| d.to_lowercase().contains(q2))
+                .unwrap_or(false);
+        let matches_q3 = item.name.to_lowercase().contains(q3)
+            || item
+                .description
+                .as_ref()
+                .map(|d| d.to_lowercase().contains(q3))
+                .unwrap_or(false);
+
+        assert!(matches_q1);
+        assert!(matches_q2);
+        assert!(!matches_q3);
+
+        // Test storing and retrieving in search cache
+        let client = ShellyClient::new(None);
+        let mut store = PackageStore::new(client);
+        store.cache_search("obsidian", SourceFilter::AppImage, vec![pkg.clone()]);
+        let cached = store.get_cached_search("obsidian", SourceFilter::AppImage);
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap()[0].name, "Obsidian");
+        assert_eq!(cached.unwrap()[0].source_type, "AppImage");
+    }
 }

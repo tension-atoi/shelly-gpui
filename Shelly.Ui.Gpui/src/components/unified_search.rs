@@ -128,12 +128,12 @@ impl UnifiedSearch {
                         div()
                             .text_xs()
                             .text_color(theme.accent)
-                            .child("⚡ Recherche en cours...")
+                            .child("⚡ Searching...")
                     } else if props.total_count > 0 {
                         div()
                             .text_xs()
                             .text_color(theme.text_muted)
-                            .child(format!("{} résultats", props.total_count))
+                            .child(format!("{} results", props.total_count))
                     } else {
                         div()
                     }),
@@ -162,7 +162,7 @@ impl UnifiedSearch {
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_primary)
                     .mb_2()
-                    .child("Recherche unifiée dans Shelly"),
+                    .child("Unified Search in Shelly"),
             )
             .child(
                 div()
@@ -171,7 +171,7 @@ impl UnifiedSearch {
                     .max_w(px(460.0))
                     .mb_4()
                     .child(
-                        "Tapez le nom d'un logiciel ou paquet pour explorer simultanément les dépôts officiels Arch, l'AUR et Flatpak.",
+                        "Type a package or application name to search across Arch repositories, the AUR, Flatpak, and AppImages.",
                     ),
             )
             .child(
@@ -186,9 +186,9 @@ impl UnifiedSearch {
                     .border_color(theme.border)
                     .text_xs()
                     .text_color(theme.text_muted)
-                    .child("• Aucune requête réseau superflue n'est émise à vide")
-                    .child("• Les filtres ci-dessus permettent de restreindre la recherche à une source précise")
-                    .child("• Naviguez au clavier avec les flèches ↑ / ↓ pour faire défiler la sélection"),
+                    .child("• No network requests are dispatched on empty input")
+                    .child("• Source pills filter results by distribution backend")
+                    .child("• Use Up / Down arrows to navigate through the virtualized results"),
             )
     }
 }

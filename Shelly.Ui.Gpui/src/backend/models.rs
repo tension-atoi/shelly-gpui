@@ -157,12 +157,38 @@ pub struct PackageUpdateItem {
     pub download_size: Option<u64>,
 }
 
+/// Représentation d'une AppImage gérée localement par Shelly
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "PascalCase")]
+pub struct AppImageItem {
+    pub name: String,
+    #[serde(default)]
+    pub desktop_name: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub icon_name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub size_on_disk: Option<u64>,
+    #[serde(default)]
+    pub update_url: Option<String>,
+    #[serde(default)]
+    pub repo_owner: Option<String>,
+    #[serde(default)]
+    pub repo_name: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
 /// Représentation unifiée d'un paquet affiché dans la liste GPUI
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnifiedPackageSource {
     Standard(AlpmPackage),
     Aur(AurPackage),
     Flatpak(FlatpakHit),
+    AppImage(AppImageItem),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -223,6 +249,25 @@ impl UnifiedPackage {
             has_update: false,
             new_version: None,
             inner: UnifiedPackageSource::Flatpak(hit),
+        }
+    }
+
+    pub fn from_appimage(item: AppImageItem) -> Self {
+        let desc = item.description.clone().unwrap_or_default();
+        let ver = item
+            .version
+            .clone()
+            .unwrap_or_else(|| "appimage".to_string());
+        Self {
+            name: item.name.clone(),
+            version: ver,
+            description: desc,
+            source_type: "AppImage".to_string(),
+            repository_or_remote: "appimage".to_string(),
+            is_installed: true,
+            has_update: false,
+            new_version: None,
+            inner: UnifiedPackageSource::AppImage(item),
         }
     }
 

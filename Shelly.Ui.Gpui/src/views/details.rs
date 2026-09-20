@@ -385,6 +385,35 @@ impl PackageDetailsView {
 
                 root = root.child(meta_grid);
             }
+            UnifiedPackageSource::AppImage(ai) => {
+                let mut meta_grid = div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .p_4()
+                    .rounded_md()
+                    .bg(theme.bg_surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .mb_6();
+
+                if let Some(ref dname) = ai.desktop_name {
+                    meta_grid = meta_grid.child(Self::meta_row("Desktop Name", dname, theme));
+                }
+                if let Some(ref path) = ai.path {
+                    meta_grid = meta_grid.child(Self::meta_row("File Path", path, theme));
+                }
+                if let Some(ref size) = ai.size_on_disk {
+                    let formatted_size = format!("{:.1} Mo", *size as f64 / (1024.0 * 1024.0));
+                    meta_grid =
+                        meta_grid.child(Self::meta_row("Size on Disk", &formatted_size, theme));
+                }
+                if let Some(ref url) = ai.update_url {
+                    meta_grid = meta_grid.child(Self::meta_row("Update URL", url, theme));
+                }
+
+                root = root.child(meta_grid);
+            }
         }
 
         root.into_any_element()

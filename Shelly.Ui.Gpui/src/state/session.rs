@@ -75,11 +75,11 @@ pub enum NavDestination {
 impl NavDestination {
     pub fn label(&self) -> &'static str {
         match self {
-            NavDestination::Browse => "Découvrir",
-            NavDestination::Installed => "Installés",
-            NavDestination::Updates => "Mises à jour",
-            NavDestination::News => "Actualités",
-            NavDestination::Settings => "Paramètres",
+            NavDestination::Browse => "Browse",
+            NavDestination::Installed => "Installed",
+            NavDestination::Updates => "Updates",
+            NavDestination::News => "News",
+            NavDestination::Settings => "Settings",
         }
     }
 
@@ -108,8 +108,8 @@ pub enum SourceFilter {
 impl SourceFilter {
     pub fn label(&self) -> &'static str {
         match self {
-            SourceFilter::All => "Tous",
-            SourceFilter::Alpm => "Officiels",
+            SourceFilter::All => "All",
+            SourceFilter::Alpm => "Official / ALPM",
             SourceFilter::Aur => "AUR",
             SourceFilter::Flatpak => "Flatpak",
             SourceFilter::AppImage => "AppImage",
@@ -241,10 +241,19 @@ mod tests {
 
     #[test]
     fn test_nav_destination_metadata() {
-        assert_eq!(NavDestination::Browse.label(), "Découvrir");
-        assert_eq!(NavDestination::Installed.label(), "Installés");
-        assert_eq!(NavDestination::Updates.label(), "Mises à jour");
-        assert_eq!(NavDestination::News.label(), "Actualités");
-        assert_eq!(NavDestination::Settings.label(), "Paramètres");
+        assert_eq!(NavDestination::Browse.label(), "Browse");
+        assert_eq!(NavDestination::Installed.label(), "Installed");
+        assert_eq!(NavDestination::Updates.label(), "Updates");
+        assert_eq!(NavDestination::News.label(), "News");
+        assert_eq!(NavDestination::Settings.label(), "Settings");
+    }
+
+    #[test]
+    fn test_source_filter_metadata() {
+        assert_eq!(SourceFilter::All.label(), "All");
+        assert_eq!(SourceFilter::Alpm.label(), "Official / ALPM");
+        assert_eq!(SourceFilter::Aur.label(), "AUR");
+        assert_eq!(SourceFilter::Flatpak.label(), "Flatpak");
+        assert_eq!(SourceFilter::AppImage.label(), "AppImage");
     }
 }

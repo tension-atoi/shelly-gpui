@@ -96,9 +96,13 @@ impl ConsoleModel {
         cx.notify();
     }
 
-    pub fn clear_logs(&mut self, cx: &mut Context<Self>) {
+    /// Efface l'historique des lignes de log affichées sans altérer le statut du cycle de vie
+    pub fn clear_history(&mut self) {
         self.logs.clear();
-        self.status = OperationStatus::Idle;
+    }
+
+    pub fn clear_logs(&mut self, cx: &mut Context<Self>) {
+        self.clear_history();
         cx.emit(ConsoleEvent::LogsCleared);
         cx.notify();
     }
@@ -123,5 +127,33 @@ mod tests {
         assert!(console.is_open);
         assert!(console.auto_scroll);
         assert_eq!(console.height, 180.0);
+    }
+
+    #[test]
+    fn test_clear_logs_preserves_lifecycle_status() {
+        let mut console = ConsoleModel::new();
+        console.status = OperationStatus::Running("upgrade".to_string());
+        console.logs.push(LogEntry::stdout("Building package..."));
+
+        assert_eq!(console.logs.len(), 1);
+        assert_eq!(
+            console.status,
+            OperationStatus::Running("upgrade".to_string())
+        );
+
+        // Effacer les logs ne doit vider que l'historique sans falsifier le statut opérationnel
+        console.clear_history();
+        assert!(console.logs.is_empty());
+        assert_eq!(
+            console.status,
+            OperationStatus::Running("upgrade".to_string())
+        );
+
+        // Vérification identique pour les états terminaux Success et Error
+        console.status = OperationStatus::Success("Done".to_string());
+        console.logs.push(LogEntry::stdout("Finished successfully"));
+        console.clear_history();
+        assert!(console.logs.is_empty());
+        assert_eq!(console.status, OperationStatus::Success("Done".to_string()));
     }
 }

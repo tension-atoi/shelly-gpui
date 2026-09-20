@@ -375,6 +375,7 @@ impl WorkspaceView {
             let results: Vec<UnifiedPackage> = match filter {
                 SourceFilter::All => {
                     let (alpm_res, aur_res, flatpak_res) = client.search_all(&query_clone).await;
+                    let appimage_res = client.list_appimages().await;
                     let mut combined = Vec::new();
 
                     if let Ok(pkgs) = alpm_res {
@@ -390,6 +391,25 @@ impl WorkspaceView {
                     if let Ok(pkgs) = flatpak_res {
                         for p in pkgs {
                             combined.push(UnifiedPackage::from_flatpak(p, false));
+                        }
+                    }
+                    if let Ok(appimages) = appimage_res {
+                        let q_lower = query_clone.to_lowercase();
+                        for ai in appimages {
+                            let matches = ai.name.to_lowercase().contains(&q_lower)
+                                || ai
+                                    .desktop_name
+                                    .as_ref()
+                                    .map(|d| d.to_lowercase().contains(&q_lower))
+                                    .unwrap_or(false)
+                                || ai
+                                    .description
+                                    .as_ref()
+                                    .map(|d| d.to_lowercase().contains(&q_lower))
+                                    .unwrap_or(false);
+                            if matches {
+                                combined.push(UnifiedPackage::from_appimage(ai));
+                            }
                         }
                     }
                     combined
@@ -415,7 +435,27 @@ impl WorkspaceView {
                     .into_iter()
                     .map(|p| UnifiedPackage::from_flatpak(p, false))
                     .collect(),
-                SourceFilter::AppImage => Vec::new(),
+                SourceFilter::AppImage => {
+                    let appimages = client.list_appimages().await.unwrap_or_default();
+                    let q_lower = query_clone.to_lowercase();
+                    appimages
+                        .into_iter()
+                        .filter(|ai| {
+                            ai.name.to_lowercase().contains(&q_lower)
+                                || ai
+                                    .desktop_name
+                                    .as_ref()
+                                    .map(|d| d.to_lowercase().contains(&q_lower))
+                                    .unwrap_or(false)
+                                || ai
+                                    .description
+                                    .as_ref()
+                                    .map(|d| d.to_lowercase().contains(&q_lower))
+                                    .unwrap_or(false)
+                        })
+                        .map(UnifiedPackage::from_appimage)
+                        .collect()
+                }
             };
 
             let _ = this.update(cx, |view, cx| {
@@ -718,7 +758,7 @@ impl Render for WorkspaceView {
                                     .child(if self.search_input_buffer.is_empty() {
                                         div()
                                             .text_color(theme.text_muted)
-                                            .child("Rechercher un paquet (ex: ripgrep, firefox)...")
+                                            .child("Search packages (e.g. ripgrep, firefox)...")
                                     } else {
                                         div().child(self.search_input_buffer.clone())
                                     }),
@@ -760,13 +800,13 @@ impl Render for WorkspaceView {
                                 .font_weight(FontWeight::BOLD)
                                 .text_sm()
                                 .text_color(theme.text_primary)
-                                .child("📦 Paquets installés localement"),
+                                .child("📦 Locally Installed Packages"),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(theme.text_muted)
-                                .child(format!("{} paquets", packages.len())),
+                                .child(format!("{} packages", packages.len())),
                         ),
                     NavDestination::Updates => {
                         let entity_upgrade = entity.clone();
@@ -784,7 +824,7 @@ impl Render for WorkspaceView {
                                     .font_weight(FontWeight::BOLD)
                                     .text_sm()
                                     .text_color(theme.text_primary)
-                                    .child("🔄 Mises à jour du système disponibles"),
+                                    .child("🔄 Available System Updates"),
                             )
                             .child(
                                 div()
@@ -800,7 +840,7 @@ impl Render for WorkspaceView {
                                         let h = theme.accent_hover;
                                         move |s| s.bg(h)
                                     })
-                                    .child("Tout mettre à jour")
+                                    .child("Upgrade All")
                                     .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
                                         entity_upgrade.update(cx, |view, cx| {
                                             view.run_package_mutation(
@@ -841,9 +881,9 @@ impl Render for WorkspaceView {
                         .text_center()
                         .child(div().text_sm().text_color(theme.text_muted).child(
                             if is_searching {
-                                "Recherche en cours..."
+                                "Searching..."
                             } else {
-                                "Aucun paquet correspondant."
+                                "No matching packages."
                             },
                         ))
                         .into_any_element()
