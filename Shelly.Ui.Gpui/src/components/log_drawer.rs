@@ -12,23 +12,33 @@ pub enum OperationStatus {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum BackendPhaseStatus {
+    Pending,
+    Running(Option<u8>),
+    Success(String),
+    Failed(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackendPhase {
+    pub name: String,
+    pub status: BackendPhaseStatus,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct LogEntry {
     pub text: String,
     pub is_stderr: bool,
+    pub raw: Option<String>,
 }
 
 impl LogEntry {
-    pub fn stdout(line: impl Into<String>) -> Self {
+    pub fn decoded(text: impl Into<String>, is_stderr: bool, raw: Option<String>) -> Self {
+        let t: String = text.into();
         Self {
-            text: sanitize_ansi(&line.into()),
-            is_stderr: false,
-        }
-    }
-
-    pub fn stderr(line: impl Into<String>) -> Self {
-        Self {
-            text: sanitize_ansi(&line.into()),
-            is_stderr: true,
+            text: sanitize_ansi(&t),
+            is_stderr,
+            raw,
         }
     }
 }
@@ -37,9 +47,11 @@ pub type LogActionHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 
 pub struct LogDrawerProps<'a> {
     pub logs: &'a [LogEntry],
+    pub backend_phases: &'a [BackendPhase],
     pub status: &'a OperationStatus,
     pub is_open: bool,
     pub auto_scroll: bool,
+    pub show_raw_logs: bool,
     pub height: f32,
     pub copied_feedback: bool,
     pub scroll_handle: &'a ScrollHandle,
@@ -48,6 +60,7 @@ pub struct LogDrawerProps<'a> {
     pub on_copy: Option<LogActionHandler>,
     pub on_clear: Option<LogActionHandler>,
     pub on_toggle_autoscroll: Option<LogActionHandler>,
+    pub on_toggle_raw_logs: Option<LogActionHandler>,
 }
 
 pub struct LogDrawer;
@@ -265,6 +278,57 @@ impl LogDrawer {
             btn
         };
 
+        // Bouton Mode Brut / Formaté
+        let raw_toggle_btn = {
+            let on_toggle_raw = props.on_toggle_raw_logs.clone();
+            let on_raw_key = props.on_toggle_raw_logs.clone();
+            let hover_bg = theme.bg_surface_hover;
+            let border_focus = theme.border_focus;
+            let show_raw = props.show_raw_logs;
+            let mut btn = div()
+                .id("console_raw_toggle_btn")
+                .focusable()
+                .tab_stop(true)
+                .focus(move |s| s.border_1().border_color(border_focus))
+                .on_key_down(move |event, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "enter" || key == "space" {
+                        if let Some(ref handler) = on_raw_key {
+                            handler(window, cx);
+                        }
+                    }
+                })
+                .px_2()
+                .py_1()
+                .rounded_sm()
+                .border_1()
+                .border_color(if show_raw { theme.accent } else { theme.border })
+                .bg(if show_raw {
+                    theme.bg_surface_active
+                } else {
+                    theme.bg_surface
+                })
+                .text_xs()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(if show_raw {
+                    theme.accent
+                } else {
+                    theme.text_secondary
+                })
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover_bg).border_color(border_focus))
+                .child(if show_raw {
+                    "Logs: Raw"
+                } else {
+                    "Logs: Formatted"
+                });
+
+            if let Some(handler) = on_toggle_raw {
+                btn = btn.on_mouse_down(MouseButton::Left, move |_e, w, cx| handler(w, cx));
+            }
+            btn
+        };
+
         // Bouton de masquage/affichage du tiroir
         let toggle_btn = {
             let on_toggle = props.on_toggle.clone();
@@ -341,6 +405,7 @@ impl LogDrawer {
                     .flex()
                     .items_center()
                     .gap_2()
+                    .child(raw_toggle_btn)
                     .child(copy_btn)
                     .child(clear_btn)
                     .child(autoscroll_btn)
@@ -350,6 +415,70 @@ impl LogDrawer {
         let mut container = div().flex().flex_col().bg(theme.bg_sidebar).child(header);
 
         if props.height > 1.0 {
+            if !props.backend_phases.is_empty() {
+                let mut phases_strip = div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .px_4()
+                    .py_1p5()
+                    .bg(theme.bg_surface)
+                    .border_b_1()
+                    .border_color(theme.border);
+
+                for phase in props.backend_phases {
+                    let (bg_color, text_color, badge_text) = match &phase.status {
+                        BackendPhaseStatus::Pending => {
+                            (theme.border, theme.text_muted, "○ Queued".to_string())
+                        }
+                        BackendPhaseStatus::Running(pct) => {
+                            let p_str = if let Some(p) = pct {
+                                format!("⟳ {}%", p)
+                            } else {
+                                "⟳ In progress".to_string()
+                            };
+                            (theme.warning, theme.bg_app, p_str)
+                        }
+                        BackendPhaseStatus::Success(s) => {
+                            (theme.success, theme.bg_app, format!("✓ {}", s))
+                        }
+                        BackendPhaseStatus::Failed(e) => {
+                            (theme.danger, theme.bg_app, format!("✕ {}", e))
+                        }
+                    };
+                    let card = div()
+                        .flex()
+                        .items_center()
+                        .gap_1p5()
+                        .px_2()
+                        .py_0p5()
+                        .rounded_sm()
+                        .bg(theme.bg_surface_hover)
+                        .border_1()
+                        .border_color(theme.border)
+                        .text_xs()
+                        .child(
+                            div()
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(theme.text_primary)
+                                .child(phase.name.clone()),
+                        )
+                        .child(
+                            div()
+                                .px_1p5()
+                                .py_0p5()
+                                .rounded_xs()
+                                .bg(bg_color)
+                                .text_color(text_color)
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(badge_text),
+                        );
+                    phases_strip = phases_strip.child(card);
+                }
+                container = container.child(phases_strip);
+            }
+
             if auto_scroll && !props.logs.is_empty() {
                 props
                     .scroll_handle
@@ -383,13 +512,19 @@ impl LogDrawer {
                         theme.text_primary
                     };
 
+                    let display_text = if props.show_raw_logs {
+                        entry.raw.as_deref().unwrap_or(entry.text.as_str())
+                    } else {
+                        entry.text.as_str()
+                    };
+
                     log_content = log_content.child(
                         div()
                             .id(idx)
                             .py_0p5()
                             .font_family("monospace")
                             .text_color(color)
-                            .child(entry.text.clone()),
+                            .child(display_text.to_string()),
                     );
                 }
             }

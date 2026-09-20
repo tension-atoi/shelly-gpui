@@ -96,14 +96,7 @@ impl OperationConsoleView {
     }
 
     pub fn copy_logs(&mut self, cx: &mut Context<Self>) {
-        let logs_text = self
-            .console
-            .read(cx)
-            .logs
-            .iter()
-            .map(|l| l.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let logs_text = self.console.read(cx).copy_text();
 
         cx.write_to_clipboard(ClipboardItem::new_string(logs_text));
         self.logs_copied_feedback = true;
@@ -151,14 +144,17 @@ impl Render for OperationConsoleView {
         let entity_copy = entity.clone();
         let entity_clear = entity.clone();
         let entity_auto = entity.clone();
+        let entity_raw = entity.clone();
 
         let console_read = self.console.read(cx);
 
         LogDrawer::render(LogDrawerProps {
             logs: &console_read.logs,
+            backend_phases: &console_read.backend_phases,
             status: &console_read.status,
             is_open,
             auto_scroll,
+            show_raw_logs: console_read.show_raw_logs,
             height: current_height,
             copied_feedback: self.logs_copied_feedback,
             scroll_handle: &console_read.scroll_handle,
@@ -181,6 +177,11 @@ impl Render for OperationConsoleView {
             on_toggle_autoscroll: Some(Rc::new(move |_w, cx| {
                 entity_auto.update(cx, |this, cx| {
                     this.console.update(cx, |c, cx| c.toggle_auto_scroll(cx));
+                });
+            })),
+            on_toggle_raw_logs: Some(Rc::new(move |_w, cx| {
+                entity_raw.update(cx, |this, cx| {
+                    this.console.update(cx, |c, cx| c.toggle_raw_logs(cx));
                 });
             })),
         })
