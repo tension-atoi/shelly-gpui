@@ -39,6 +39,7 @@ pub struct WorkspaceView {
     pub sidebar: Entity<SidebarView>,
     pub console_view: Entity<OperationConsoleView>,
     pub settings: SettingsView,
+    pub render_lab: Entity<crate::render_lab::RenderLabState>,
     pub shelly_settings: ShellySettings,
     pub gpui_config: GpuiUiConfig,
     pub theme: Theme,
@@ -281,6 +282,8 @@ impl WorkspaceView {
         })
         .detach();
 
+        let render_lab = cx.new(|_| crate::render_lab::RenderLabState::new());
+
         let view = Self {
             session,
             store,
@@ -290,6 +293,7 @@ impl WorkspaceView {
             sidebar,
             console_view,
             settings,
+            render_lab,
             shelly_settings,
             gpui_config: gpui_config.clone(),
             theme,
@@ -440,6 +444,7 @@ impl WorkspaceView {
                         console.status,
                         crate::components::log_drawer::OperationStatus::Running(_)
                     ) || session.is_searching,
+                    render_lab_active: session.destination == NavDestination::RenderLab,
                 };
                 ControlResponse::ok_with_data(
                     "Running",
@@ -700,6 +705,71 @@ impl WorkspaceView {
                     Err(e) => ControlResponse::error(e.to_string()),
                 }
             }
+            ControlCommand::RenderLabOpen => {
+                self.session.update(cx, |s, cx| {
+                    s.set_destination(NavDestination::RenderLab, cx);
+                });
+                ControlResponse::ok("Render Lab opened")
+            }
+            ControlCommand::RenderLabFixture { id } => {
+                let res = self
+                    .render_lab
+                    .update(cx, |rl, cx| rl.set_fixture_by_id_str(&id, cx));
+                match res {
+                    Ok(()) => ControlResponse::ok(format!("Active fixture set to '{id}'")),
+                    Err(e) => ControlResponse::error(e),
+                }
+            }
+            ControlCommand::RenderLabTopology { variant } => {
+                match crate::render_lab::TopologyVariant::parse(&variant) {
+                    Ok(top) => {
+                        self.render_lab
+                            .update(cx, |rl, cx| rl.set_topology(top, cx));
+                        ControlResponse::ok(format!("Topology variant set to '{}'", top.as_str()))
+                    }
+                    Err(e) => ControlResponse::error(e),
+                }
+            }
+            ControlCommand::RenderLabMotion { variant } => {
+                match crate::render_lab::MotionVariant::parse(&variant) {
+                    Ok(mot) => {
+                        self.render_lab.update(cx, |rl, cx| rl.set_motion(mot, cx));
+                        ControlResponse::ok(format!("Motion variant set to '{}'", mot.as_str()))
+                    }
+                    Err(e) => ControlResponse::error(e),
+                }
+            }
+            ControlCommand::RenderLabQuality { level } => {
+                match crate::render_lab::QualityLevel::parse(&level) {
+                    Ok(ql) => {
+                        self.render_lab.update(cx, |rl, cx| rl.set_quality(ql, cx));
+                        ControlResponse::ok(format!("Quality level set to '{}'", ql.as_str()))
+                    }
+                    Err(e) => ControlResponse::error(e),
+                }
+            }
+            ControlCommand::RenderLabTime { seconds } => {
+                if seconds < 0.0 || seconds.is_nan() || seconds.is_infinite() {
+                    ControlResponse::error(format!(
+                        "Invalid time '{seconds}', expected non-negative number"
+                    ))
+                } else {
+                    self.render_lab.update(cx, |rl, cx| {
+                        rl.set_clock(crate::render_lab::ClockMode::Frozen(seconds), cx);
+                    });
+                    ControlResponse::ok(format!("Clock frozen at t = {seconds:.3}s"))
+                }
+            }
+            ControlCommand::RenderLabStatus => {
+                let manifest = {
+                    let rl = self.render_lab.read(cx);
+                    crate::render_lab::RenderLabManifest::from_state(rl, true)
+                };
+                ControlResponse::ok_with_data(
+                    "Render Lab Status",
+                    serde_json::to_value(&manifest).unwrap_or_default(),
+                )
+            }
         }
     }
 
@@ -860,7 +930,7 @@ impl WorkspaceView {
                     self.load_news(cx);
                 }
             }
-            NavDestination::Settings => {}
+            NavDestination::Settings | NavDestination::RenderLab => {}
         }
     }
 
@@ -1890,6 +1960,26 @@ impl Render for WorkspaceView {
                             })
                         }),
                     }))
+            }
+            NavDestination::RenderLab => {
+                let entity_rl = entity.clone();
+                let rl_state = self.render_lab.read(cx);
+                div()
+                    .size_full()
+                    .child(crate::views::render_lab::RenderLabView::render(
+                        crate::views::render_lab::RenderLabViewProps {
+                            state: rl_state,
+                            theme: &theme,
+                            on_select_fixture: Rc::new(move |id, _w, cx| {
+                                entity_rl.update(cx, |view, cx| {
+                                    view.render_lab.update(cx, |rl, cx| {
+                                        rl.set_fixture(Some(id), cx);
+                                    });
+                                    cx.notify();
+                                });
+                            }),
+                        },
+                    ))
             }
         };
 

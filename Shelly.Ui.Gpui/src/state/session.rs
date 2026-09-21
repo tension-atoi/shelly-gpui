@@ -82,6 +82,7 @@ pub enum NavDestination {
     Updates,
     News,
     Settings,
+    RenderLab,
 }
 
 use crate::icons::AppIcon;
@@ -94,6 +95,7 @@ impl NavDestination {
             NavDestination::Updates => "Updates",
             NavDestination::News => "News",
             NavDestination::Settings => "Settings",
+            NavDestination::RenderLab => "Render Lab",
         }
     }
 
@@ -104,6 +106,7 @@ impl NavDestination {
             NavDestination::Updates => AppIcon::Updates,
             NavDestination::News => AppIcon::News,
             NavDestination::Settings => AppIcon::Settings,
+            NavDestination::RenderLab => AppIcon::RenderLab,
         }
     }
 
@@ -114,6 +117,7 @@ impl NavDestination {
             NavDestination::Updates => Some(2),
             NavDestination::News => Some(3),
             NavDestination::Settings => None,
+            NavDestination::RenderLab => None,
         }
     }
 
@@ -234,7 +238,7 @@ impl AppSession {
     pub fn set_destination(&mut self, dest: NavDestination, cx: &mut Context<Self>) {
         if self.destination != dest {
             self.destination = dest;
-            if dest != NavDestination::Settings {
+            if dest.workspace_config_index().is_some() {
                 self.last_workspace_destination = dest;
             }
             self.destination_epoch = self.destination_epoch.wrapping_add(1);
@@ -595,5 +599,56 @@ mod tests {
         session.inspector_tab = InspectorTab::Dependencies;
         session.inspector_tab_epoch += 1;
         assert_eq!(session.inspector_tab_epoch, 1);
+    }
+
+    #[test]
+    fn test_nav_destination_render_lab_properties() {
+        let dest = NavDestination::RenderLab;
+        assert_eq!(dest.label(), "Render Lab");
+        assert_eq!(dest.icon(), AppIcon::RenderLab);
+        assert_eq!(dest.workspace_config_index(), None);
+    }
+
+    #[test]
+    fn test_set_destination_render_lab_does_not_update_last_workspace() {
+        let mut session = AppSession::new();
+        assert_eq!(session.destination, NavDestination::Browse);
+        assert_eq!(session.last_workspace_destination, NavDestination::Browse);
+
+        // Manually test set_destination logic without GPUI Context
+        let dest = NavDestination::Installed;
+        if dest.workspace_config_index().is_some() {
+            session.last_workspace_destination = dest;
+        }
+        session.destination = dest;
+        assert_eq!(session.destination, NavDestination::Installed);
+        assert_eq!(
+            session.last_workspace_destination,
+            NavDestination::Installed
+        );
+
+        // Navigating to Settings does NOT update last_workspace_destination
+        let dest = NavDestination::Settings;
+        if dest.workspace_config_index().is_some() {
+            session.last_workspace_destination = dest;
+        }
+        session.destination = dest;
+        assert_eq!(session.destination, NavDestination::Settings);
+        assert_eq!(
+            session.last_workspace_destination,
+            NavDestination::Installed
+        );
+
+        // Navigating to RenderLab does NOT update last_workspace_destination
+        let dest = NavDestination::RenderLab;
+        if dest.workspace_config_index().is_some() {
+            session.last_workspace_destination = dest;
+        }
+        session.destination = dest;
+        assert_eq!(session.destination, NavDestination::RenderLab);
+        assert_eq!(
+            session.last_workspace_destination,
+            NavDestination::Installed
+        );
     }
 }

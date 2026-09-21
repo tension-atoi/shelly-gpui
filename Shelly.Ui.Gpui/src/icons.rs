@@ -30,6 +30,7 @@ pub enum AppIcon {
     SourceFlatpak,
     SourceAppImage,
     PackageGeneric,
+    RenderLab,
 }
 
 impl AppIcon {
@@ -61,6 +62,7 @@ impl AppIcon {
         AppIcon::SourceFlatpak,
         AppIcon::SourceAppImage,
         AppIcon::PackageGeneric,
+        AppIcon::RenderLab,
     ];
 
     pub fn path(self) -> &'static str {
@@ -92,6 +94,7 @@ impl AppIcon {
             AppIcon::SourceFlatpak => "icons/source-flatpak.svg",
             AppIcon::SourceAppImage => "icons/source-appimage.svg",
             AppIcon::PackageGeneric => "icons/package-generic.svg",
+            AppIcon::RenderLab => "icons/render-lab.svg",
         }
     }
 }
@@ -135,6 +138,7 @@ impl AssetSource for AppIcons {
             "icons/source-flatpak.svg" => Some(include_bytes!("icons/source-flatpak.svg")),
             "icons/source-appimage.svg" => Some(include_bytes!("icons/source-appimage.svg")),
             "icons/package-generic.svg" => Some(include_bytes!("icons/package-generic.svg")),
+            "icons/render-lab.svg" => Some(include_bytes!("icons/render-lab.svg")),
             _ => None,
         };
         Ok(bytes.map(Cow::Borrowed))

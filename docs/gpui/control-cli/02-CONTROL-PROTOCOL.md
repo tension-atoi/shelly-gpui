@@ -1,4 +1,4 @@
-# Control Protocol Specification (v1)
+# Control Protocol Specification (v2)
 
 ## Transport & Addressing
 
@@ -54,12 +54,19 @@ Supported `command` actions and payloads:
 - `{"action": "settings-get", "payload": {"key": "<key>"}}`
 - `{"action": "settings-set", "payload": {"key": "<key>", "value": "<val>"}}`
 - `{"action": "settings-reset", "payload": {"key": "<key|null>"}}`
+- `{"action": "render-lab-open"}`
+- `{"action": "render-lab-fixture", "payload": {"id": "<fixture-id>"}}`
+- `{"action": "render-lab-topology", "payload": {"variant": "<floating-island|full-band|perimeter-hug>"}}`
+- `{"action": "render-lab-motion", "payload": {"variant": "<classic|smooth|elastic|liquid|reduced-motion>"}}`
+- `{"action": "render-lab-quality", "payload": {"level": "<stock>"}}`
+- `{"action": "render-lab-time", "payload": {"seconds": <float>}}`
+- `{"action": "render-lab-status"}`
 
 ### Response Schema
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "ok": true,
   "message": "Navigated to installed",
   "data": null,
@@ -70,7 +77,7 @@ Supported `command` actions and payloads:
 On error:
 ```json
 {
-  "version": 1,
+  "version": 2,
   "ok": false,
   "error": "Invalid view mode 'banana', expected 'table' or 'cards'"
 }
@@ -78,11 +85,7 @@ On error:
 
 ### Protocol Versioning Guarantees
 
-If a client sends a request with `version != 1`, the server immediately rejects the request with an explicit version mismatch error without modifying UI state:
-```json
-{
-  "version": 1,
-  "ok": false,
-  "error": "Protocol version mismatch: client is v2, server is v1"
-}
-```
+Protocol v2 intentionally supersedes v1.
+Existing v1 command semantics and existing fields are preserved.
+The new `render_lab_active` field in `ControlStatus` is tagged with `#[serde(default)]`, permitting tolerant payload deserialization where version policy allows it.
+A v1 peer may reject v2 at protocol negotiation; protocol compatibility is not implied across version boundaries.

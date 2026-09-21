@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const CONTROL_PROTOCOL_VERSION: u32 = 1;
+pub const CONTROL_PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ControlRequest {
@@ -34,6 +34,13 @@ pub enum ControlCommand {
     SettingsGet { key: String },
     SettingsSet { key: String, value: String },
     SettingsReset { key: Option<String> },
+    RenderLabOpen,
+    RenderLabFixture { id: String },
+    RenderLabTopology { variant: String },
+    RenderLabMotion { variant: String },
+    RenderLabQuality { level: String },
+    RenderLabTime { seconds: f32 },
+    RenderLabStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -92,6 +99,8 @@ pub struct ControlStatus {
     pub inspector_tab: String,
     pub selected_package: Option<String>,
     pub operation_running: bool,
+    #[serde(default)]
+    pub render_lab_active: bool,
 }
 
 impl ControlStatus {
@@ -110,6 +119,7 @@ impl ControlStatus {
             inspector_tab: "unknown".to_string(),
             selected_package: None,
             operation_running: false,
+            render_lab_active: false,
         }
     }
 }
@@ -152,11 +162,44 @@ mod tests {
             inspector_tab: "overview".to_string(),
             selected_package: Some("ripgrep".to_string()),
             operation_running: false,
+            render_lab_active: false,
         };
         let json = serde_json::to_string(&status).expect("Serialization failed");
         let parsed: ControlStatus = serde_json::from_str(&json).expect("Deserialization failed");
         assert_eq!(status, parsed);
         assert!(parsed.gui_running);
         assert_eq!(parsed.selected_package.as_deref(), Some("ripgrep"));
+        assert!(!parsed.render_lab_active);
+    }
+
+    #[test]
+    fn test_render_lab_protocol_round_trip() {
+        let commands = vec![
+            ControlCommand::RenderLabOpen,
+            ControlCommand::RenderLabFixture {
+                id: "field.signed-voltage".to_string(),
+            },
+            ControlCommand::RenderLabTopology {
+                variant: "floating-island".to_string(),
+            },
+            ControlCommand::RenderLabMotion {
+                variant: "smooth".to_string(),
+            },
+            ControlCommand::RenderLabQuality {
+                level: "stock".to_string(),
+            },
+            ControlCommand::RenderLabTime { seconds: 0.5 },
+            ControlCommand::RenderLabStatus,
+        ];
+
+        for cmd in commands {
+            let req = ControlRequest::new(cmd.clone());
+            let json = serde_json::to_string(&req).expect("Serialize failed");
+            let deserialized: ControlRequest =
+                serde_json::from_str(&json).expect("Deserialize failed");
+            assert_eq!(req, deserialized);
+            assert_eq!(deserialized.version, CONTROL_PROTOCOL_VERSION);
+            assert_eq!(deserialized.command, cmd);
+        }
     }
 }

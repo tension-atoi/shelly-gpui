@@ -27,6 +27,19 @@ pub enum CliCommand {
     Inspector { tab: String },
     Logs { operation: String },
     Settings(CliSettingsCommand),
+    RenderLab(CliRenderLabCommand),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CliRenderLabCommand {
+    Open,
+    Fixture { id: String },
+    Material { id: String },
+    Topology { variant: String },
+    Motion { variant: String },
+    Quality { level: String },
+    Time { seconds: f32 },
+    Status,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -190,6 +203,86 @@ impl CliInvocation {
                         CliCommand::Settings(CliSettingsCommand::Reset { key })
                     }
                     other => return Err(format!("Unknown settings subcommand '{other}'. Expected 'list', 'get', 'set', or 'reset'")),
+                }
+            }
+            "render-lab" | "render_lab" => {
+                if positional.len() < 2 {
+                    return Err(
+                        "Missing subcommand for 'render-lab' ('open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', 'status')".into(),
+                    );
+                }
+                let sub = positional[1].to_ascii_lowercase();
+                match sub.as_str() {
+                    "open" => CliCommand::RenderLab(CliRenderLabCommand::Open),
+                    "fixture" => {
+                        if positional.len() < 3 {
+                            return Err("Missing fixture ID for 'render-lab fixture'".into());
+                        }
+                        CliCommand::RenderLab(CliRenderLabCommand::Fixture {
+                            id: positional[2].clone(),
+                        })
+                    }
+                    "material" => {
+                        if positional.len() < 3 {
+                            return Err("Missing material name for 'render-lab material'".into());
+                        }
+                        CliCommand::RenderLab(CliRenderLabCommand::Material {
+                            id: positional[2].clone(),
+                        })
+                    }
+                    "topology" => {
+                        if positional.len() < 3 {
+                            return Err(
+                                "Missing variant for 'render-lab topology' ('floating-island', 'full-band', 'perimeter-hug')".into(),
+                            );
+                        }
+                        let variant = positional[2].to_ascii_lowercase();
+                        crate::render_lab::TopologyVariant::parse(&variant)?;
+                        CliCommand::RenderLab(CliRenderLabCommand::Topology { variant })
+                    }
+                    "motion" => {
+                        if positional.len() < 3 {
+                            return Err(
+                                "Missing variant for 'render-lab motion' ('classic', 'smooth', 'elastic', 'liquid', 'reduced-motion')".into(),
+                            );
+                        }
+                        let variant = positional[2].to_ascii_lowercase();
+                        crate::render_lab::MotionVariant::parse(&variant)?;
+                        CliCommand::RenderLab(CliRenderLabCommand::Motion { variant })
+                    }
+                    "quality" => {
+                        if positional.len() < 3 {
+                            return Err(
+                                "Missing level for 'render-lab quality' ('stock')".into(),
+                            );
+                        }
+                        let level = positional[2].to_ascii_lowercase();
+                        crate::render_lab::QualityLevel::parse(&level)?;
+                        CliCommand::RenderLab(CliRenderLabCommand::Quality { level })
+                    }
+                    "time" => {
+                        if positional.len() < 3 {
+                            return Err("Missing time in seconds for 'render-lab time'".into());
+                        }
+                        let seconds: f32 = positional[2].parse().map_err(|_| {
+                            format!(
+                                "Invalid time value '{}', expected a non-negative number",
+                                positional[2]
+                            )
+                        })?;
+                        if seconds < 0.0 || seconds.is_nan() || seconds.is_infinite() {
+                            return Err(format!(
+                                "Invalid time value '{seconds}', expected non-negative finite number"
+                            ));
+                        }
+                        CliCommand::RenderLab(CliRenderLabCommand::Time { seconds })
+                    }
+                    "status" => CliCommand::RenderLab(CliRenderLabCommand::Status),
+                    other => {
+                        return Err(format!(
+                            "Unknown render-lab subcommand '{other}'. Expected 'open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', or 'status'"
+                        ))
+                    }
                 }
             }
             unknown => {
@@ -558,6 +651,83 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                 }
             }
         },
+        CliCommand::RenderLab(lab_cmd) => match lab_cmd {
+            CliRenderLabCommand::Open => {
+                ensure_gui_running().await?;
+                let resp = ControlSocket::send_command(ControlCommand::RenderLabOpen).await?;
+                outcome_from_response(&resp, json)
+            }
+            CliRenderLabCommand::Fixture { id } => {
+                ensure_gui_running().await?;
+                let resp =
+                    ControlSocket::send_command(ControlCommand::RenderLabFixture { id }).await?;
+                outcome_from_response(&resp, json)
+            }
+            CliRenderLabCommand::Material { id } => {
+                ensure_gui_running().await?;
+                let fixture_id = if id.starts_with("material.") {
+                    id
+                } else {
+                    format!("material.{id}")
+                };
+                let resp = ControlSocket::send_command(ControlCommand::RenderLabFixture {
+                    id: fixture_id,
+                })
+                .await?;
+                outcome_from_response(&resp, json)
+            }
+            CliRenderLabCommand::Topology { variant } => {
+                ensure_gui_running().await?;
+                let resp =
+                    ControlSocket::send_command(ControlCommand::RenderLabTopology { variant })
+                        .await?;
+                outcome_from_response(&resp, json)
+            }
+            CliRenderLabCommand::Motion { variant } => {
+                ensure_gui_running().await?;
+                let resp = ControlSocket::send_command(ControlCommand::RenderLabMotion { variant })
+                    .await?;
+                outcome_from_response(&resp, json)
+            }
+            CliRenderLabCommand::Quality { level } => {
+                ensure_gui_running().await?;
+                let resp =
+                    ControlSocket::send_command(ControlCommand::RenderLabQuality { level }).await?;
+                outcome_from_response(&resp, json)
+            }
+            CliRenderLabCommand::Time { seconds } => {
+                ensure_gui_running().await?;
+                let resp =
+                    ControlSocket::send_command(ControlCommand::RenderLabTime { seconds }).await?;
+                outcome_from_response(&resp, json)
+            }
+            CliRenderLabCommand::Status => {
+                if is_running {
+                    let resp = ControlSocket::send_command(ControlCommand::RenderLabStatus).await?;
+                    outcome_from_response(&resp, json)
+                } else {
+                    let manifest = crate::render_lab::RenderLabManifest::offline();
+                    if json {
+                        let resp = ControlResponse::ok_with_data(
+                            "Offline",
+                            serde_json::to_value(&manifest).unwrap_or_default(),
+                        );
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&resp).unwrap_or_default()
+                        );
+                    } else {
+                        println!("Render Lab Status (Offline)");
+                        println!("Catalog Count: {}", manifest.catalog_count);
+                        println!("Clock Mode:    {}", manifest.clock_mode);
+                        println!("Topology:      {}", manifest.topology);
+                        println!("Motion:        {}", manifest.motion);
+                        println!("Quality:       {}", manifest.quality);
+                    }
+                    Ok(CliOutcome::Exit(0))
+                }
+            }
+        },
     }
 }
 
@@ -688,6 +858,60 @@ mod tests {
                     key: None,
                 })),
             ),
+            (
+                vec!["shelly-gpui", "render-lab", "open"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Open)),
+            ),
+            (
+                vec![
+                    "shelly-gpui",
+                    "render-lab",
+                    "fixture",
+                    "field.signed-voltage",
+                ],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Fixture {
+                    id: "field.signed-voltage".to_string(),
+                })),
+            ),
+            (
+                vec![
+                    "shelly-gpui",
+                    "render-lab",
+                    "material",
+                    "painted-metal.signal-orange",
+                ],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Material {
+                    id: "painted-metal.signal-orange".to_string(),
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "render-lab", "topology", "floating-island"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Topology {
+                    variant: "floating-island".to_string(),
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "render-lab", "motion", "smooth"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Motion {
+                    variant: "smooth".to_string(),
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "render-lab", "quality", "stock"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Quality {
+                    level: "stock".to_string(),
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "render-lab", "time", "0.500"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Time {
+                    seconds: 0.5,
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "render-lab", "status"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Status)),
+            ),
         ];
 
         for (input, expected) in cases {
@@ -711,6 +935,32 @@ mod tests {
 
         let missing_search = vec!["shelly-gpui".to_string(), "search".to_string()];
         assert!(CliInvocation::parse_from_args(&missing_search).is_err());
+
+        let missing_render_lab_sub = vec!["shelly-gpui".to_string(), "render-lab".to_string()];
+        assert!(CliInvocation::parse_from_args(&missing_render_lab_sub).is_err());
+
+        let invalid_render_lab_sub = vec![
+            "shelly-gpui".to_string(),
+            "render-lab".to_string(),
+            "unknown".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&invalid_render_lab_sub).is_err());
+
+        let invalid_time = vec![
+            "shelly-gpui".to_string(),
+            "render-lab".to_string(),
+            "time".to_string(),
+            "abc".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&invalid_time).is_err());
+
+        let negative_time = vec![
+            "shelly-gpui".to_string(),
+            "render-lab".to_string(),
+            "time".to_string(),
+            "-1.0".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&negative_time).is_err());
     }
 
     #[test]

@@ -9,6 +9,7 @@ mod components;
 mod config;
 mod control;
 pub mod icons;
+pub mod render_lab;
 mod state;
 mod theme;
 pub mod ui_metrics;

@@ -61,6 +61,7 @@ impl Sidebar {
             NavDestination::Updates => "nav_dest_updates",
             NavDestination::News => "nav_dest_news",
             NavDestination::Settings => "nav_dest_settings",
+            NavDestination::RenderLab => unreachable!("RenderLab is excluded from sidebar"),
         };
 
         let focus_border = theme.border_focus;
