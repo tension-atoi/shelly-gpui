@@ -20,6 +20,10 @@ pub enum ResolvedIdentity {
 
 static IDENTITY_CACHE: OnceLock<RwLock<HashMap<PackageKey, ResolvedIdentity>>> = OnceLock::new();
 static RESOLVING_KEYS: OnceLock<RwLock<HashSet<PackageKey>>> = OnceLock::new();
+static RESOLVER_SENDER: OnceLock<std::sync::mpsc::SyncSender<UnifiedPackage>> = OnceLock::new();
+static RESOLVE_NOTIFIER: OnceLock<
+    std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<PackageKey>>>,
+> = OnceLock::new();
 
 fn get_identity_cache() -> &'static RwLock<HashMap<PackageKey, ResolvedIdentity>> {
     IDENTITY_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
@@ -29,9 +33,51 @@ fn get_resolving_keys() -> &'static RwLock<HashSet<PackageKey>> {
     RESOLVING_KEYS.get_or_init(|| RwLock::new(HashSet::new()))
 }
 
+fn get_resolver_sender() -> &'static std::sync::mpsc::SyncSender<UnifiedPackage> {
+    RESOLVER_SENDER.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<UnifiedPackage>(2048);
+        std::thread::Builder::new()
+            .name("shelly-identity-resolver".to_string())
+            .spawn(move || {
+                while let Ok(pkg) = rx.recv() {
+                    let key = pkg.key();
+                    let resolved = PackageIdentity::resolve_identity_sync(&pkg);
+                    if let Ok(mut cache) = get_identity_cache().write() {
+                        cache.insert(key.clone(), resolved);
+                    }
+                    if let Ok(mut pending) = get_resolving_keys().write() {
+                        pending.remove(&key);
+                    }
+                    PackageIdentity::notify_identity_resolved(&key);
+                }
+            })
+            .expect("failed to spawn identity resolver thread");
+        tx
+    })
+}
+
 pub struct PackageIdentity;
 
 impl PackageIdentity {
+    /// Enregistre le transmetteur de notification asynchrone GPUI
+    pub fn register_notifier(sender: tokio::sync::mpsc::UnboundedSender<PackageKey>) {
+        let mutex = RESOLVE_NOTIFIER.get_or_init(|| std::sync::Mutex::new(None));
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = Some(sender);
+        }
+    }
+
+    /// Notifie les écouteurs de la résolution d'une identité de paquet
+    pub fn notify_identity_resolved(key: &PackageKey) {
+        if let Some(mutex) = RESOLVE_NOTIFIER.get() {
+            if let Ok(guard) = mutex.lock() {
+                if let Some(ref sender) = *guard {
+                    let _ = sender.send(key.clone());
+                }
+            }
+        }
+    }
+
     /// Sonde le système de fichiers local pour localiser une icône authentique fournie par la source.
     /// Pour ALPM et AUR, inspecte les fichiers possédés par le paquet dans /var/lib/pacman/local/<pkg>-*/files.
     pub fn find_authentic_icon(pkg: &UnifiedPackage) -> Option<PathBuf> {
@@ -95,61 +141,110 @@ impl PackageIdentity {
     }
 
     /// Résolution authentique basée sur la provenance stricte pour ALPM et AUR.
-    /// Inspecte la base locale pacman (/var/lib/pacman/local/<pkg>-<version>/files) pour identifier
-    /// les fichiers .desktop réellement possédés par le paquet.
+    /// Inspecte la base locale pacman (/var/lib/pacman/local) pour identifier
+    /// le record dont le champ %NAME% correspond EXACTEMENT au nom du paquet.
     fn probe_alpm_or_aur_icon(pkg: &UnifiedPackage) -> Option<PathBuf> {
         if !pkg.is_installed {
             return None;
         }
         let pacman_local = Path::new("/var/lib/pacman/local");
+        Self::probe_alpm_or_aur_icon_in_dir(pkg, pacman_local, None)
+    }
+
+    /// Sonde un répertoire de base de données locale pacman avec prise en charge d'une racine système optionnelle
+    pub fn probe_alpm_or_aur_icon_in_dir(
+        pkg: &UnifiedPackage,
+        pacman_local: &Path,
+        sys_root: Option<&Path>,
+    ) -> Option<PathBuf> {
         if !pacman_local.is_dir() {
             return None;
         }
 
-        let prefix = format!("{}-", pkg.name);
         let read_dir = std::fs::read_dir(pacman_local).ok()?;
-        let mut desktop_rel_path: Option<String> = None;
+        let prefix = format!("{}-", pkg.name);
+        let mut target_dir: Option<PathBuf> = None;
+        let mut entries_vec = Vec::new();
 
         for entry in read_dir.flatten() {
+            let entry_path = entry.path();
+            if !entry_path.is_dir() {
+                continue;
+            }
             let file_name = entry.file_name();
-            let name_str = file_name.to_string_lossy();
-            if let Some(rest) = name_str.strip_prefix(&prefix) {
-                if rest.starts_with(|c: char| c.is_ascii_digit()) || rest.contains(':') {
-                    let files_path = entry.path().join("files");
-                    if let Ok(content) = std::fs::read_to_string(&files_path) {
-                        let mut fallback_desktop = None;
-                        for line in content.lines() {
-                            let line = line.trim();
-                            if line.starts_with("usr/share/applications/")
-                                && line.ends_with(".desktop")
-                            {
-                                if line.ends_with(&format!("{}.desktop", pkg.name)) {
-                                    desktop_rel_path = Some(line.to_string());
-                                    break;
-                                } else if fallback_desktop.is_none() {
-                                    fallback_desktop = Some(line.to_string());
-                                }
-                            }
-                        }
-                        if desktop_rel_path.is_none() {
-                            desktop_rel_path = fallback_desktop;
+            let name_str = file_name.to_string_lossy().to_string();
+            if name_str.starts_with(&prefix) {
+                let desc_path = entry_path.join("desc");
+                if let Ok(desc_content) = std::fs::read_to_string(&desc_path) {
+                    if let Some(name) = Self::parse_desc_field(&desc_content, "NAME") {
+                        if name == pkg.name {
+                            target_dir = Some(entry_path.clone());
+                            break;
                         }
                     }
-                    if desktop_rel_path.is_some() {
-                        break;
+                }
+            }
+            entries_vec.push(entry_path);
+        }
+
+        if target_dir.is_none() {
+            for entry_path in entries_vec {
+                let desc_path = entry_path.join("desc");
+                if let Ok(desc_content) = std::fs::read_to_string(&desc_path) {
+                    if let Some(name) = Self::parse_desc_field(&desc_content, "NAME") {
+                        if name == pkg.name {
+                            target_dir = Some(entry_path);
+                            break;
+                        }
                     }
                 }
             }
         }
 
+        let target_dir = target_dir?;
+        let files_path = target_dir.join("files");
+        let content = std::fs::read_to_string(&files_path).ok()?;
+        let mut desktop_rel_path: Option<String> = None;
+        let mut fallback_desktop: Option<String> = None;
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with("usr/share/applications/") && line.ends_with(".desktop") {
+                if line.ends_with(&format!("{}.desktop", pkg.name)) {
+                    desktop_rel_path = Some(line.to_string());
+                    break;
+                } else if fallback_desktop.is_none() {
+                    fallback_desktop = Some(line.to_string());
+                }
+            }
+        }
+        if desktop_rel_path.is_none() {
+            desktop_rel_path = fallback_desktop;
+        }
+
         let desktop_rel = desktop_rel_path?;
-        let full_desktop_path = PathBuf::from("/").join(desktop_rel);
+        let full_desktop_path = match sys_root {
+            Some(root) => root.join(desktop_rel),
+            None => PathBuf::from("/").join(desktop_rel),
+        };
         if !full_desktop_path.is_file() {
             return None;
         }
 
         let icon_val = Self::parse_desktop_icon_field(&full_desktop_path)?;
-        Self::resolve_icon_name(&icon_val)
+        Self::resolve_icon_name_in_root(&icon_val, sys_root)
+    }
+
+    /// Extrait la valeur d'un champ %FIELD% d'un fichier desc pacman
+    pub fn parse_desc_field(content: &str, field: &str) -> Option<String> {
+        let marker = format!("%{}%", field);
+        let mut lines = content.lines();
+        while let Some(line) = lines.next() {
+            if line.trim() == marker {
+                return lines.next().map(|l| l.trim().to_string());
+            }
+        }
+        None
     }
 
     /// Extrait le champ Icon= de la section [Desktop Entry] d'un fichier .desktop
@@ -176,6 +271,12 @@ impl PackageIdentity {
 
     /// Résout un nom d'icône ou chemin absolu sur le système de fichiers standard
     fn resolve_icon_name(icon_name: &str) -> Option<PathBuf> {
+        Self::resolve_icon_name_in_root(icon_name, None)
+    }
+
+    /// Résout un nom d'icône ou chemin absolu avec racine de système configurable
+    fn resolve_icon_name_in_root(icon_name: &str, sys_root: Option<&Path>) -> Option<PathBuf> {
+        let base_root = sys_root.unwrap_or(Path::new("/"));
         let p = PathBuf::from(icon_name);
         if p.is_file() {
             return Some(p);
@@ -188,15 +289,16 @@ impl PackageIdentity {
         };
 
         // 1. /usr/share/pixmaps
+        let pixmaps_dir = base_root.join("usr/share/pixmaps");
         for ext in extensions {
-            let pix = PathBuf::from(format!("/usr/share/pixmaps/{}{}", icon_name, ext));
+            let pix = pixmaps_dir.join(format!("{}{}", icon_name, ext));
             if pix.is_file() {
                 return Some(pix);
             }
         }
 
         // 2. /usr/share/icons/hicolor
-        let hicolor_root = PathBuf::from("/usr/share/icons/hicolor");
+        let hicolor_root = base_root.join("usr/share/icons/hicolor");
         if hicolor_root.is_dir() {
             for res in &["128x128", "scalable", "64x64", "48x48", "256x256", "32x32"] {
                 for ext in extensions {
@@ -212,17 +314,19 @@ impl PackageIdentity {
         }
 
         // 3. Répertoire utilisateur (~/.local/share/icons/hicolor)
-        if let Some(data_dir) = dirs::data_dir() {
-            let user_icons = data_dir.join("icons/hicolor");
-            if user_icons.is_dir() {
-                for res in &["128x128", "scalable", "64x64", "48x48", "256x256", "32x32"] {
-                    for ext in extensions {
-                        let path = user_icons
-                            .join(res)
-                            .join("apps")
-                            .join(format!("{}{}", icon_name, ext));
-                        if path.is_file() {
-                            return Some(path);
+        if sys_root.is_none() {
+            if let Some(data_dir) = dirs::data_dir() {
+                let user_icons = data_dir.join("icons/hicolor");
+                if user_icons.is_dir() {
+                    for res in &["128x128", "scalable", "64x64", "48x48", "256x256", "32x32"] {
+                        for ext in extensions {
+                            let path = user_icons
+                                .join(res)
+                                .join("apps")
+                                .join(format!("{}{}", icon_name, ext));
+                            if path.is_file() {
+                                return Some(path);
+                            }
                         }
                     }
                 }
@@ -252,11 +356,36 @@ impl PackageIdentity {
         }
     }
 
+    /// Enfile une requête de résolution vers la queue bornée partagée (dédoublonnée en O(1))
+    pub fn enqueue(pkg: &UnifiedPackage) {
+        let key = pkg.key();
+        if let Ok(cache) = get_identity_cache().read() {
+            if cache.contains_key(&key) {
+                return;
+            }
+        }
+
+        let should_enqueue = if let Ok(mut pending) = get_resolving_keys().write() {
+            pending.insert(key.clone())
+        } else {
+            false
+        };
+
+        if should_enqueue {
+            let sender = get_resolver_sender();
+            if let Err(std::sync::mpsc::TrySendError::Full(_)) = sender.try_send(pkg.clone()) {
+                if let Ok(mut pending) = get_resolving_keys().write() {
+                    pending.remove(&key);
+                }
+            }
+        }
+    }
+
     /// Résout l'identité visuelle de manière non-bloquante pour le chemin chaud de rendu GPUI.
     ///
     /// - Cache HIT: Retourne immédiatement le résultat en O(1) mémoire sans aucun I/O disque.
-    /// - Cache MISS: Retourne immédiatement l'icône symbolique/fallback O(1) et planifie
-    ///   une résolution asynchrone sur un thread d'arrière-plan pour peupler le cache.
+    /// - Cache MISS: Retourne immédiatement l'icône symbolique/fallback O(1) et soumet
+    ///   la clé à la file de résolution asynchrone partagée. ZÉRO spawn de thread OS.
     pub fn resolve_identity(pkg: &UnifiedPackage) -> ResolvedIdentity {
         let key = pkg.key();
 
@@ -266,55 +395,15 @@ impl PackageIdentity {
             }
         }
 
-        let fallback = Self::symbolic_or_fallback(pkg);
-
-        let should_spawn = if let Ok(mut pending) = get_resolving_keys().write() {
-            pending.insert(key.clone())
-        } else {
-            false
-        };
-
-        if should_spawn {
-            let pkg_clone = pkg.clone();
-            let key_clone = key.clone();
-            std::thread::spawn(move || {
-                let resolved = Self::resolve_identity_sync(&pkg_clone);
-                if let Ok(mut cache) = get_identity_cache().write() {
-                    cache.insert(key_clone.clone(), resolved);
-                }
-                if let Ok(mut pending) = get_resolving_keys().write() {
-                    pending.remove(&key_clone);
-                }
-            });
-        }
-
-        fallback
+        Self::enqueue(pkg);
+        Self::symbolic_or_fallback(pkg)
     }
 
-    /// Précharge en arrière-plan les identités d'une collection de paquets
+    /// Précharge les identités d'une collection de paquets via la queue d'autorité unique
     pub fn preload(packages: &[UnifiedPackage]) {
-        let mut to_resolve = Vec::new();
-        if let Ok(cache) = get_identity_cache().read() {
-            for pkg in packages {
-                let key = pkg.key();
-                if !cache.contains_key(&key) {
-                    to_resolve.push(pkg.clone());
-                }
-            }
+        for pkg in packages {
+            Self::enqueue(pkg);
         }
-        if to_resolve.is_empty() {
-            return;
-        }
-
-        std::thread::spawn(move || {
-            for pkg in to_resolve {
-                let key = pkg.key();
-                let resolved = Self::resolve_identity_sync(&pkg);
-                if let Ok(mut cache) = get_identity_cache().write() {
-                    cache.insert(key, resolved);
-                }
-            }
-        });
     }
 
     #[cfg(test)]
@@ -626,5 +715,165 @@ mod tests {
             PackageIdentity::resolve_identity_sync(&uninstalled_pkg),
             ResolvedIdentity::Symbolic(AppIcon::SourceAlpm)
         );
+    }
+
+    #[test]
+    fn test_alpm_exact_name_match() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "shelly_test_pacman_exact_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let pacman_local = temp_dir.join("var/lib/pacman/local");
+        let pkg_dir = pacman_local.join("shelly-gpui-git-r4699.ga172c43e-1");
+        let app_dir = temp_dir.join("usr/share/applications");
+        let pixmaps_dir = temp_dir.join("usr/share/pixmaps");
+
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::create_dir_all(&pixmaps_dir).unwrap();
+
+        // Write desc with %NAME% and %VERSION% where version starts with a letter 'r'
+        let desc_content = "%NAME%\nshelly-gpui-git\n\n%VERSION%\nr4699.ga172c43e-1\n";
+        std::fs::write(pkg_dir.join("desc"), desc_content).unwrap();
+
+        // Write files list
+        let files_content = "%FILES%\nusr/share/applications/shelly.desktop\n";
+        std::fs::write(pkg_dir.join("files"), files_content).unwrap();
+
+        // Write desktop file
+        let desktop_content = "[Desktop Entry]\nType=Application\nName=Shelly\nIcon=shelly-logo\n";
+        std::fs::write(app_dir.join("shelly.desktop"), desktop_content).unwrap();
+
+        // Write icon
+        let icon_path = pixmaps_dir.join("shelly-logo.png");
+        std::fs::write(&icon_path, b"test-icon-bytes").unwrap();
+
+        let pkg = UnifiedPackage {
+            name: "shelly-gpui-git".into(),
+            version: "r4699.ga172c43e-1".into(),
+            description: "Modern package manager".into(),
+            source_type: "ALPM".into(),
+            repository_or_remote: "aur".into(),
+            is_installed: true,
+            has_update: false,
+            new_version: None,
+            inner: UnifiedPackageSource::Standard(AlpmPackage::default()),
+        };
+
+        let result =
+            PackageIdentity::probe_alpm_or_aur_icon_in_dir(&pkg, &pacman_local, Some(&temp_dir));
+        assert_eq!(result, Some(icon_path));
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_alpm_no_false_prefix_candidate() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "shelly_test_pacman_prefix_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let pacman_local = temp_dir.join("var/lib/pacman/local");
+        // Folder starts with "python-" but is actually python-jinja
+        let pkg_dir = pacman_local.join("python-jinja-3.1.2-1");
+        let app_dir = temp_dir.join("usr/share/applications");
+        let pixmaps_dir = temp_dir.join("usr/share/pixmaps");
+
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::create_dir_all(&pixmaps_dir).unwrap();
+
+        // Desc clearly states NAME is python-jinja
+        let desc_content = "%NAME%\npython-jinja\n\n%VERSION%\n3.1.2-1\n";
+        std::fs::write(pkg_dir.join("desc"), desc_content).unwrap();
+
+        let files_content = "%FILES%\nusr/share/applications/jinja.desktop\n";
+        std::fs::write(pkg_dir.join("files"), files_content).unwrap();
+
+        let desktop_content = "[Desktop Entry]\nType=Application\nIcon=jinja-icon\n";
+        std::fs::write(app_dir.join("jinja.desktop"), desktop_content).unwrap();
+        std::fs::write(pixmaps_dir.join("jinja-icon.png"), b"jinja").unwrap();
+
+        // Query for package "python"
+        let queried_pkg = UnifiedPackage {
+            name: "python".into(),
+            version: "3.12.0".into(),
+            description: "Python language interpreter".into(),
+            source_type: "ALPM".into(),
+            repository_or_remote: "core".into(),
+            is_installed: true,
+            has_update: false,
+            new_version: None,
+            inner: UnifiedPackageSource::Standard(AlpmPackage::default()),
+        };
+
+        let result = PackageIdentity::probe_alpm_or_aur_icon_in_dir(
+            &queried_pkg,
+            &pacman_local,
+            Some(&temp_dir),
+        );
+        // MUST BE NONE: python must never match python-jinja despite prefix compatibility
+        assert_eq!(result, None);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_resolver_dedup_and_settlement() {
+        PackageIdentity::clear_cache();
+
+        let pkg = UnifiedPackage {
+            name: "dedup-test-package".into(),
+            version: "1.0.0".into(),
+            description: "dedup test".into(),
+            source_type: "ALPM".into(),
+            repository_or_remote: "extra".into(),
+            is_installed: false,
+            has_update: false,
+            new_version: None,
+            inner: UnifiedPackageSource::Standard(AlpmPackage::default()),
+        };
+
+        let key = pkg.key();
+
+        // First miss: resolves fallback immediately, enqueues request
+        let initial = PackageIdentity::resolve_identity(&pkg);
+        assert_eq!(initial, ResolvedIdentity::Symbolic(AppIcon::SourceAlpm));
+
+        // Second miss before settlement: does NOT duplicate or fail
+        PackageIdentity::enqueue(&pkg);
+
+        // Wait for worker settlement
+        let mut settled = false;
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            if let Ok(cache) = get_identity_cache().read() {
+                if cache.contains_key(&key) {
+                    settled = true;
+                    break;
+                }
+            }
+        }
+        assert!(settled, "resolver worker should settle and write to cache");
+
+        // After settlement, pending set must no longer hold key
+        if let Ok(pending) = get_resolving_keys().read() {
+            assert!(
+                !pending.contains(&key),
+                "pending set should be cleared after settlement"
+            );
+        }
+
+        // Subsequent resolution is a zero-cost cache hit
+        let cached = PackageIdentity::resolve_identity(&pkg);
+        assert_eq!(cached, ResolvedIdentity::Symbolic(AppIcon::SourceAlpm));
+
+        PackageIdentity::clear_cache();
     }
 }

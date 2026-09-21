@@ -114,6 +114,7 @@ pub enum PackageStoreEvent {
     PackageInvalidated(PackageKey),
     UpdatesChanged(usize),
     InstalledChanged(usize),
+    IdentityResolved(PackageKey),
 }
 
 /// Magasin d'état applicatif gérant les collections de paquets, caches et invalidations
@@ -186,6 +187,7 @@ impl PackageStore {
     ) {
         if generation >= self.in_flight_generation {
             self.in_flight_generation = generation;
+            crate::components::package_identity::PackageIdentity::preload(&results);
             self.active_results = Arc::from(results);
             cx.emit(PackageStoreEvent::ResultsChanged);
             cx.notify();
@@ -201,12 +203,24 @@ impl PackageStore {
         cx.notify();
     }
 
+    /// Définit l'erreur de chargement des paquets installés en préservant les données connues
+    pub fn set_installed_error(&mut self, error: String, cx: &mut Context<Self>) {
+        self.installed_error = Some(error);
+        cx.notify();
+    }
+
     /// Définit la liste des mises à jour disponibles
     pub fn set_updates_packages(&mut self, pkgs: Vec<UnifiedPackage>, cx: &mut Context<Self>) {
         self.updates_count = pkgs.len();
         self.updates_packages = Arc::from(pkgs);
         self.updates_error = None;
         cx.emit(PackageStoreEvent::UpdatesChanged(self.updates_count));
+        cx.notify();
+    }
+
+    /// Définit l'erreur de vérification des mises à jour en préservant les données connues
+    pub fn set_updates_error(&mut self, error: String, cx: &mut Context<Self>) {
+        self.updates_error = Some(error);
         cx.notify();
     }
 
@@ -529,5 +543,55 @@ mod tests {
         );
         assert_eq!(store.active_results[0].name, "App2");
         assert_eq!(store.in_flight_generation, 3);
+    }
+
+    #[test]
+    fn test_refresh_failure_preserves_known_good_data() {
+        let client = ShellyClient::new(None);
+        let mut store = PackageStore::new(client);
+
+        let pkg = UnifiedPackage {
+            name: "ripgrep".into(),
+            version: "14.1.0".into(),
+            description: "Line-oriented search tool".into(),
+            source_type: "ALPM".into(),
+            repository_or_remote: "extra".into(),
+            is_installed: true,
+            has_update: false,
+            new_version: None,
+            inner: crate::backend::models::UnifiedPackageSource::Standard(AlpmPackage::default()),
+        };
+
+        // 1. Establish known-good state
+        store.installed_packages = std::sync::Arc::from(vec![pkg.clone()]);
+        store.updates_packages = std::sync::Arc::from(vec![pkg.clone()]);
+        store.installed_error = None;
+        store.updates_error = None;
+
+        assert_eq!(store.installed_packages.len(), 1);
+        assert_eq!(store.updates_packages.len(), 1);
+
+        // 2. Simulate refresh failure on installed packages: record error without wiping data
+        store.installed_error = Some("failed to synchronize all databases".to_string());
+        assert_eq!(
+            store.installed_packages.len(),
+            1,
+            "installed packages must be preserved on refresh failure"
+        );
+        assert_eq!(store.installed_packages[0].name, "ripgrep");
+        assert_eq!(
+            store.installed_error.as_deref(),
+            Some("failed to synchronize all databases")
+        );
+
+        // 3. Simulate refresh failure on updates: record error without wiping data
+        store.updates_error = Some("connection timeout".to_string());
+        assert_eq!(
+            store.updates_packages.len(),
+            1,
+            "updates packages must be preserved on refresh failure"
+        );
+        assert_eq!(store.updates_packages[0].name, "ripgrep");
+        assert_eq!(store.updates_error.as_deref(), Some("connection timeout"));
     }
 }

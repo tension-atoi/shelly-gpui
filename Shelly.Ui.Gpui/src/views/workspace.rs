@@ -208,9 +208,32 @@ impl WorkspaceView {
         })
         .detach();
 
+        // Enregistrement du canal de notification pour la résolution d'identités
+        let (notify_tx, mut notify_rx) = tokio::sync::mpsc::unbounded_channel::<PackageKey>();
+        crate::components::package_identity::PackageIdentity::register_notifier(notify_tx);
+
+        cx.spawn(async move |this, cx| {
+            while let Some(key) = notify_rx.recv().await {
+                let mut keys = vec![key];
+                while let Ok(next) = notify_rx.try_recv() {
+                    keys.push(next);
+                }
+                let _ = this.update(cx, |view, cx| {
+                    view.store.update(cx, |_st, cx| {
+                        for k in keys {
+                            cx.emit(PackageStoreEvent::IdentityResolved(k));
+                        }
+                    });
+                });
+            }
+        })
+        .detach();
+
         // Abonnements réactifs typés aux événements du magasin de paquets et de la console
         cx.subscribe(&store, |this, _emitter, event, cx| match event {
             PackageStoreEvent::ResultsChanged => {
+                let results = this.store.read(cx).active_results.clone();
+                crate::components::package_identity::PackageIdentity::preload(&results);
                 cx.notify();
             }
             PackageStoreEvent::PackageInvalidated(key) => {
@@ -223,6 +246,9 @@ impl WorkspaceView {
                 cx.notify();
             }
             PackageStoreEvent::InstalledChanged(_) => {
+                cx.notify();
+            }
+            PackageStoreEvent::IdentityResolved(_) => {
                 cx.notify();
             }
         })
@@ -357,12 +383,11 @@ impl WorkspaceView {
                             .map(UnifiedPackage::from_update)
                             .collect();
                         crate::components::package_identity::PackageIdentity::preload(&unified);
-                        st.updates_error = None;
                         st.set_updates_packages(unified, cx);
                     }
                     Err(e) => {
                         log::warn!("Initial updates check failed: {:?}", e);
-                        st.updates_error = Some(e.to_string());
+                        st.set_updates_error(e.to_string(), cx);
                     }
                 });
             });
@@ -380,12 +405,11 @@ impl WorkspaceView {
                             .map(|p| UnifiedPackage::from_alpm(p, true))
                             .collect();
                         crate::components::package_identity::PackageIdentity::preload(&unified);
-                        st.installed_error = None;
                         st.set_installed_packages(unified, cx);
                     }
                     Err(e) => {
                         log::warn!("Initial installed packages check failed: {:?}", e);
-                        st.installed_error = Some(e.to_string());
+                        st.set_installed_error(e.to_string(), cx);
                     }
                 });
             });
@@ -440,13 +464,11 @@ impl WorkspaceView {
                             .map(|p| UnifiedPackage::from_alpm(p, true))
                             .collect();
                         crate::components::package_identity::PackageIdentity::preload(&unified);
-                        st.installed_error = None;
                         st.set_installed_packages(unified, cx);
                     }
                     Err(e) => {
                         log::error!("Failed to load installed packages: {:?}", e);
-                        st.installed_error = Some(e.to_string());
-                        st.set_installed_packages(Vec::new(), cx);
+                        st.set_installed_error(e.to_string(), cx);
                     }
                 });
                 cx.notify();
@@ -468,13 +490,11 @@ impl WorkspaceView {
                             .map(UnifiedPackage::from_update)
                             .collect();
                         crate::components::package_identity::PackageIdentity::preload(&unified);
-                        st.updates_error = None;
                         st.set_updates_packages(unified, cx);
                     }
                     Err(e) => {
                         log::error!("Failed to list updates: {:?}", e);
-                        st.updates_error = Some(e.to_string());
-                        st.set_updates_packages(Vec::new(), cx);
+                        st.set_updates_error(e.to_string(), cx);
                     }
                 });
                 cx.notify();
