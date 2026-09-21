@@ -68,7 +68,8 @@ effect requests.
 **Standard** (compatibility, default, fallback, regression baseline):
 
 ```text
-requests: [contact-depth]  →  NATIVE (proven by the current stock UI)
+requests: [contact-depth]  →  UNKNOWN (hypothesis only: stock path makes
+Native plausible; RENDER-01 decides)
 ```
 
 **Transparency** (coherent material system declaration):

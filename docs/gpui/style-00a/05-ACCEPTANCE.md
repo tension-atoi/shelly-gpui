@@ -33,7 +33,7 @@ completeness (14 keys).
 | Invariant | Requirement | Verification Method | Status |
 |---|---|---|---|
 | **Registry closure** | Exactly `Standard` + `Transparency` | `test_registry_contains_exactly_standard_and_transparency` | VERIFIED |
-| **Role canon** | 13 roles, kebab stable, 8/5 text-bearing partition | role tests + `appearance resolve` | VERIFIED |
+| **Role canon** | 13 roles, kebab stable, 4 treatments, 12 protected / 1 unprotected | role tests + `appearance resolve` | VERIFIED |
 | **Config compatibility** | Missing field → `Standard`, legacy renders identical | serde tests + unchanged `Theme` | VERIFIED |
 | **No Theme expansion** | `theme.rs` untouched | File ledger audit | VERIFIED |
 | **Protocol stability** | Control protocol stays v2 | `protocol.rs` untouched, no new variants | VERIFIED |
@@ -67,7 +67,7 @@ Verified live on 2026-09-21 against the exact installed build of `dd2e4b55`.
 | **Authority convergence** | `settings get visual-style` after `appearance` set | Agrees (`transparency`) | VERIFIED |
 | **Protocol stability** | `status` on running GUI | `Protocol: v2` (unchanged) | VERIFIED |
 | **Layout invariant** | Window geometry before/after style switch | Identical (`1062x883` at same origin) | VERIFIED |
-| **Offline status** | `appearance status --json` (GUI offline) | Schema `shelly.appearance-status/1`, `committed-config` | VERIFIED |
+| **Offline status** | `appearance status --json` (GUI offline) | Schema `shelly.appearance-status/1`, `committed-shelly-local-config` | VERIFIED |
 | **Resolve matrix** | `appearance resolve` / `resolve menu` | 13 roles listed; `menu` → scrim yes, 4 effects | VERIFIED |
 | **Rejections** | `style set neon`, `resolve glass-card` | Clean errors, exit `1` | VERIFIED |
 | **Settings selector** | Wayland screenshot, committed config `transparency` | `Visual Style / Transparency ▾` row rendered in APPEARANCE section | VERIFIED |
