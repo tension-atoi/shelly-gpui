@@ -771,6 +771,16 @@ impl WorkspaceView {
                     serde_json::to_value(&manifest).unwrap_or_default(),
                 )
             }
+            ControlCommand::RenderLabStyle { style } => {
+                match crate::visual_style::VisualStyleId::parse(&style) {
+                    Ok(parsed) => {
+                        self.render_lab
+                            .update(cx, |rl, cx| rl.set_style(parsed, cx));
+                        ControlResponse::ok(format!("Lab style axis set to '{}'", parsed.as_str()))
+                    }
+                    Err(e) => ControlResponse::error(e),
+                }
+            }
         }
     }
 

@@ -5101,6 +5101,7 @@ dependencies = [
  "env_logger",
  "futures",
  "gpui",
+ "image",
  "libc",
  "log",
  "serde",

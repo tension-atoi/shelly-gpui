@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-pub const CONTROL_PROTOCOL_VERSION: u32 = 2;
+/// Control protocol version:
+/// - v1: Initial Shelly GPUI runtime control (navigation, search, view mode, inspection)
+/// - v2: Render Lab baseline surface commands (open, fixture, material, topology, motion, quality, time, status)
+/// - v3: RenderLabStyle command & schema v2 manifest fields (recipe, seed, diagnostics) for RENDER-01 confrontation
+pub const CONTROL_PROTOCOL_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ControlRequest {
@@ -41,6 +45,7 @@ pub enum ControlCommand {
     RenderLabQuality { level: String },
     RenderLabTime { seconds: f32 },
     RenderLabStatus,
+    RenderLabStyle { style: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -190,6 +195,9 @@ mod tests {
             },
             ControlCommand::RenderLabTime { seconds: 0.5 },
             ControlCommand::RenderLabStatus,
+            ControlCommand::RenderLabStyle {
+                style: "transparency".to_string(),
+            },
         ];
 
         for cmd in commands {

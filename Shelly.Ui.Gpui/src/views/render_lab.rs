@@ -1,5 +1,9 @@
 use crate::render_lab::catalog::FixtureCatalog;
+use crate::render_lab::confront::{
+    recipe_for, render_confrontation, CONFRONT_BOX_HEIGHT_PX, FIDUCIAL_MARKER_RGB,
+};
 use crate::render_lab::fixture::{FixtureGroup, FixtureId};
+use crate::render_lab::ledger::CapabilityLedger;
 use crate::render_lab::state::{ClockMode, RenderLabState};
 use crate::theme::Theme;
 use gpui::*;
@@ -220,49 +224,69 @@ impl RenderLabView {
                         ),
                 );
 
-                // Placeholder Preview Box
+                // Confrontation Box: fixed-height stock render framed by the
+                // fiducial marker the determinism harness locates in captures.
+                let observation = CapabilityLedger::find(f.id.as_str());
+                let mut confront_box = div()
+                    .w_full()
+                    .h(px(CONFRONT_BOX_HEIGHT_PX))
+                    .border_1()
+                    .border_color(rgb(FIDUCIAL_MARKER_RGB));
+                match render_confrontation(f) {
+                    Some(content) => {
+                        confront_box = confront_box.child(content);
+                    }
+                    None => {
+                        confront_box = confront_box
+                            .bg(theme.bg_surface)
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .justify_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(theme.text_secondary)
+                                    .child("No confrontation recipe yet"),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.text_muted)
+                                    .child("Unevaluated in RENDER-01"),
+                            );
+                    }
+                }
+                preview = preview.child(confront_box);
+
+                // Observed verdict badge: ledger observation when recorded,
+                // unevaluated otherwise. Never the catalog default.
+                let (badge_text, badge_color) = match observation {
+                    Some(obs) => (
+                        format!("Observed: {} · {}", obs.verdict, obs.recipe),
+                        theme.accent,
+                    ),
+                    None => (
+                        "Capability: UNKNOWN (unevaluated)".to_string(),
+                        theme.warning_text,
+                    ),
+                };
                 preview = preview.child(
-                    div()
-                        .w_full()
-                        .h(px(320.0))
-                        .rounded_lg()
-                        .border_1()
-                        .border_color(theme.border)
-                        .bg(theme.bg_surface)
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .justify_center()
-                        .p_6()
-                        .gap_3()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_secondary)
-                                .child("RENDER-00 Canonical Preview Slot"),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .max_w(px(400.0))
-                                .text_center()
-                                .child("No visual cleverness before the catalog, determinism model, capability vocabulary, and control surface are canonical. Primitive confrontation begins in RENDER-01."),
-                        )
-                        .child(
-                            div()
-                                .px_3()
-                                .py_1()
-                                .rounded_full()
-                                .border_1()
-                                .border_color(theme.border)
-                                .bg(theme.bg_app)
-                                .text_xs()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.warning_text)
-                                .child(format!("Capability: {}", f.capability.as_str())),
-                        ),
+                    div().mt_3().flex().flex_row().child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .rounded_full()
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.bg_app)
+                            .text_xs()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(badge_color)
+                            .child(badge_text),
+                    ),
                 );
 
                 // Provenance Card
@@ -304,7 +328,24 @@ impl RenderLabView {
                         ))
                         .child(Self::meta_row(theme, "SHA-256", f.provenance.source_sha256))
                         .child(Self::meta_row(theme, "Seed", &format!("{}", f.seed)))
-                        .child(Self::meta_row(theme, "Determinism", "Deterministic")),
+                        .child(Self::meta_row(theme, "Determinism", "Deterministic"))
+                        .child(Self::meta_row(
+                            theme,
+                            "Catalog Capability",
+                            f.capability.as_str(),
+                        ))
+                        .child(Self::meta_row(
+                            theme,
+                            "Recipe",
+                            recipe_for(f).map(|r| r.id).unwrap_or("none yet"),
+                        ))
+                        .child(Self::meta_row(
+                            theme,
+                            "Observed Capability",
+                            observation
+                                .map(|o| o.verdict.as_str())
+                                .unwrap_or("unevaluated"),
+                        )),
                 );
             }
             None => {
@@ -401,6 +442,7 @@ impl RenderLabView {
                         "Quality",
                         state.active_quality.as_str(),
                     ))
+                    .child(Self::meta_row(theme, "Style", state.active_style.as_str()))
                     .child(Self::meta_row(theme, "Clock Mode", clock_str))
                     .child(Self::meta_row(theme, "Clock Time", &clock_detail)),
             )

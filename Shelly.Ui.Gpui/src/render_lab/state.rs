@@ -1,6 +1,7 @@
 use crate::render_lab::catalog::FixtureCatalog;
 use crate::render_lab::diagnostics::DiagnosticEntry;
 use crate::render_lab::fixture::FixtureId;
+use crate::visual_style::VisualStyleId;
 use gpui::*;
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +109,7 @@ pub enum RenderLabEvent {
     MotionChanged(MotionVariant),
     QualityChanged(QualityLevel),
     ClockChanged(ClockMode),
+    StyleChanged(VisualStyleId),
 }
 
 pub struct RenderLabState {
@@ -115,6 +117,7 @@ pub struct RenderLabState {
     pub active_topology: TopologyVariant,
     pub active_motion: MotionVariant,
     pub active_quality: QualityLevel,
+    pub active_style: VisualStyleId,
     pub clock: ClockMode,
     pub diagnostics: Vec<DiagnosticEntry>,
 }
@@ -134,6 +137,7 @@ impl RenderLabState {
             active_topology: TopologyVariant::default(),
             active_motion: MotionVariant::default(),
             active_quality: QualityLevel::default(),
+            active_style: VisualStyleId::Standard,
             clock: ClockMode::Realtime,
             diagnostics: vec![DiagnosticEntry::info("Render Lab initialized (RENDER-00)")],
         }
@@ -191,6 +195,14 @@ impl RenderLabState {
             cx.notify();
         }
     }
+
+    pub fn set_style(&mut self, style: VisualStyleId, cx: &mut Context<Self>) {
+        if self.active_style != style {
+            self.active_style = style;
+            cx.emit(RenderLabEvent::StyleChanged(style));
+            cx.notify();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -205,6 +217,7 @@ mod tests {
         assert_eq!(state.active_topology, TopologyVariant::FloatingIsland);
         assert_eq!(state.active_motion, MotionVariant::Classic);
         assert_eq!(state.active_quality, QualityLevel::Stock);
+        assert_eq!(state.active_style, VisualStyleId::Standard);
         assert_eq!(state.clock, ClockMode::Realtime);
         assert!(!state.diagnostics.is_empty());
     }

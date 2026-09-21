@@ -41,6 +41,8 @@ pub enum CliRenderLabCommand {
     Quality { level: String },
     Time { seconds: f32 },
     Status,
+    Style { style: String },
+    Ledger,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -217,7 +219,7 @@ impl CliInvocation {
             "render-lab" | "render_lab" => {
                 if positional.len() < 2 {
                     return Err(
-                        "Missing subcommand for 'render-lab' ('open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', 'status')".into(),
+                        "Missing subcommand for 'render-lab' ('open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', 'status', 'style', 'ledger')".into(),
                     );
                 }
                 let sub = positional[1].to_ascii_lowercase();
@@ -287,9 +289,20 @@ impl CliInvocation {
                         CliCommand::RenderLab(CliRenderLabCommand::Time { seconds })
                     }
                     "status" => CliCommand::RenderLab(CliRenderLabCommand::Status),
+                    "style" => {
+                        if positional.len() < 3 {
+                            return Err(
+                                "Missing style for 'render-lab style' ('standard' or 'transparency')".into(),
+                            );
+                        }
+                        let style = positional[2].to_ascii_lowercase();
+                        crate::visual_style::VisualStyleId::parse(&style)?;
+                        CliCommand::RenderLab(CliRenderLabCommand::Style { style })
+                    }
+                    "ledger" => CliCommand::RenderLab(CliRenderLabCommand::Ledger),
                     other => {
                         return Err(format!(
-                            "Unknown render-lab subcommand '{other}'. Expected 'open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', or 'status'"
+                            "Unknown render-lab subcommand '{other}'. Expected 'open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', 'status', 'style', or 'ledger'"
                         ))
                     }
                 }
@@ -401,6 +414,8 @@ Render Lab Commands (RENDER-00, CLI-only developer surface):
   render-lab quality <level>           Set quality level ('stock')
   render-lab time <seconds>            Freeze the lab clock at t seconds
   render-lab status                    Print the lab manifest (works offline)
+  render-lab style <style>            Set lab style axis ('standard' or 'transparency')
+  render-lab ledger                    Print the capability ledger (works offline)
 "#
         );
     }
@@ -798,9 +813,46 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                         println!("Topology:      {}", manifest.topology);
                         println!("Motion:        {}", manifest.motion);
                         println!("Quality:       {}", manifest.quality);
+                        println!("Style:         {}", manifest.style);
                     }
                     Ok(CliOutcome::Exit(0))
                 }
+            }
+            CliRenderLabCommand::Style { style } => {
+                ensure_gui_running().await?;
+                let resp =
+                    ControlSocket::send_command(ControlCommand::RenderLabStyle { style }).await?;
+                outcome_from_response(&resp, json)
+            }
+            CliRenderLabCommand::Ledger => {
+                if let Err(e) = crate::render_lab::ledger::CapabilityLedger::validate() {
+                    let resp = ControlResponse::error(format!("Ledger invalid: {e}"));
+                    return outcome_from_response(&resp, json);
+                }
+                let observations = crate::render_lab::ledger::CapabilityLedger::all();
+                if json {
+                    let resp = ControlResponse::ok_with_data(
+                        "Capability ledger",
+                        serde_json::to_value(observations).unwrap_or_default(),
+                    );
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&resp).unwrap_or_default()
+                    );
+                } else {
+                    println!(
+                        "Capability Ledger ({} observations, backend {}):",
+                        observations.len(),
+                        crate::render_lab::ledger::STOCK_BACKEND_ID
+                    );
+                    for obs in observations {
+                        println!(
+                            "  {:<34} {:<13} {}  [{}]",
+                            obs.fixture, obs.verdict, obs.recipe, obs.evidence
+                        );
+                    }
+                }
+                Ok(CliOutcome::Exit(0))
             }
         },
         CliCommand::Appearance(appearance_cmd) => match appearance_cmd {
@@ -1153,6 +1205,16 @@ mod tests {
                 Some(CliCommand::RenderLab(CliRenderLabCommand::Status)),
             ),
             (
+                vec!["shelly-gpui", "render-lab", "style", "transparency"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Style {
+                    style: "transparency".to_string(),
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "render-lab", "ledger"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Ledger)),
+            ),
+            (
                 vec!["shelly-gpui", "appearance", "style", "get"],
                 Some(CliCommand::Appearance(CliAppearanceCommand::StyleGet)),
             ),
@@ -1227,6 +1289,21 @@ mod tests {
             "-1.0".to_string(),
         ];
         assert!(CliInvocation::parse_from_args(&negative_time).is_err());
+
+        let invalid_lab_style = vec![
+            "shelly-gpui".to_string(),
+            "render-lab".to_string(),
+            "style".to_string(),
+            "neon".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&invalid_lab_style).is_err());
+
+        let missing_lab_style = vec![
+            "shelly-gpui".to_string(),
+            "render-lab".to_string(),
+            "style".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&missing_lab_style).is_err());
 
         let missing_appearance_sub = vec!["shelly-gpui".to_string(), "appearance".to_string()];
         assert!(CliInvocation::parse_from_args(&missing_appearance_sub).is_err());
