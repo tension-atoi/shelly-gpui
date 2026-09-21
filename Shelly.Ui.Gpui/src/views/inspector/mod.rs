@@ -210,3 +210,70 @@ impl PackageInspectorView {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::models::{AlpmPackage, UnifiedPackageSource};
+
+    #[core::prelude::v1::test]
+    fn test_inspector_empty_state_and_populated_render() {
+        let theme = Theme::dark();
+        let on_tab: crate::components::inspector_header::TabSelectHandler =
+            std::rc::Rc::new(|_, _, _| {});
+
+        // 1. Empty state
+        let empty_props = PackageInspectorProps {
+            package: None,
+            alpm_details: None,
+            detail_error: None,
+            pkgbuild: None,
+            is_loading_pkgbuild: false,
+            active_tab: InspectorTab::Overview,
+            theme: &theme,
+            is_busy: false,
+            copy_feedback: false,
+            on_select_tab: on_tab.clone(),
+            on_install: None,
+            on_remove: None,
+            on_copy_install_cmd: None,
+            on_copy_pkgbuild: None,
+            on_navigate_package: None,
+            on_retry_details: None,
+        };
+        let _empty_el = PackageInspectorView::render_with_motion(empty_props, true, 0);
+
+        // 2. Populated package with reduced motion = false
+        let pkg = UnifiedPackage {
+            name: "ripgrep".into(),
+            version: "14.1.0-1".into(),
+            description: "fast search".into(),
+            source_type: "ALPM".into(),
+            repository_or_remote: "extra".into(),
+            is_installed: true,
+            has_update: false,
+            new_version: None,
+            inner: UnifiedPackageSource::Standard(AlpmPackage::default()),
+        };
+
+        let populated_props = PackageInspectorProps {
+            package: Some(&pkg),
+            alpm_details: None,
+            detail_error: Some("Simulated detail error"),
+            pkgbuild: None,
+            is_loading_pkgbuild: false,
+            active_tab: InspectorTab::Overview,
+            theme: &theme,
+            is_busy: false,
+            copy_feedback: false,
+            on_select_tab: on_tab,
+            on_install: None,
+            on_remove: None,
+            on_copy_install_cmd: None,
+            on_copy_pkgbuild: None,
+            on_navigate_package: None,
+            on_retry_details: Some(std::rc::Rc::new(|_, _| {})),
+        };
+        let _pop_el = PackageInspectorView::render_with_motion(populated_props, false, 1);
+    }
+}
