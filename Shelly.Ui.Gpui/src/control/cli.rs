@@ -252,13 +252,22 @@ pub async fn ensure_gui_running() -> Result<()> {
         return Ok(());
     }
 
+    use std::os::unix::process::CommandExt;
     let exe = std::env::current_exe()?;
-    let _child = std::process::Command::new(exe)
-        .arg("--internal-gui")
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("--internal-gui")
+        .process_group(0)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
+        .stderr(std::process::Stdio::null());
+
+    if std::env::var("SHELLY_BIN").is_err()
+        && std::path::Path::new("/usr/lib/shelly/shelly").exists()
+    {
+        cmd.env("SHELLY_BIN", "/usr/lib/shelly/shelly");
+    }
+
+    let _child = cmd.spawn()?;
 
     // Wait bounded readiness for the socket (up to 3 seconds, polling every 50ms)
     for _ in 0..60 {
