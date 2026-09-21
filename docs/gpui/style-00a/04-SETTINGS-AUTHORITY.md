@@ -1,6 +1,29 @@
 # STYLE-00A Settings Authority
 
-## 0. Persisted Key
+## 0. Configuration Scope: SHELLY-LOCAL
+
+```text
+STYLE-00A configuration scope is SHELLY-LOCAL.
+
+gpui-ui.json persists Shelly's local selected profile for product/lab use.
+
+It is NOT:
+- gnos-ux configuration authority
+- gnosix configuration authority
+- gnosis-shell-* persistence contract
+- a decision about future desktop-wide style persistence
+
+Global configuration authority remains OPEN.
+```
+
+Likewise, `AppearanceStatus.source = "committed-shelly-local-config"`
+names the committed Shelly-local file actually read — never a global
+canonical configuration. Component ownership must not be confused with
+truth ownership: this key evolves Shelly's own CONTROL-01-ratified
+machinery and pre-decides nothing about pending Gnosix authority
+discussions.
+
+## 1. Persisted Key
 
 `gpui-ui.json` gains one typed field:
 
@@ -14,7 +37,7 @@
 - Atomic write path reused (`sibling tmp + fsync + rename + dir fsync`).
 - `settings reset visual-style` restores `standard`; `reset all` covers it.
 
-## 1. Draft Flow (Unchanged Shape)
+## 2. Draft Flow (Unchanged Shape)
 
 `SettingsView` drafts `GpuiUiConfig` (now including `visual_style`):
 
@@ -25,7 +48,7 @@ Reset              → draft restored from committed state
 CLI set while dirty → rejected with edit-conflict error (CONTROL-01 guard)
 ```
 
-## 2. Dropdown Control
+## 3. Dropdown Control
 
 Section `APPEARANCE & DENSITY`, below Compact View Density:
 
@@ -38,7 +61,7 @@ Section `APPEARANCE & DENSITY`, below Compact View Density:
 - Opening the menu never dirties the draft; only selection does.
 - Static honesty note: Transparency projection arrives with STYLE-00B.
 
-## 3. Live Application Path
+## 4. Live Application Path
 
 ```text
 appearance style set transparency   (GUI running)

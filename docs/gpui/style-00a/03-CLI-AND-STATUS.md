@@ -35,7 +35,7 @@ shelly-gpui settings reset visual-style
   "visual_style": "transparency",
   "color_scheme": "dark",
   "active_profile_revision": 1,
-  "source": "committed-config",
+  "source": "committed-shelly-local-config",
   "effects": [
     {
       "kind": "backdrop-blur",
@@ -47,8 +47,9 @@ shelly-gpui settings reset visual-style
 }
 ```
 
-`source: "committed-config"` states the authority actually read: on-disk
-committed configuration, never an unsaved GUI draft.
+`source: "committed-shelly-local-config"` states the authority actually
+read: Shelly's committed on-disk configuration, never an unsaved GUI draft
+and never a global desktop configuration authority (which remains OPEN).
 
 ## 2. Projection Schema (resolve)
 
@@ -56,6 +57,7 @@ committed configuration, never an unsaved GUI draft.
 {
   "style": "transparency",
   "role": "menu",
+  "treatment": "elevated-surface",
   "color_scheme": "dark",
   "opaque": false,
   "content_scrim": true,

@@ -23,25 +23,34 @@ explicitly deferred: STYLE-00A introduces no platform theme probing.
 
 Components request a role; the style authority decides its projection.
 
-| Role ID | Label | Text-bearing |
-|---|---|---|
-| `app-chrome` | App Chrome | no |
-| `navigation-rail` | Navigation Rail | no |
-| `query-chrome` | Query Chrome | no |
-| `result-surface` | Result Surface | yes |
-| `inspector-chrome` | Inspector Chrome | no |
-| `inspector-content` | Inspector Content | yes |
-| `console-chrome` | Console Chrome | no |
-| `popover` | Popover | yes |
-| `menu` | Menu | yes |
-| `dialog` | Dialog | yes |
-| `control-surface` | Control Surface | yes |
-| `content-surface` | Content Surface | yes |
-| `selection-surface` | Selection Surface | yes |
+| Role ID | Label | Treatment | Protected |
+|---|---|---|---|
+| `app-chrome` | App Chrome | ambient-chrome | no |
+| `navigation-rail` | Navigation Rail | ambient-chrome | yes |
+| `query-chrome` | Query Chrome | interactive-chrome | yes |
+| `result-surface` | Result Surface | content-plane | yes |
+| `inspector-chrome` | Inspector Chrome | interactive-chrome | yes |
+| `inspector-content` | Inspector Content | content-plane | yes |
+| `console-chrome` | Console Chrome | interactive-chrome | yes |
+| `popover` | Popover | elevated-surface | yes |
+| `menu` | Menu | elevated-surface | yes |
+| `dialog` | Dialog | elevated-surface | yes |
+| `control-surface` | Control Surface | interactive-chrome | yes |
+| `content-surface` | Content Surface | content-plane | yes |
+| `selection-surface` | Selection Surface | content-plane | yes |
 
-Text-bearing roles own a predictable content plane (scrim) under
-Transparency, so contrast is computed against a style-owned background
-rather than an unknown wallpaper. Pure chrome roles (5) carry no scrim.
+Protected roles (`requires_content_protection`) own a predictable content
+plane (scrim) under Transparency, so contrast is computed against a
+style-owned background rather than an unknown wallpaper. Only `app-chrome`
+— the base canvas owning no text of its own — resolves unprotected: rail
+labels and counts, query text and filters, inspector metadata and tabs,
+and console status and controls are all readable content in real Shelly
+surfaces.
+
+Treatment and protection are independent axes: `navigation-rail` is
+`ambient-chrome` **and** protected. Treatment governs how strongly a style
+may act; protection governs the contrast guarantee. Neither carries
+visual magnitudes in STYLE-00A.
 
 ## 3. Registry
 
@@ -75,10 +84,14 @@ Styles request intentions, never shaders. Resolution reuses the ratified
 
 | Effect | STYLE-00A verdict | Rationale |
 |---|---|---|
-| `contact-depth` | `NATIVE` | Borders, focus rings, shadows already render via public GPUI primitives |
+| `contact-depth` | `UNKNOWN` | Hypothesis only: existing stock BoxShadow/border path makes Native plausible; RENDER-01 decides |
 | `backdrop-blur` | `UNKNOWN` | Stock window-level path exists (`WindowBackgroundAppearance::Blurred` via `org_kde_kwin_blur`, compositor-dependent); per-surface evaluation deferred to RENDER-01 |
 | `microstructure` | `UNKNOWN` | No proven stock texture path; spike scheduled in RENDER-01 |
 | `rim-response` | `UNKNOWN` | Uniform borders proven; directional rim unevaluated until RENDER-01 |
 
+STYLE-00A observes nothing: all four requests resolve `UNKNOWN`.
+Existing stock support appears only as hypothesis notes. The first real
+capability observations belong to the RENDER-01 backend-specific ledger,
+so STYLE-00A never competes with it as a verdict authority.
 `ShaderRequired` cannot be produced before RENDER-03. Every `UNKNOWN`
 carries a machine-readable caveat note; nothing degrades silently.

@@ -888,7 +888,9 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                                 serde_json::json!({
                                     "id": r.as_str(),
                                     "label": r.label(),
-                                    "text_bearing": r.is_text_bearing(),
+                                    "treatment": r.treatment().as_str(),
+                                    "requires_content_protection":
+                                        r.requires_content_protection(),
                                 })
                             })
                             .collect();
@@ -904,10 +906,11 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                         println!("Canonical surface roles:");
                         for r in crate::visual_style::SurfaceRole::ALL {
                             println!(
-                                "  {:<18} {}  (text-bearing: {})",
+                                "  {:<18} {}  (treatment: {}, protected: {})",
                                 r.as_str(),
                                 r.label(),
-                                r.is_text_bearing()
+                                r.treatment(),
+                                r.requires_content_protection()
                             );
                         }
                     }
@@ -939,6 +942,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                             projection.role,
                             role_parsed.label()
                         );
+                        println!("  Treatment:      {}", projection.treatment.label());
                         println!("  Color Scheme:   {}", projection.color_scheme);
                         println!(
                             "  Opaque:         {}",

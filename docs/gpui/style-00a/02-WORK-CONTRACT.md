@@ -1,8 +1,28 @@
 # STYLE-00A Work Contract
 
 > **Baseline**: `c31117c1` (RENDER-00 ratified HEAD)
-> **Status**: IMPLEMENTED — awaiting architecture review
+> **Status**: IMPLEMENTED + 00A-R CORRECTIONS — awaiting architecture review
 > **Stop Rule**: STOP after STYLE-00A closure. RENDER-01 code waits for ratification.
+
+## 00A-R Final Architecture Closure Record
+
+Review of the initial implementation found four defects, corrected here
+without scope expansion (no renderer work, no STYLE-00B, no RENDER-01 code):
+
+1. **Content protection** was objectively wrong (rail/query/inspector/
+   console chrome resolved unprotected). Replaced `is_text_bearing` with
+   `requires_content_protection`: 12/13 roles protected, only the textless
+   `app-chrome` canvas unprotected.
+2. **Role authority was syntactic.** Added `SurfaceTreatment`
+   (`ambient-chrome`, `interactive-chrome`, `content-plane`,
+   `elevated-surface`) mapped for all 13 roles and carried by every
+   `StyleProjection`. No visual magnitudes.
+3. **Capability neutrality was violated** (`ContactDepth = Native`).
+   All four requests now resolve `UNKNOWN` with hypothesis notes;
+   RENDER-01 owns first observations.
+4. **Configuration boundary was undocumented.** STYLE-00A persistence is
+   declared Shelly-local; global configuration authority remains OPEN
+   (see `04-SETTINGS-AUTHORITY.md`).
 
 ## 0. Locked Decisions
 

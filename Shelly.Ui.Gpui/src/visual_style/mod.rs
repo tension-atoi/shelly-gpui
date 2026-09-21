@@ -6,4 +6,4 @@ pub mod transparency;
 
 pub use profile::{ColorScheme, VisualStyleId, VisualStyleProfile, VisualStyleRegistry};
 pub use resolver::{AppearanceStatus, EffectKind, EffectResolution, StyleProjection};
-pub use roles::SurfaceRole;
+pub use roles::{SurfaceRole, SurfaceTreatment};

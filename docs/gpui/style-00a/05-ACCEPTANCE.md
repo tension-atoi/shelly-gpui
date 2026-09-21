@@ -3,7 +3,7 @@
 ## 0. Baseline Reference
 
 - Baseline Commit: `c31117c1e1eea68e427e08e5578987a80999e385` (RENDER-00 ratified)
-- Phase Target: `STYLE-00A`
+- Phase Target: `STYLE-00A` + `STYLE-00A-R` final architecture closure
 
 ---
 
@@ -13,16 +13,18 @@
 |---|---|---|---|
 | `cargo fmt --check` | 0 formatting diffs | Clean | PASS |
 | `cargo clippy --locked -- -D warnings` | 0 warnings | Clean (1 future-incompat in third-party dep) | PASS |
-| `cargo test --release --locked` | 0 failures | 156 passed, 0 failed (142 baseline + 14 new) | PASS |
+| `cargo test --release --locked` | 0 failures | 157 passed, 0 failed (142 baseline + 15 new incl. 00A-R) | PASS |
 | `cargo build --release --locked` | Clean release binary | Completed | PASS |
 | `zig build test` (Shelly.Cli.Zig) | 0 failures | 6 passed, 0 failed (backend untouched) | PASS |
 
 New coverage: style/scheme/role serde round-trips, registry cardinality,
 legacy + empty-config defaults, explicit-value preservation, deterministic
-resolve over 13 × 2 × 2, Light/Dark effect parity, resolution honesty
-(only `contact-depth` native, `ShaderRequired` unproducible), status schema,
-CLI parse matrix (valid + 5 rejection cases), menu open/navigate/select,
-draft dirty/save/reset with `visual_style`, settings completeness (14 keys).
+resolve over 13 × 2 × 2, Light/Dark effect parity, resolution neutrality
+(all `UNKNOWN`, `ShaderRequired` unproducible), role→treatment mapping
+(13/13), content-protection policy (12 protected / 1 unprotected), status
+schema, CLI parse matrix (valid + 5 rejection cases), menu
+open/navigate/select, draft dirty/save/reset with `visual_style`, settings
+completeness (14 keys).
 
 ---
 
@@ -39,7 +41,11 @@ draft dirty/save/reset with `visual_style`, settings completeness (14 keys).
 | **Renderer boundary** | No fork/WGSL/WGPU/compositor work | Architecture audit | VERIFIED |
 | **No visual change** | Style switch alters no layout or paint | No paint consumer in 00A + runtime matrix | VERIFIED |
 | **Read-your-writes** | `set` → `status` agreement, no restart | Runtime CLI matrix (online) | VERIFIED |
-| **Packaging provenance** | Exact-SHA `makepkg` + `pacman -U` + PID/Hyprland | Closure gate | VERIFIED |
+| **Packaging provenance** | Exact-SHA `makepkg` + `pacman -U` + PID/Hyprland | Closure gate (`r4714.gdd2e4b55-1` pre-00A-R; 00A-R is architecture + docs, no repaint) | VERIFIED |
+| **00A-R protection** | 12/13 roles protected; rail/query/inspector/console scrims | `test_content_protection_policy_covers_all_roles` + live `resolve` | VERIFIED |
+| **00A-R treatment** | 13/13 roles mapped to 4 treatment classes | `test_surface_treatment_mapping_full_coverage` | VERIFIED |
+| **00A-R neutrality** | All STYLE effects `UNKNOWN`, no `ShaderRequired` | `test_resolution_neutrality_all_unknown_in_style_00a` | VERIFIED |
+| **00A-R boundary** | Shelly-local scope declared; global authority OPEN | `04-SETTINGS-AUTHORITY.md` §0 + `source` value | VERIFIED |
 
 ---
 

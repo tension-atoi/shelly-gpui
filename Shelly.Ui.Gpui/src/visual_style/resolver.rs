@@ -1,6 +1,6 @@
 use crate::render_lab::CapabilityClass;
 use crate::visual_style::profile::{ColorScheme, VisualStyleId, VisualStyleRegistry};
-use crate::visual_style::roles::SurfaceRole;
+use crate::visual_style::roles::{SurfaceRole, SurfaceTreatment};
 use serde::{Deserialize, Serialize};
 
 /// Semantic effect requested by a visual style profile.
@@ -52,11 +52,12 @@ impl std::fmt::Display for EffectKind {
 
 /// Honest per-effect capability report for the stock GPUI backend.
 ///
-/// STYLE-00A proves nothing new: only [`EffectKind::ContactDepth`] resolves
-/// to [`CapabilityClass::Native`], by existence of the current stock UI
-/// (borders, shadows). Every other request stays [`CapabilityClass::Unknown`]
-/// with a caveat documenting the known stock path or the missing evidence.
-/// No request may resolve to `ShaderRequired` before RENDER-03.
+/// STYLE-00A proves nothing: every request resolves to
+/// [`CapabilityClass::Unknown`]. Existing stock support may appear only as
+/// a hypothesis note. The first real capability observations belong to the
+/// RENDER-01 backend-specific ledger, so STYLE-00A never competes with it
+/// as a verdict authority. No request may resolve to `ShaderRequired`
+/// before RENDER-03.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EffectResolution {
     pub kind: EffectKind,
@@ -81,8 +82,8 @@ impl EffectResolution {
                 "Uniform borders proven in stock UI; directional rim unevaluated until RENDER-01",
             ),
             EffectKind::ContactDepth => (
-                CapabilityClass::Native,
-                "Proven by the current stock UI: borders, focus rings and drop shadows render via public GPUI primitives",
+                CapabilityClass::Unknown,
+                "Hypothesis only: existing stock BoxShadow/border path makes Native plausible; RENDER-01 decides",
             ),
         };
         Self {
@@ -102,6 +103,7 @@ impl EffectResolution {
 pub struct StyleProjection {
     pub style: VisualStyleId,
     pub role: SurfaceRole,
+    pub treatment: SurfaceTreatment,
     pub color_scheme: ColorScheme,
     pub opaque: bool,
     pub content_scrim: bool,
@@ -110,8 +112,9 @@ pub struct StyleProjection {
 
 /// Machine-readable appearance authority report.
 ///
-/// `source` names the authority actually read: the committed on-disk
-/// configuration, never an unsaved GUI draft.
+/// `source` names the authority actually read: the committed Shelly-local
+/// on-disk configuration (`gpui-ui.json`), never an unsaved GUI draft and
+/// never a global desktop configuration authority (which remains OPEN).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AppearanceStatus {
     pub schema: &'static str,
@@ -141,10 +144,11 @@ pub fn resolve_style(
         .map(EffectResolution::resolve)
         .collect();
     let opaque = style == VisualStyleId::Standard;
-    let content_scrim = style == VisualStyleId::Transparency && role.is_text_bearing();
+    let content_scrim = style == VisualStyleId::Transparency && role.requires_content_protection();
     StyleProjection {
         style,
         role,
+        treatment: role.treatment(),
         color_scheme,
         opaque,
         content_scrim,
@@ -160,7 +164,7 @@ pub fn status_for_config(visual_style: VisualStyleId, dark_theme: bool) -> Appea
         visual_style,
         color_scheme: ColorScheme::from_dark_theme(dark_theme),
         active_profile_revision: profile.revision,
-        source: "committed-config",
+        source: "committed-shelly-local-config",
         effects: profile
             .requests
             .iter()
@@ -190,19 +194,16 @@ mod tests {
     }
 
     #[test]
-    fn test_resolution_honesty_only_contact_depth_is_native() {
+    fn test_resolution_neutrality_all_unknown_in_style_00a() {
         for kind in EffectKind::ALL {
             let res = EffectResolution::resolve(*kind);
             assert!(res.requested);
             assert!(!res.note.is_empty());
-            match kind {
-                EffectKind::ContactDepth => assert_eq!(res.resolved, CapabilityClass::Native),
-                _ => assert_eq!(
-                    res.resolved,
-                    CapabilityClass::Unknown,
-                    "{kind} must stay Unknown until RENDER-01 evidence"
-                ),
-            }
+            assert_eq!(
+                res.resolved,
+                CapabilityClass::Unknown,
+                "{kind} must stay Unknown: RENDER-01 owns first observations"
+            );
             assert_ne!(
                 res.resolved,
                 CapabilityClass::ShaderRequired,
@@ -223,9 +224,10 @@ mod tests {
                     assert_eq!(first.role, *role);
                     assert_eq!(first.color_scheme, *scheme);
                     assert_eq!(first.opaque, *style == VisualStyleId::Standard);
+                    assert_eq!(first.treatment, role.treatment());
                     assert_eq!(
                         first.content_scrim,
-                        *style == VisualStyleId::Transparency && role.is_text_bearing()
+                        *style == VisualStyleId::Transparency && role.requires_content_protection()
                     );
                     let expected_requests = VisualStyleRegistry::get(*style).requests.len();
                     assert_eq!(first.effects.len(), expected_requests);
@@ -254,17 +256,21 @@ mod tests {
         assert_eq!(status.visual_style, VisualStyleId::Transparency);
         assert_eq!(status.color_scheme, ColorScheme::Dark);
         assert_eq!(status.active_profile_revision, 1);
-        assert_eq!(status.source, "committed-config");
+        assert_eq!(status.source, "committed-shelly-local-config");
         assert_eq!(status.effects.len(), 4);
         let json = serde_json::to_string(&status).expect("Serialize status");
         assert!(json.contains("\"transparency\""));
         assert!(json.contains(APPEARANCE_STATUS_SCHEMA));
-        assert!(json.contains("\"committed-config\""));
+        assert!(json.contains("\"committed-shelly-local-config\""));
 
         let standard = status_for_config(VisualStyleId::Standard, false);
         assert_eq!(standard.color_scheme, ColorScheme::Light);
         assert_eq!(standard.effects.len(), 1);
         assert_eq!(standard.effects[0].kind, EffectKind::ContactDepth);
-        assert_eq!(standard.effects[0].resolved, CapabilityClass::Native);
+        assert_eq!(
+            standard.effects[0].resolved,
+            CapabilityClass::Unknown,
+            "Standard requests ContactDepth but 00A observes nothing"
+        );
     }
 }

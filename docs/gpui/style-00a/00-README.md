@@ -12,6 +12,11 @@ exactly, and `Transparency` is declared (effect requests + honest capability
 reporting) without paint projection. Projection arrives with STYLE-00B, after
 Render Lab stock evidence.
 
+All STYLE-00A persistence is Shelly-local (`gpui-ui.json`). It is not a
+gnos-ux, Gnosix, or `gnosis-shell-*` configuration authority, and it
+pre-decides nothing about desktop-wide style persistence. Global
+configuration authority remains OPEN (see `04-SETTINGS-AUTHORITY.md`).
+
 ## 1. Position in the Pipeline
 
 ```text
