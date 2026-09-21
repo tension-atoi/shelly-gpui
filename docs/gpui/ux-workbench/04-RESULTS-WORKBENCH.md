@@ -52,8 +52,10 @@ flowchart TD
 
 1. **Tier 1 (Authentic Source Icon)**:
    - Flatpak packages probe `/var/lib/flatpak/exports/share/icons/hicolor/` and `~/.local/share/flatpak/exports/share/icons/hicolor/` for high-resolution PNG or SVG assets matching the App ID.
-   - Standard and AUR packages probe `/usr/share/icons/hicolor/`, `/usr/share/pixmaps/`, and user icon directories.
-   - Verified on local filesystem before use; rendered via `gpui::img(path)` for raster or `gpui::svg().path(...)` for vector assets.
+   - AppImage packages probe declared sibling assets or standard desktop icon locations.
+   - Standard ALPM and AUR packages strictly require provenance verification: if installed, Shelly inspects package-owned files in `/var/lib/pacman/local/<pkg>-<version>/files`, finds owned `usr/share/applications/*.desktop` entries, extracts the `Icon=` field under `[Desktop Entry]`, and resolves the icon path.
+   - Uninstalled packages, packages without owned desktop files, or non-desktop CLI tools honestly return Tier 2 Symbolic icons without guessing or name-based heuristics.
+   - Hot-path rendering enforces `IdentityCache`: cached hits render in $O(1)$ memory; cache misses immediately render Tier 2 Symbolic in $O(1)$ with zero synchronous disk I/O, spawning asynchronous background prefetch to populate the cache.
 2. **Tier 2 (Verified Source Symbolic Vector)**:
    - High-contrast geometric vector glyphs for known sources: Arch Swoosh (`source-alpm.svg`), AUR Crest (`source-aur.svg`), Flatpak Cube (`source-flatpak.svg`), AppImage Diamond (`source-appimage.svg`).
 3. **Tier 3 (Generic Fallback)**:
@@ -70,20 +72,24 @@ Each source is assigned a distinct semantic identity token compliant with WCAG 2
 | **AppImage** | Portable Diamond | `rgb(0xf97316)` @ 12% / 28% | `rgb(0xea580c)` @ 10% / 28% | $\ge 6.7:1$ (Dark) / $\ge 4.5:1$ (Light) | Self-contained Executable Binaries |
 | **Generic** | Package Box | `border` @ 50% | `border` @ 50% | Neutral | Unspecified / Fallback |
 
+Status text labels utilize dedicated high-contrast text tokens (`success_text` and `warning_text`), mathematically proven $\ge 4.5:1$ against surface and app backgrounds in both light and dark modes, while status accent dots retain vibrant indicator hues.
+
 ---
 
 ## 4. Axis 2 & 4: Cards View Architecture
 
 ### 4.1 Card Geometry & Spatial Budget
 - **Normal Mode**:
-  - Row Wrapper Height: `88.0px` (`UiMetrics::CARD_WRAPPER_NORMAL`)
+  - Row Wrapper Height: `88.0px` (`UiMetrics::CARD_WRAPPER_NORMAL` in uniform list)
+  - Outer Wrapper Inset: `4.0px` top and bottom (`py_1()` in `package_workstation.rs`), giving $80 + 4 + 4 = 88\text{px}$. Note: this outer wrapper inset is distinct from the card's inner vertical padding.
   - Inner Card Height: `80.0px` (`UiMetrics::CARD_HEIGHT_NORMAL`)
-  - Vertical Inset: `4.0px` top and bottom (`py(px(4.0))`), perfectly satisfying $80 + 4 + 4 = 88\text{px}$.
+  - Inner Card Padding: `12.0px` horizontal (`.px_3()`), `6.0px` vertical (`.py(px(6.0))`).
   - Avatar Dimensions: `36.0px` $\times$ `36.0px` with `6.0px` rounded corners.
 - **Compact Mode**:
-  - Row Wrapper Height: `70.0px` (`UiMetrics::CARD_WRAPPER_COMPACT`)
+  - Row Wrapper Height: `70.0px` (`UiMetrics::CARD_WRAPPER_COMPACT` in uniform list)
+  - Outer Wrapper Inset: `4.0px` top and bottom (`py_1()` in `package_workstation.rs`), giving $62 + 4 + 4 = 70\text{px}$.
   - Inner Card Height: `62.0px` (`UiMetrics::CARD_HEIGHT_COMPACT`)
-  - Vertical Inset: `4.0px` top and bottom (`py(px(4.0))`), perfectly satisfying $62 + 4 + 4 = 70\text{px}$.
+  - Inner Card Padding: `12.0px` horizontal (`.px_3()`), `4.0px` vertical (`.py(px(4.0))`).
   - Avatar Dimensions: `28.0px` $\times$ `28.0px` with `4.0px` rounded corners.
 
 ### 4.2 Card Visual Layout & Desktop Metadata Line

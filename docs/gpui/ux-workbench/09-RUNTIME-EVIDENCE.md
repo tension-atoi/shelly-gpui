@@ -158,30 +158,35 @@ The complete visual evidence suite captured directly from the live Wayland compo
 
 ---
 
-## 8. Phase UX-03 & UX-03R Runtime Evidence: Results Workbench & Package Identity Closure
+## 8. Phase UX-03, UX-03R & UX-03R2 Runtime Evidence: Results Workbench & Package Identity Final Closure
 
 ### 8.1 Environment & Package Verification
 - **Target OS**: Arch Linux x86_64
 - **Compositor**: Hyprland (Native Wayland, `xwayland: false`)
 - **Display**: `WAYLAND_DISPLAY=wayland-1`
-- **Installed Package**: `shelly-gpui-git r4697.gaada56d2-1`
-- **Source Git Commit**: `aada56d2`
+- **Installed Package**: `shelly-gpui-git r4699.ga172c43e-1`
+- **Source Git Commit**: `a172c43e`
 - **Running Binary**: `/usr/lib/shelly/shelly-gpui-bin`
 - **Verification Command**:
   ```sh
   pacman -Q shelly-gpui-git
-  # Output: shelly-gpui-git r4697.gaada56d2-1
+  # Output: shelly-gpui-git r4699.ga172c43e-1
   ```
+- **Architectural Invariants Verified**:
+  1. **Strict Provenance-Backed Tier 1 for ALPM & AUR**: Probes `/var/lib/pacman/local/<pkg>-<version>/files` for owned `usr/share/applications/*.desktop` entries and resolves `Icon=` on disk. Uninstalled packages or CLI packages without owned desktop files honestly fall back to Tier 2 Symbolic (`SourceAlpm`, `SourceAur`) with zero fake logos and zero guessing.
+  2. **Hot-Path Render Performance & Zero Sync Disk I/O**: `IdentityCache` provides $O(1)$ memory lookup on hits and immediate $O(1)$ symbolic rendering on misses, enqueuing background asynchronous prefetch workers. Proactive `PackageIdentity::preload` resolves package lists upon receipt.
+  3. **Mathematical WCAG 2.1 AA Compliance**: `theme.rs` unit tests assert $\ge 4.5:1$ contrast ratios across all text tokens against `bg_surface` and `bg_app` in both Dark and Light themes. Text labels use dedicated `success_text` (`#047857` in light, `#34d399` in dark) and `warning_text` (`#b45309` in light, `#fbbf24` in dark), separating text contrast from indicator accent dots.
+  4. **Outer Wrapper Inset Clarification**: Clarified that $80 + 4 + 4 = 88\text{px}$ is the outer row wrapper inset (`py_1()` in `package_workstation.rs`), distinct from the inner card padding (`py(px(6.0))` in `package_card.rs`).
 
-### 8.2 Live Wayland UX-03R Gallery
+### 8.2 Live Wayland UX-03R2 Gallery
 
 | Figure | State / Component | Screenshot Artifact | Verified UX Properties | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | **01** | **Table View Search Results** | [`evidence_ux03_01_table_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_01_table_view_search_results.png) | High-density multi-column Table layout with inline 16x16 source glyphs (`source-alpm.svg` cyan swoosh, `source-aur.svg` violet crest) in Name column, monospace versions, clean textual source (`Arch / cachyos-v3`, `AUR`) without candy pills, right-aligned monospace sizes (`pr_3`), calm status text (`Available`), docked inspector placeholder | **PASSED** |
 | **02** | **Table View Selection & Inspector** | [`evidence_ux03_02_table_view_selection.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_02_table_view_selection.png) | Selected table row (`ripgrep`) highlighted across full width with electric cyan left accent rail; docked Inspector populated with action buttons (`Install`), tabs (`Overview`), description, and repository metadata | **PASSED** |
-| **03** | **Cards View Mode** | [`evidence_ux03_03_cards_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_03_cards_view_search_results.png) | View switcher `[ ⊞ ]` active; 88px wrapper / 80px card footprint with 36x36 tinted source avatars; 3-line structural hierarchy (Line 1: Name + Monospace Version + Monospace Size; Line 2: Calm Desktop Metadata line `Arch · local · ● Installed` without candy pills; Line 3: Multi-line description clamped to 2 lines via `.line_clamp(2)`) | **PASSED** |
+| **03** | **Cards View Mode** | [`evidence_ux03_03_cards_view_search_results.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_03_cards_view_search_results.png) | View switcher `[ ⊞ ]` active; 88px wrapper / 80px card footprint with 36x36 tinted source avatars; 3-line structural hierarchy (Line 1: Name + Monospace Version + Monospace Size; Line 2: Calm Desktop Metadata line `Arch · local · ● Installed` without candy pills; Line 3: Multi-line description clamped to 2 lines via `.line_clamp(2)`); high-contrast `success_text` label | **PASSED** |
 | **04** | **Card Selection & Inspector** | [`evidence_ux03_04_cards_view_selection.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_04_cards_view_selection.png) | Selected card (`abseil-cpp`) with electric cyan left accent rail and active surface; docked Inspector populated with actions (`Uninstall`, `Copy install command`), tabs (`Overview`, `Dependencies`, `Files & Build`), and package metadata | **PASSED** |
 | **05** | **Compact Cards View** | [`evidence_ux03_05_cards_view_compact_mode.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_05_cards_view_compact_mode.png) | Compact view mode active (70px wrapper, 62px card height, 28x28 avatar, collapsed 56px navigation rail, 1-line description clamp via `.line_clamp(1)`) maximizing vertical density with 13+ cards visible simultaneously | **PASSED** |
-| **06** | **Light Theme Parity & WCAG 2.1 AA** | [`evidence_ux03_06_light_theme_parity.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_06_light_theme_parity.png) | Complete light theme visual parity; high-contrast source avatars, clean text columns (`Arch / local`), monospace versions and sizes, subtle status dots, meeting WCAG 2.1 AA contrast requirements | **PASSED** |
+| **06** | **Light Theme Parity & WCAG 2.1 AA** | [`evidence_ux03_06_light_theme_parity.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_06_light_theme_parity.png) | Complete light theme visual parity; high-contrast source avatars, clean text columns (`Arch / local`), monospace versions and sizes, status text meeting strict WCAG 2.1 AA ($\ge 4.5:1$ with `success_text: #047857` and `text_muted: #64748b`) | **PASSED** |
 
 
