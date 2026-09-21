@@ -7,6 +7,7 @@ use crate::components::inspector_header::{
     InspectorHeader, InspectorHeaderProps, TabSelectHandler, WindowActionHandler,
 };
 use crate::components::semantic_value::StringActionHandler;
+use crate::icons::AppIcon;
 use crate::state::{InspectorTab, PackageCapabilities};
 use crate::theme::Theme;
 use crate::views::inspector::dependencies::{DependenciesView, DependenciesViewProps};
@@ -50,10 +51,29 @@ impl PackageInspectorView {
                 .flex_col()
                 .items_center()
                 .justify_center()
+                .gap_3()
                 .size_full()
+                .p_6()
                 .bg(theme.bg_app)
-                .text_color(theme.text_muted)
-                .child("Select a package from the list to inspect its details.")
+                .child(
+                    svg()
+                        .path(AppIcon::PackageGeneric.path())
+                        .size(px(40.0))
+                        .text_color(theme.text_muted),
+                )
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .child("No Package Selected"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.text_muted)
+                        .child("Select a package from the workstation table to inspect its details, dependencies, and files."),
+                )
                 .into_any_element();
         };
 
@@ -161,16 +181,32 @@ impl PackageInspectorView {
         };
 
         div()
-            .id("inspector_scroll")
+            .id("inspector_container")
             .flex()
             .flex_col()
             .size_full()
             .bg(theme.bg_app)
-            .p_6()
-            .overflow_scroll()
-            .child(header)
-            .children(error_banner)
-            .child(animated_body)
+            .child(
+                div()
+                    .id("inspector_pinned_header")
+                    .flex()
+                    .flex_col()
+                    .w_full()
+                    .px_5()
+                    .pt_4()
+                    .bg(theme.bg_app)
+                    .child(header),
+            )
+            .child(
+                div()
+                    .id("inspector_scroll_body")
+                    .flex_1()
+                    .overflow_scroll()
+                    .px_5()
+                    .py_4()
+                    .children(error_banner)
+                    .child(animated_body),
+            )
             .into_any_element()
     }
 }

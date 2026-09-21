@@ -1,5 +1,5 @@
 use crate::backend::models::UnifiedPackage;
-use crate::components::status_pill::StatusPill;
+use crate::components::package_identity::PackageIdentity;
 use crate::icons::AppIcon;
 use crate::state::{canonical_install_command, InspectorTab, PackageCapabilities};
 use crate::theme::Theme;
@@ -26,6 +26,33 @@ pub struct InspectorHeaderProps<'a> {
 pub struct InspectorHeader;
 
 impl InspectorHeader {
+    /// Formate la ligne de métadonnées calme du bureau (Arch · extra · ● Installed)
+    pub fn format_metadata_line(pkg: &UnifiedPackage) -> (String, &'static str) {
+        let source_name = match pkg.source_type.to_uppercase().as_str() {
+            "ALPM" => "Arch",
+            "AUR" => "AUR",
+            "FLATPAK" => "Flatpak",
+            "APPIMAGE" => "AppImage",
+            _ => &pkg.source_type,
+        };
+
+        let mut meta = source_name.to_string();
+        if !pkg.repository_or_remote.is_empty() {
+            meta.push_str(" \u{00B7} ");
+            meta.push_str(&pkg.repository_or_remote);
+        }
+
+        let status = if pkg.has_update {
+            "Update available"
+        } else if pkg.is_installed {
+            "Installed"
+        } else {
+            "Available"
+        };
+
+        (meta, status)
+    }
+
     fn render_tab_item(
         tab: InspectorTab,
         active_tab: InspectorTab,
@@ -59,7 +86,7 @@ impl InspectorHeader {
             .px_3()
             .py_2()
             .cursor_pointer()
-            .text_sm()
+            .text_xs()
             .font_weight(if is_active {
                 FontWeight::BOLD
             } else {
@@ -101,68 +128,105 @@ impl InspectorHeader {
         let caps = props.capabilities;
         let is_busy = props.is_busy;
 
-        // 1. Hero title & badges
-        let title_row = div().flex().items_center().justify_between().mb_2().child(
+        // 1. Identity avatar (32x32) + Compact Title & Calm Desktop Metadata
+        let avatar = PackageIdentity::render_avatar(pkg, 32.0, 6.0, theme);
+
+        let (meta_origin, status_label) = Self::format_metadata_line(pkg);
+        let (status_color, status_dot) = if pkg.has_update {
+            (theme.warning_text, theme.warning)
+        } else if pkg.is_installed {
+            (theme.success_text, theme.success)
+        } else {
+            (theme.text_muted, theme.border_focus)
+        };
+
+        let mut version_row = div().flex().items_center().gap_1().flex_shrink_0().child(
             div()
-                .flex()
-                .items_center()
-                .gap_3()
-                .child(
-                    div()
-                        .text_2xl()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(theme.text_primary)
-                        .child(pkg.name.clone()),
-                )
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.text_muted)
-                        .child(pkg.version.clone()),
-                ),
+                .text_xs()
+                .font_family("monospace")
+                .text_color(theme.text_muted)
+                .child(pkg.version.clone()),
         );
 
-        let mut badges_row = div().flex().items_center().gap_2().mb_4();
-        badges_row = badges_row.child(StatusPill::source_badge(&pkg.source_type, theme));
-        badges_row = badges_row.child(StatusPill::installed_pill(pkg.is_installed, theme));
-
         if pkg.has_update {
-            badges_row = badges_row.child(
-                div()
-                    .px_2()
-                    .py_0p5()
-                    .rounded_md()
-                    .bg(theme.accent)
-                    .text_xs()
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(theme.bg_app)
-                    .child(if let Some(ref nv) = pkg.new_version {
-                        format!("Update to {}", nv)
-                    } else {
-                        "Update available".to_string()
-                    }),
-            );
+            if let Some(ref nv) = pkg.new_version {
+                version_row = version_row.child(
+                    div()
+                        .text_xs()
+                        .font_family("monospace")
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(theme.warning_text)
+                        .child(format!(" → {}", nv)),
+                );
+            } else {
+                version_row = version_row.child(
+                    div()
+                        .text_xs()
+                        .font_family("monospace")
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(theme.warning_text)
+                        .child(" (update)"),
+                );
+            }
         }
 
-        if !pkg.repository_or_remote.is_empty() {
-            badges_row = badges_row.child(
+        let title_column = div()
+            .flex()
+            .flex_col()
+            .gap(px(2.0))
+            .flex_1()
+            .min_w_0()
+            .child(
                 div()
-                    .px_2()
-                    .py_0p5()
-                    .rounded_md()
-                    .bg(theme.bg_surface)
-                    .border_1()
-                    .border_color(theme.border)
+                    .flex()
+                    .items_baseline()
+                    .justify_between()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_base()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .child(pkg.name.clone()),
+                    )
+                    .child(version_row),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1p5()
                     .text_xs()
-                    .font_weight(FontWeight::NORMAL)
                     .text_color(theme.text_muted)
-                    .child(pkg.repository_or_remote.clone()),
+                    .child(div().child(meta_origin))
+                    .child(div().child("\u{00B7}"))
+                    .child(
+                        div()
+                            .size(px(6.0))
+                            .rounded_full()
+                            .bg(status_dot)
+                            .flex_shrink_0(),
+                    )
+                    .child(
+                        div()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(status_color)
+                            .child(status_label),
+                    ),
             );
-        }
+
+        let identity_row = div()
+            .flex()
+            .items_center()
+            .gap_3()
+            .w_full()
+            .child(avatar)
+            .child(title_column);
 
         // 2. Action buttons row
-        let mut actions_row = div().flex().items_center().gap_3().mb_4();
+        let mut actions_row = div().flex().items_center().gap_2().mt_3().mb_3();
 
         if caps.can_remove {
             let danger_hover = theme.danger_hover;
@@ -173,28 +237,27 @@ impl InspectorHeader {
                 .focusable()
                 .tab_stop(true)
                 .focus(move |s| s.border_1().border_color(focus_border))
-                .px_4()
-                .py_1p5()
+                .px_3p5()
+                .py_1()
                 .rounded_md()
                 .bg(if is_busy { theme.border } else { theme.danger })
-                .text_sm()
+                .text_xs()
                 .font_weight(FontWeight::BOLD)
                 .text_color(if is_busy {
                     theme.text_muted
                 } else {
                     theme.bg_app
-                })
-                .cursor_pointer()
-                .when(!is_busy, move |el| el.hover(move |s| s.bg(danger_hover)))
-                .child(if is_busy {
-                    "In progress..."
-                } else {
-                    "Uninstall"
                 });
 
             if !is_busy {
-                if let Some(on_remove) = props.on_remove.clone() {
+                remove_btn = remove_btn
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(danger_hover));
+                if let Some(on_rm) = props.on_remove {
                     remove_btn = remove_btn
+                        .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                            on_rm(window, cx);
+                        })
                         .on_key_down(move |event, window, cx| {
                             let key = event.keystroke.key.as_str();
                             if key == "enter" || key == "space" {
@@ -202,11 +265,11 @@ impl InspectorHeader {
                                     cb(window, cx);
                                 }
                             }
-                        })
-                        .on_mouse_down(MouseButton::Left, move |_e, w, cx| on_remove(w, cx));
+                        });
                 }
             }
-            actions_row = actions_row.child(remove_btn);
+
+            actions_row = actions_row.child(remove_btn.child("Uninstall"));
         } else if caps.can_install {
             let accent_hover = theme.accent_hover;
             let focus_border = theme.border_focus;
@@ -216,23 +279,23 @@ impl InspectorHeader {
                 .focusable()
                 .tab_stop(true)
                 .focus(move |s| s.border_1().border_color(focus_border))
-                .px_4()
-                .py_1p5()
+                .px_3p5()
+                .py_1()
                 .rounded_md()
                 .bg(if is_busy { theme.border } else { theme.accent })
-                .text_sm()
+                .text_xs()
                 .font_weight(FontWeight::BOLD)
                 .text_color(if is_busy {
                     theme.text_muted
                 } else {
                     theme.bg_app
-                })
-                .cursor_pointer()
-                .when(!is_busy, move |el| el.hover(move |s| s.bg(accent_hover)))
-                .child(if is_busy { "In progress..." } else { "Install" });
+                });
 
             if !is_busy {
-                if let Some(on_install) = props.on_install.clone() {
+                install_btn = install_btn
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(accent_hover));
+                if let Some(on_inst) = props.on_install {
                     install_btn = install_btn
                         .on_key_down(move |event, window, cx| {
                             let key = event.keystroke.key.as_str();
@@ -242,10 +305,10 @@ impl InspectorHeader {
                                 }
                             }
                         })
-                        .on_mouse_down(MouseButton::Left, move |_e, w, cx| on_install(w, cx));
+                        .on_mouse_down(MouseButton::Left, move |_e, w, cx| on_inst(w, cx));
                 }
             }
-            actions_row = actions_row.child(install_btn);
+            actions_row = actions_row.child(install_btn.child("Install"));
         }
 
         // Copy install command button
@@ -350,9 +413,65 @@ impl InspectorHeader {
             .flex()
             .flex_col()
             .w_full()
-            .child(title_row)
-            .child(badges_row)
+            .child(identity_row)
             .child(actions_row)
             .child(tab_bar)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::models::{AlpmPackage, UnifiedPackageSource};
+
+    #[core::prelude::v1::test]
+    fn test_inspector_header_metadata_line_formatting() {
+        let pkg_installed = UnifiedPackage {
+            name: "ripgrep".into(),
+            version: "14.1.0-1".into(),
+            description: "search".into(),
+            source_type: "ALPM".into(),
+            repository_or_remote: "extra".into(),
+            is_installed: true,
+            has_update: false,
+            new_version: None,
+            inner: UnifiedPackageSource::Standard(AlpmPackage::default()),
+        };
+
+        let (meta, status) = InspectorHeader::format_metadata_line(&pkg_installed);
+        assert_eq!(meta, "Arch \u{00B7} extra");
+        assert_eq!(status, "Installed");
+
+        let pkg_update = UnifiedPackage {
+            name: "firefox".into(),
+            version: "128.0".into(),
+            description: "browser".into(),
+            source_type: "AUR".into(),
+            repository_or_remote: "".into(),
+            is_installed: true,
+            has_update: true,
+            new_version: Some("129.0".into()),
+            inner: UnifiedPackageSource::Standard(AlpmPackage::default()),
+        };
+
+        let (meta2, status2) = InspectorHeader::format_metadata_line(&pkg_update);
+        assert_eq!(meta2, "AUR");
+        assert_eq!(status2, "Update available");
+
+        let pkg_flatpak = UnifiedPackage {
+            name: "org.blender.Blender".into(),
+            version: "4.2.0".into(),
+            description: "3d".into(),
+            source_type: "Flatpak".into(),
+            repository_or_remote: "flathub".into(),
+            is_installed: false,
+            has_update: false,
+            new_version: None,
+            inner: UnifiedPackageSource::Standard(AlpmPackage::default()),
+        };
+
+        let (meta3, status3) = InspectorHeader::format_metadata_line(&pkg_flatpak);
+        assert_eq!(meta3, "Flatpak \u{00B7} flathub");
+        assert_eq!(status3, "Available");
     }
 }
