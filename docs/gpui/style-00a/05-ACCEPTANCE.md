@@ -41,7 +41,7 @@ completeness (14 keys).
 | **Renderer boundary** | No fork/WGSL/WGPU/compositor work | Architecture audit | VERIFIED |
 | **No visual change** | Style switch alters no layout or paint | No paint consumer in 00A + runtime matrix | VERIFIED |
 | **Read-your-writes** | `set` → `status` agreement, no restart | Runtime CLI matrix (online) | VERIFIED |
-| **Packaging provenance** | Exact-SHA `makepkg` + `pacman -U` + PID/Hyprland | Closure gate (`r4714.gdd2e4b55-1` pre-00A-R; 00A-R is architecture + docs, no repaint) | VERIFIED |
+| **Packaging provenance** | Exact-SHA `makepkg` + `pacman -U` + PID/Hyprland | Closure gate (`r4717.g8b341080-1`, 00A-R included) | VERIFIED |
 | **00A-R protection** | 12/13 roles protected; rail/query/inspector/console scrims | `test_content_protection_policy_covers_all_roles` + live `resolve` | VERIFIED |
 | **00A-R treatment** | 13/13 roles mapped to 4 treatment classes | `test_surface_treatment_mapping_full_coverage` | VERIFIED |
 | **00A-R neutrality** | All STYLE effects `UNKNOWN`, no `ShaderRequired` | `test_resolution_neutrality_all_unknown_in_style_00a` | VERIFIED |
@@ -51,17 +51,23 @@ completeness (14 keys).
 
 ## 3. Runtime & Packaging Provenance (Wayland Closure Evidence)
 
-Verified live on 2026-09-21 against the exact installed build of `dd2e4b55`.
+Verified live on 2026-09-21 against the exact installed build of `8b341080`
+(`r4717.g8b341080-1`, including the 00A-R architecture corrections; no pixel
+changed, machine-readable outputs re-verified on the installed package).
 
 | Check | Command / Probe | Result | Status |
 |---|---|---|---|
-| **Installed package** | `pacman -Q shelly-gpui-git` | `r4714.gdd2e4b55-1` | VERIFIED |
-| **Exact-SHA build** | `makepkg` from pushed `main` (`dd2e4b55`) | `check()` 156 passed, 0 failed | VERIFIED |
+| **Installed package** | `pacman -Q shelly-gpui-git` | `r4717.g8b341080-1` | VERIFIED |
+| **Exact-SHA build** | `makepkg` from pushed `main` (`8b341080`) | `check()` 157 passed, 0 failed | VERIFIED |
 | **Staging hygiene** | Build dir `/mnt/workbench/pkgbuild/style-00a` | No `/tmp` usage | VERIFIED |
 | **Package ownership** | `pacman -Ql` | Owns `/usr/bin/shelly-gpui` and `/usr/lib/shelly/shelly-gpui-bin` | VERIFIED |
-| **Canonical launch** | `shelly-gpui open` | PID `3843967` | VERIFIED |
-| **PID provenance** | `readlink /proc/<pid>/exe` | `/usr/lib/shelly/shelly-gpui-bin` | VERIFIED |
-| **Native Wayland** | `hyprctl clients` | `class: shelly-gpui`, `xwayland: 0` (tiled `1062x883`) | VERIFIED |
+| **Canonical launch** | `shelly-gpui open` (stale pre-rebuild instance quit first) | PID `3992816` | VERIFIED |
+| **PID provenance** | `readlink /proc/<pid>/exe` | `/usr/lib/shelly/shelly-gpui-bin` (no `deleted` flag) | VERIFIED |
+| **Native Wayland** | `hyprctl clients` | `class: shelly-gpui`, `xwayland: 0` | VERIFIED |
+| **00A-R source** | `appearance status --json` on installed build | `source = committed-shelly-local-config` | VERIFIED |
+| **00A-R rail** | `appearance resolve navigation-rail` under Transparency | `ambient-chrome`, `content_scrim: true` | VERIFIED |
+| **00A-R query** | `appearance resolve query-chrome` under Transparency | `interactive-chrome`, `content_scrim: true` | VERIFIED |
+| **00A-R neutrality** | `appearance status` effects on installed build | 4/4 `UNKNOWN` | VERIFIED |
 | **Read-your-writes** | `appearance style set standard` → `appearance status` | Reports `standard` immediately, no restart | VERIFIED |
 | **Read-your-writes** | `appearance style set transparency` → `style get` | Reports `transparency` | VERIFIED |
 | **Authority convergence** | `settings get visual-style` after `appearance` set | Agrees (`transparency`) | VERIFIED |
