@@ -72,7 +72,7 @@ impl PackageInspectorView {
                     div()
                         .text_xs()
                         .text_color(theme.text_muted)
-                        .child("Select a package from the workstation table to inspect its details, dependencies, and files."),
+                        .child("Select a package from the results to inspect its details, dependencies, and files."),
                 )
                 .into_any_element();
         };
@@ -192,8 +192,8 @@ impl PackageInspectorView {
                     .flex()
                     .flex_col()
                     .w_full()
-                    .px_5()
-                    .pt_4()
+                    .px_4()
+                    .pt_3()
                     .bg(theme.bg_app)
                     .child(header),
             )
@@ -202,8 +202,8 @@ impl PackageInspectorView {
                     .id("inspector_scroll_body")
                     .flex_1()
                     .overflow_scroll()
-                    .px_5()
-                    .py_4()
+                    .px_4()
+                    .py_3()
                     .children(error_banner)
                     .child(animated_body),
             )

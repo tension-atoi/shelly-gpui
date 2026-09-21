@@ -82,9 +82,9 @@ impl InspectorHeader {
             })
             .flex()
             .items_center()
-            .gap(px(6.0))
-            .px_3()
-            .py_2()
+            .gap(px(4.0))
+            .px_2()
+            .py_1p5()
             .cursor_pointer()
             .text_xs()
             .font_weight(if is_active {
@@ -225,8 +225,14 @@ impl InspectorHeader {
             .child(avatar)
             .child(title_column);
 
-        // 2. Action buttons row
-        let mut actions_row = div().flex().items_center().gap_2().mt_3().mb_3();
+        // 2. Action buttons row (wrapping safely on tight viewports)
+        let mut actions_row = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .mt_2p5()
+            .mb_2p5();
 
         if caps.can_remove {
             let danger_hover = theme.danger_hover;
@@ -234,10 +240,7 @@ impl InspectorHeader {
             let on_remove_key = props.on_remove.clone();
             let mut remove_btn = div()
                 .id("inspector_remove_btn")
-                .focusable()
-                .tab_stop(true)
-                .focus(move |s| s.border_1().border_color(focus_border))
-                .px_3p5()
+                .px_3()
                 .py_1()
                 .rounded_md()
                 .bg(if is_busy { theme.border } else { theme.danger })
@@ -251,6 +254,9 @@ impl InspectorHeader {
 
             if !is_busy {
                 remove_btn = remove_btn
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
                     .cursor_pointer()
                     .hover(move |s| s.bg(danger_hover));
                 if let Some(on_rm) = props.on_remove {
@@ -276,10 +282,7 @@ impl InspectorHeader {
             let on_install_key = props.on_install.clone();
             let mut install_btn = div()
                 .id("inspector_install_btn")
-                .focusable()
-                .tab_stop(true)
-                .focus(move |s| s.border_1().border_color(focus_border))
-                .px_3p5()
+                .px_3()
                 .py_1()
                 .rounded_md()
                 .bg(if is_busy { theme.border } else { theme.accent })
@@ -293,6 +296,9 @@ impl InspectorHeader {
 
             if !is_busy {
                 install_btn = install_btn
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
                     .cursor_pointer()
                     .hover(move |s| s.bg(accent_hover));
                 if let Some(on_inst) = props.on_install {
@@ -332,8 +338,8 @@ impl InspectorHeader {
                 .flex()
                 .items_center()
                 .gap(px(4.0))
-                .px_3()
-                .py_1p5()
+                .px_2p5()
+                .py_1()
                 .rounded_md()
                 .bg(theme.bg_surface)
                 .border_1()
@@ -345,7 +351,7 @@ impl InspectorHeader {
                 .text_xs()
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(if props.copy_feedback {
-                    theme.success
+                    theme.success_text
                 } else {
                     theme.text_secondary
                 })
@@ -387,7 +393,7 @@ impl InspectorHeader {
         let tab_bar = div()
             .flex()
             .items_center()
-            .gap_4()
+            .gap_1()
             .border_b_1()
             .border_color(theme.border)
             .child(Self::render_tab_item(
