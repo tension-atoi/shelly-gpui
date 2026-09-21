@@ -3,11 +3,15 @@ use crate::backend::models::{ArchNewsItem, UnifiedPackage};
 use crate::backend::process::LogStreamEvent;
 use crate::components::toast_overlay::{ToastOverlay, ToastOverlayProps};
 use crate::config::{ConfigManager, GpuiUiConfig, ShellySettings};
+use crate::control::ipc::{ControlIpcMessage, ControlIpcServer};
+use crate::control::protocol::{
+    ControlCommand, ControlResponse, ControlStatus, CONTROL_PROTOCOL_VERSION,
+};
 use crate::state::package_store::SourceHealth;
 use crate::state::{
     AppSession, ConsoleEvent, ConsoleModel, InspectorTab, MotionDurations, NavDestination,
-    PackageKey, PackageSourceKind, PackageStore, PackageStoreEvent, SessionEvent, ToastAction,
-    ToastCenter, ToastKind,
+    PackageKey, PackageSourceKind, PackageStore, PackageStoreEvent, PackageViewMode, SessionEvent,
+    ToastAction, ToastCenter, ToastKind,
 };
 use crate::theme::Theme;
 use crate::views::news::{NewsView, NewsViewProps};
@@ -47,9 +51,10 @@ pub struct WorkspaceView {
 }
 
 impl WorkspaceView {
-    pub fn with_config(
+    pub fn with_config_and_intent(
         shelly_settings: ShellySettings,
         gpui_config: GpuiUiConfig,
+        intent: Option<ControlCommand>,
         cx: &mut Context<Self>,
     ) -> Self {
         let theme = if gpui_config.dark_theme {
@@ -364,10 +369,341 @@ impl WorkspaceView {
             }));
         });
 
+        // Enregistrement du canal IPC pour le contrôle frontend natif
+        let (control_tx, mut control_rx) = tokio::sync::mpsc::channel::<ControlIpcMessage>(32);
+        let _ = ControlIpcServer::start(control_tx);
+
+        cx.spawn(async move |this, cx| {
+            while let Some(msg) = control_rx.recv().await {
+                let ControlIpcMessage { command, responder } = msg;
+                let resp = this.update(cx, |view, cx| view.handle_control_command(command, cx));
+                let final_resp = match resp {
+                    Ok(r) => r,
+                    Err(_) => ControlResponse::error("UI event loop is unavailable"),
+                };
+                let _ = responder.send(final_resp);
+            }
+        })
+        .detach();
+
+        let mut view = view;
         // Chargement initial asynchrone non-bloquant
         view.trigger_initial_load(cx);
 
+        if let Some(cmd) = intent {
+            let _ = view.handle_control_command(cmd, cx);
+        }
+
         view
+    }
+
+    pub fn handle_control_command(
+        &mut self,
+        cmd: ControlCommand,
+        cx: &mut Context<Self>,
+    ) -> ControlResponse {
+        match cmd {
+            ControlCommand::Open | ControlCommand::Focus => {
+                cx.activate(true);
+                if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
+                    let _ = std::process::Command::new("hyprctl")
+                        .args(["dispatch", "focuswindow", "class:shelly-gpui"])
+                        .output();
+                }
+                ControlResponse::ok("Shelly window focused")
+            }
+            ControlCommand::Quit => {
+                crate::control::socket::ControlSocket::cleanup();
+                cx.quit();
+                ControlResponse::ok("Shelly GUI exiting")
+            }
+            ControlCommand::Status => {
+                let session = self.session.read(cx);
+                let console = self.console.read(cx);
+                let status = ControlStatus {
+                    protocol_version: CONTROL_PROTOCOL_VERSION,
+                    gui_running: true,
+                    pid: std::process::id(),
+                    executable: std::env::current_exe()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| "/usr/lib/shelly/shelly-gpui-bin".to_string()),
+                    destination: session.destination.label().to_lowercase(),
+                    query: session.search_query.clone(),
+                    view_mode: match session.view_mode {
+                        PackageViewMode::Table => "table".to_string(),
+                        PackageViewMode::Cards => "cards".to_string(),
+                    },
+                    inspector_tab: match session.inspector_tab {
+                        InspectorTab::Overview => "overview".to_string(),
+                        InspectorTab::Dependencies => "dependencies".to_string(),
+                        InspectorTab::FilesBuild => "files".to_string(),
+                    },
+                    selected_package: session
+                        .selected_package_key
+                        .as_ref()
+                        .map(|k| k.name.clone()),
+                    operation_running: matches!(
+                        console.status,
+                        crate::components::log_drawer::OperationStatus::Running(_)
+                    ) || session.is_searching,
+                };
+                ControlResponse::ok_with_data(
+                    "Running",
+                    serde_json::to_value(&status).unwrap_or_default(),
+                )
+            }
+            ControlCommand::Navigate { destination } => {
+                let dest = match destination.to_ascii_lowercase().as_str() {
+                    "browse" => Some(NavDestination::Browse),
+                    "installed" => Some(NavDestination::Installed),
+                    "updates" => Some(NavDestination::Updates),
+                    "news" => Some(NavDestination::News),
+                    "settings" => Some(NavDestination::Settings),
+                    _ => None,
+                };
+                if let Some(dest) = dest {
+                    self.session.update(cx, |s, cx| s.set_destination(dest, cx));
+                    ControlResponse::ok(format!("Navigated to {}", destination))
+                } else {
+                    ControlResponse::error(format!(
+                        "Invalid destination '{}'. Expected 'updates', 'installed', 'browse', 'news', or 'settings'",
+                        destination
+                    ))
+                }
+            }
+            ControlCommand::Search { query } => {
+                self.session.update(cx, |s, cx| {
+                    s.set_destination(NavDestination::Browse, cx);
+                });
+                self.workstation.update(cx, |ws, cx| {
+                    ws.search_input.update(cx, |si, cx| {
+                        si.set_text(query.clone(), cx);
+                    });
+                });
+                self.on_search_input(query.clone(), cx);
+                ControlResponse::ok(format!("Searching for '{}'", query))
+            }
+            ControlCommand::View { mode } => match mode.to_ascii_lowercase().as_str() {
+                "table" => {
+                    self.session
+                        .update(cx, |s, cx| s.set_view_mode(PackageViewMode::Table, cx));
+                    let mut config = ConfigManager::load_gpui_config();
+                    config.view_mode = PackageViewMode::Table;
+                    let _ = ConfigManager::save_gpui_config(&config);
+                    ControlResponse::ok("View mode set to table")
+                }
+                "cards" => {
+                    self.session
+                        .update(cx, |s, cx| s.set_view_mode(PackageViewMode::Cards, cx));
+                    let mut config = ConfigManager::load_gpui_config();
+                    config.view_mode = PackageViewMode::Cards;
+                    let _ = ConfigManager::save_gpui_config(&config);
+                    ControlResponse::ok("View mode set to cards")
+                }
+                other => ControlResponse::error(format!(
+                    "Invalid view mode '{}', expected 'table' or 'cards'",
+                    other
+                )),
+            },
+            ControlCommand::Inspect { package } => {
+                let found_key = self
+                    .store
+                    .read(cx)
+                    .active_results
+                    .iter()
+                    .find(|p| p.name.eq_ignore_ascii_case(&package))
+                    .map(|p| p.key());
+                let key = found_key
+                    .unwrap_or_else(|| PackageKey::new(PackageSourceKind::Alpm, &package, None));
+                self.session.update(cx, |s, cx| {
+                    s.select_package(Some(key), cx);
+                });
+                ControlResponse::ok(format!("Inspecting package '{}'", package))
+            }
+            ControlCommand::Inspector { tab } => {
+                let target_tab = match tab.to_ascii_lowercase().as_str() {
+                    "overview" => Some(InspectorTab::Overview),
+                    "dependencies" | "deps" => Some(InspectorTab::Dependencies),
+                    "files" | "files-build" | "build" => Some(InspectorTab::FilesBuild),
+                    _ => None,
+                };
+                if let Some(target) = target_tab {
+                    self.session
+                        .update(cx, |s, cx| s.set_inspector_tab(target, cx));
+                    ControlResponse::ok(format!("Inspector tab set to '{}'", target.label()))
+                } else {
+                    ControlResponse::error(format!(
+                        "Invalid inspector tab '{}', expected: overview, dependencies, files",
+                        tab
+                    ))
+                }
+            }
+            ControlCommand::Logs { operation } => match operation.to_ascii_lowercase().as_str() {
+                "show" | "open" => {
+                    self.console.update(cx, |c, cx| {
+                        c.is_open = true;
+                        cx.notify();
+                    });
+                    ControlResponse::ok("Logs drawer opened")
+                }
+                "hide" | "close" => {
+                    self.console.update(cx, |c, cx| {
+                        c.is_open = false;
+                        cx.notify();
+                    });
+                    ControlResponse::ok("Logs drawer closed")
+                }
+                "clear" => {
+                    self.console.update(cx, |c, cx| {
+                        c.clear_logs(cx);
+                    });
+                    ControlResponse::ok("Logs cleared")
+                }
+                other => ControlResponse::error(format!(
+                    "Invalid logs operation '{}', expected: show, hide, clear",
+                    other
+                )),
+            },
+            ControlCommand::SettingsList => {
+                let entries = ConfigManager::list_settings();
+                ControlResponse::ok_with_data(
+                    "Settings listed",
+                    serde_json::to_value(&entries).unwrap_or_default(),
+                )
+            }
+            ControlCommand::SettingsGet { key } => match ConfigManager::get_setting(&key) {
+                Ok(val) => ControlResponse::ok_with_data(
+                    format!("{key}: {val}"),
+                    serde_json::json!({ "key": key, "value": val }),
+                ),
+                Err(e) => ControlResponse::error(e.to_string()),
+            },
+            ControlCommand::SettingsSet { key, value } => {
+                match ConfigManager::set_setting(&key, &value) {
+                    Ok(()) => {
+                        self.apply_setting_to_runtime(&key, &value, cx);
+                        ControlResponse::ok(format!("Setting '{key}' set to '{value}'"))
+                    }
+                    Err(e) => ControlResponse::error(e.to_string()),
+                }
+            }
+            ControlCommand::SettingsReset { key } => {
+                let res = match key.as_deref() {
+                    Some(k) => ConfigManager::reset_setting(k),
+                    None => ConfigManager::reset_all(),
+                };
+                match res {
+                    Ok(()) => {
+                        let gpui = ConfigManager::load_gpui_config();
+                        let shelly = ConfigManager::load_shelly_settings();
+                        self.shelly_settings = shelly.clone();
+                        self.gpui_config = gpui.clone();
+                        self.apply_setting_to_runtime(
+                            "theme",
+                            if gpui.dark_theme { "dark" } else { "light" },
+                            cx,
+                        );
+                        self.apply_setting_to_runtime(
+                            "view-mode",
+                            match gpui.view_mode {
+                                PackageViewMode::Table => "table",
+                                PackageViewMode::Cards => "cards",
+                            },
+                            cx,
+                        );
+                        self.apply_setting_to_runtime(
+                            "compact-view",
+                            &gpui.compact_view.to_string(),
+                            cx,
+                        );
+                        self.apply_setting_to_runtime(
+                            "reduce-motion",
+                            &gpui.reduce_motion.to_string(),
+                            cx,
+                        );
+                        self.apply_setting_to_runtime(
+                            "log-drawer-open",
+                            &gpui.log_drawer_open.to_string(),
+                            cx,
+                        );
+                        self.session.update(cx, |s, cx| {
+                            s.clamp_source_scope(
+                                shelly.aur_enabled,
+                                shelly.flat_pack_enabled,
+                                shelly.app_image_enabled,
+                                cx,
+                            );
+                        });
+                        let target = key.as_deref().unwrap_or("all settings");
+                        ControlResponse::ok(format!("Reset '{target}' to default"))
+                    }
+                    Err(e) => ControlResponse::error(e.to_string()),
+                }
+            }
+        }
+    }
+
+    fn apply_setting_to_runtime(&mut self, key: &str, value: &str, cx: &mut Context<Self>) {
+        match key.to_ascii_lowercase().as_str() {
+            "theme" => {
+                self.theme = if value.eq_ignore_ascii_case("dark") {
+                    Theme::dark()
+                } else {
+                    Theme::light()
+                };
+                cx.notify();
+            }
+            "view-mode" => {
+                let mode = if value.eq_ignore_ascii_case("cards") {
+                    PackageViewMode::Cards
+                } else {
+                    PackageViewMode::Table
+                };
+                self.session.update(cx, |s, cx| s.set_view_mode(mode, cx));
+            }
+            "compact-view" => {
+                if let Ok(val) = value.parse::<bool>() {
+                    self.session.update(cx, |s, cx| {
+                        s.sidebar_collapsed = val;
+                        cx.notify();
+                    });
+                }
+            }
+            "reduce-motion" => {
+                if let Ok(val) = value.parse::<bool>() {
+                    self.motion_policy = crate::state::motion::MotionPolicy::new(val);
+                    cx.notify();
+                }
+            }
+            "log-drawer-open" => {
+                if let Ok(val) = value.parse::<bool>() {
+                    self.console.update(cx, |c, cx| {
+                        c.is_open = val;
+                        cx.notify();
+                    });
+                }
+            }
+            "log-drawer-height" => {
+                if let Ok(val) = value.parse::<f32>() {
+                    self.console_view.update(cx, |cv, cx| {
+                        cv.set_configured_height(val, cx);
+                    });
+                }
+            }
+            "aur-enabled" | "flatpak-enabled" | "appimage-enabled" => {
+                let shelly = ConfigManager::load_shelly_settings();
+                self.shelly_settings = shelly.clone();
+                self.session.update(cx, |s, cx| {
+                    s.clamp_source_scope(
+                        shelly.aur_enabled,
+                        shelly.flat_pack_enabled,
+                        shelly.app_image_enabled,
+                        cx,
+                    );
+                });
+            }
+            _ => {}
+        }
     }
 
     /// Déclenche le chargement initial en arrière-plan

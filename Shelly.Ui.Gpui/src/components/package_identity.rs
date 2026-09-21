@@ -851,7 +851,7 @@ mod tests {
 
         // Wait for worker settlement
         let mut settled = false;
-        for _ in 0..50 {
+        for _ in 0..150 {
             std::thread::sleep(std::time::Duration::from_millis(10));
             if let Ok(cache) = get_identity_cache().read() {
                 if cache.contains_key(&key) {

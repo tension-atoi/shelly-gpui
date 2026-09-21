@@ -7,6 +7,7 @@
 mod backend;
 mod components;
 mod config;
+mod control;
 pub mod icons;
 mod state;
 mod theme;
@@ -19,10 +20,33 @@ use views::WorkspaceView;
 
 fn main() {
     env_logger::init();
-    log::info!("Starting Shelly GPUI...");
 
     // Initialise et entre dans le contexte du runtime Tokio pour les tâches et processus async
     let _rt_guard = backend::process::runtime().enter();
+
+    let args: Vec<String> = std::env::args().collect();
+    let invocation = match crate::control::cli::CliInvocation::parse_from_args(&args) {
+        Ok(inv) => inv,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    let outcome =
+        backend::process::runtime().block_on(crate::control::cli::run_cli_invocation(invocation));
+    let intent = match outcome {
+        Ok(crate::control::cli::CliOutcome::Exit(code)) => {
+            std::process::exit(code);
+        }
+        Ok(crate::control::cli::CliOutcome::LaunchGui(intent)) => intent,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    log::info!("Starting Shelly GPUI desktop session...");
 
     let shelly_settings = crate::config::ConfigManager::load_shelly_settings();
     let gpui_config = crate::config::ConfigManager::load_gpui_config_sanitized();
@@ -72,8 +96,15 @@ fn main() {
 
             let _ = cx.open_window(options, move |_, cx| {
                 cx.new(|cx| {
-                    WorkspaceView::with_config(initial_shelly_settings, initial_gpui_config, cx)
+                    WorkspaceView::with_config_and_intent(
+                        initial_shelly_settings,
+                        initial_gpui_config,
+                        intent,
+                        cx,
+                    )
                 })
             });
         });
+
+    crate::control::socket::ControlSocket::cleanup();
 }
