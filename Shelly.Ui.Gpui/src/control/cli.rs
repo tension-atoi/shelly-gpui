@@ -28,6 +28,7 @@ pub enum CliCommand {
     Logs { operation: String },
     Settings(CliSettingsCommand),
     RenderLab(CliRenderLabCommand),
+    Appearance(CliAppearanceCommand),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +49,14 @@ pub enum CliSettingsCommand {
     Get { key: String },
     Set { key: String, value: String },
     Reset { key: Option<String> },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CliAppearanceCommand {
+    StyleGet,
+    StyleSet { value: String },
+    Status,
+    Resolve { role: Option<String> },
 }
 
 pub enum CliOutcome {
@@ -285,6 +294,56 @@ impl CliInvocation {
                     }
                 }
             }
+            "appearance" => {
+                if positional.len() < 2 {
+                    return Err(
+                        "Missing subcommand for 'appearance' ('style', 'status', 'resolve')".into(),
+                    );
+                }
+                let sub = positional[1].to_ascii_lowercase();
+                match sub.as_str() {
+                    "style" => {
+                        if positional.len() < 3 {
+                            return Err(
+                                "Missing operation for 'appearance style' ('get' or 'set')".into(),
+                            );
+                        }
+                        let op = positional[2].to_ascii_lowercase();
+                        match op.as_str() {
+                            "get" => CliCommand::Appearance(CliAppearanceCommand::StyleGet),
+                            "set" => {
+                                if positional.len() < 4 {
+                                    return Err("Missing value for 'appearance style set' ('standard' or 'transparency')".into());
+                                }
+                                let value = positional[3].to_ascii_lowercase();
+                                crate::visual_style::VisualStyleId::parse(&value)?;
+                                CliCommand::Appearance(CliAppearanceCommand::StyleSet { value })
+                            }
+                            other => {
+                                return Err(format!(
+                                    "Unknown appearance style operation '{other}'. Expected 'get' or 'set'"
+                                ))
+                            }
+                        }
+                    }
+                    "status" => CliCommand::Appearance(CliAppearanceCommand::Status),
+                    "resolve" => {
+                        let role = if positional.len() >= 3 {
+                            let role_str = positional[2].to_ascii_lowercase();
+                            crate::visual_style::SurfaceRole::parse(&role_str)?;
+                            Some(role_str)
+                        } else {
+                            None
+                        };
+                        CliCommand::Appearance(CliAppearanceCommand::Resolve { role })
+                    }
+                    other => {
+                        return Err(format!(
+                            "Unknown appearance subcommand '{other}'. Expected 'style', 'status', or 'resolve'"
+                        ))
+                    }
+                }
+            }
             unknown => {
                 return Err(format!(
                     "Unknown command '{unknown}'. Run 'shelly-gpui --help' for usage."
@@ -326,6 +385,22 @@ Settings Authority Commands:
   settings get <key>         Get current value of a setting
   settings set <key> <val>   Set and validate a setting value atomically
   settings reset [key|all]   Reset a specific setting or all settings to defaults
+
+Visual Style Authority Commands (STYLE-00A):
+  appearance style get                 Get the active visual style profile
+  appearance style set <style>         Set 'standard' or 'transparency' (live when GUI runs)
+  appearance status                    Report style, color scheme and resolved effects
+  appearance resolve [role]            Resolve a surface role projection (lists roles if omitted)
+
+Render Lab Commands (RENDER-00, CLI-only developer surface):
+  render-lab open                      Open the Render Lab destination (launches GUI if needed)
+  render-lab fixture <id>              Select the active fixture by ID
+  render-lab material <name>           Select a material fixture by short name
+  render-lab topology <variant>        Set 'floating-island', 'full-band' or 'perimeter-hug'
+  render-lab motion <variant>          Set 'classic', 'smooth', 'elastic', 'liquid' or 'reduced-motion'
+  render-lab quality <level>           Set quality level ('stock')
+  render-lab time <seconds>            Freeze the lab clock at t seconds
+  render-lab status                    Print the lab manifest (works offline)
 "#
         );
     }
@@ -728,6 +803,167 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                 }
             }
         },
+        CliCommand::Appearance(appearance_cmd) => match appearance_cmd {
+            CliAppearanceCommand::StyleGet => match ConfigManager::get_setting("visual-style") {
+                Ok(val) => {
+                    if json {
+                        let resp = ControlResponse::ok_with_data(
+                            format!("visual-style: {val}"),
+                            serde_json::json!({ "key": "visual-style", "value": val }),
+                        );
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&resp).unwrap_or_default()
+                        );
+                    } else {
+                        println!("visual-style = {val}");
+                    }
+                    Ok(CliOutcome::Exit(0))
+                }
+                Err(e) => {
+                    let resp = ControlResponse::error(e.to_string());
+                    outcome_from_response(&resp, json)
+                }
+            },
+            CliAppearanceCommand::StyleSet { value } => {
+                if is_running {
+                    let resp = ControlSocket::send_command(ControlCommand::SettingsSet {
+                        key: "visual-style".to_string(),
+                        value: value.clone(),
+                    })
+                    .await?;
+                    outcome_from_response(&resp, json)
+                } else {
+                    match ConfigManager::set_setting("visual-style", &value) {
+                        Ok(()) => {
+                            let resp = ControlResponse::ok(format!(
+                                "Visual style set to '{value}' (offline)"
+                            ));
+                            outcome_from_response(&resp, json)
+                        }
+                        Err(e) => {
+                            let resp = ControlResponse::error(e.to_string());
+                            outcome_from_response(&resp, json)
+                        }
+                    }
+                }
+            }
+            CliAppearanceCommand::Status => {
+                let config = ConfigManager::load_gpui_config();
+                let status = crate::visual_style::resolver::status_for_config(
+                    config.visual_style,
+                    config.dark_theme,
+                );
+                if json {
+                    let resp = ControlResponse::ok_with_data(
+                        "Appearance status",
+                        serde_json::to_value(&status).unwrap_or_default(),
+                    );
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&resp).unwrap_or_default()
+                    );
+                } else {
+                    println!("Appearance Status:");
+                    println!("  Visual Style:   {}", status.visual_style);
+                    println!("  Color Scheme:   {}", status.color_scheme);
+                    println!("  Profile Rev:    {}", status.active_profile_revision);
+                    println!("  Source:         {}", status.source);
+                    println!("  Effects:");
+                    for effect in &status.effects {
+                        println!(
+                            "    {}: requested, resolved {} — {}",
+                            effect.kind, effect.resolved, effect.note
+                        );
+                    }
+                }
+                Ok(CliOutcome::Exit(0))
+            }
+            CliAppearanceCommand::Resolve { role } => match role {
+                None => {
+                    if json {
+                        let roles: Vec<serde_json::Value> = crate::visual_style::SurfaceRole::ALL
+                            .iter()
+                            .map(|r| {
+                                serde_json::json!({
+                                    "id": r.as_str(),
+                                    "label": r.label(),
+                                    "text_bearing": r.is_text_bearing(),
+                                })
+                            })
+                            .collect();
+                        let resp = ControlResponse::ok_with_data(
+                            "Surface roles",
+                            serde_json::json!({ "roles": roles }),
+                        );
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&resp).unwrap_or_default()
+                        );
+                    } else {
+                        println!("Canonical surface roles:");
+                        for r in crate::visual_style::SurfaceRole::ALL {
+                            println!(
+                                "  {:<18} {}  (text-bearing: {})",
+                                r.as_str(),
+                                r.label(),
+                                r.is_text_bearing()
+                            );
+                        }
+                    }
+                    Ok(CliOutcome::Exit(0))
+                }
+                Some(role_str) => {
+                    let role_parsed = crate::visual_style::SurfaceRole::parse(&role_str)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    let config = ConfigManager::load_gpui_config();
+                    let projection = crate::visual_style::resolver::resolve_style(
+                        config.visual_style,
+                        role_parsed,
+                        crate::visual_style::ColorScheme::from_dark_theme(config.dark_theme),
+                    );
+                    if json {
+                        let resp = ControlResponse::ok_with_data(
+                            "Style projection",
+                            serde_json::to_value(&projection).unwrap_or_default(),
+                        );
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&resp).unwrap_or_default()
+                        );
+                    } else {
+                        println!("Style Projection:");
+                        println!("  Style:          {}", projection.style);
+                        println!(
+                            "  Role:           {} ({})",
+                            projection.role,
+                            role_parsed.label()
+                        );
+                        println!("  Color Scheme:   {}", projection.color_scheme);
+                        println!(
+                            "  Opaque:         {}",
+                            if projection.opaque { "yes" } else { "no" }
+                        );
+                        println!(
+                            "  Content Scrim:  {}",
+                            if projection.content_scrim {
+                                "yes"
+                            } else {
+                                "no"
+                            }
+                        );
+                        println!("  Effects:");
+                        for effect in &projection.effects {
+                            println!(
+                                "    {}: requested, resolved {} — {}",
+                                effect.kind, effect.resolved, effect.note
+                            );
+                        }
+                    }
+                    Ok(CliOutcome::Exit(0))
+                }
+            },
+        },
     }
 }
 
@@ -912,6 +1148,32 @@ mod tests {
                 vec!["shelly-gpui", "render-lab", "status"],
                 Some(CliCommand::RenderLab(CliRenderLabCommand::Status)),
             ),
+            (
+                vec!["shelly-gpui", "appearance", "style", "get"],
+                Some(CliCommand::Appearance(CliAppearanceCommand::StyleGet)),
+            ),
+            (
+                vec!["shelly-gpui", "appearance", "style", "set", "transparency"],
+                Some(CliCommand::Appearance(CliAppearanceCommand::StyleSet {
+                    value: "transparency".to_string(),
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "appearance", "status"],
+                Some(CliCommand::Appearance(CliAppearanceCommand::Status)),
+            ),
+            (
+                vec!["shelly-gpui", "appearance", "resolve"],
+                Some(CliCommand::Appearance(CliAppearanceCommand::Resolve {
+                    role: None,
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "appearance", "resolve", "menu"],
+                Some(CliCommand::Appearance(CliAppearanceCommand::Resolve {
+                    role: Some("menu".to_string()),
+                })),
+            ),
         ];
 
         for (input, expected) in cases {
@@ -961,6 +1223,41 @@ mod tests {
             "-1.0".to_string(),
         ];
         assert!(CliInvocation::parse_from_args(&negative_time).is_err());
+
+        let missing_appearance_sub = vec!["shelly-gpui".to_string(), "appearance".to_string()];
+        assert!(CliInvocation::parse_from_args(&missing_appearance_sub).is_err());
+
+        let invalid_appearance_sub = vec![
+            "shelly-gpui".to_string(),
+            "appearance".to_string(),
+            "theme".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&invalid_appearance_sub).is_err());
+
+        let invalid_style_value = vec![
+            "shelly-gpui".to_string(),
+            "appearance".to_string(),
+            "style".to_string(),
+            "set".to_string(),
+            "neon".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&invalid_style_value).is_err());
+
+        let missing_style_value = vec![
+            "shelly-gpui".to_string(),
+            "appearance".to_string(),
+            "style".to_string(),
+            "set".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&missing_style_value).is_err());
+
+        let invalid_role = vec![
+            "shelly-gpui".to_string(),
+            "appearance".to_string(),
+            "resolve".to_string(),
+            "glass-card".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&invalid_role).is_err());
     }
 
     #[test]

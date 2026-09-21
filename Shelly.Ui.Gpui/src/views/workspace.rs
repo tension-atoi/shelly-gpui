@@ -19,6 +19,7 @@ use crate::views::operation_console::OperationConsoleView;
 use crate::views::package_workstation::{PackageWorkstationConfig, PackageWorkstationView};
 use crate::views::settings::{SettingsView, SettingsViewProps};
 use crate::views::sidebar::SidebarView;
+use crate::visual_style::VisualStyleId;
 use gpui::ScrollStrategy;
 use gpui::*;
 use std::rc::Rc;
@@ -1802,6 +1803,9 @@ impl Render for WorkspaceView {
                         shelly_settings: &self.settings.draft_shelly,
                         gpui_config: &self.settings.draft_gpui,
                         is_dirty: self.settings.is_dirty,
+                        style_menu_open: self.settings.style_menu_open,
+                        style_menu_epoch: self.settings.style_menu_epoch,
+                        style_menu_highlighted: self.settings.style_menu_highlighted,
                         theme: theme_ref,
                         on_toggle_aur: {
                             let e = entity_st.clone();
@@ -1908,6 +1912,42 @@ impl Render for WorkspaceView {
                                         .update(cx, |sb, cx| sb.set_reduce_motion(live_reduce, cx));
                                     view.console_view
                                         .update(cx, |cv, cx| cv.set_reduce_motion(live_reduce, cx));
+                                    cx.notify();
+                                })
+                            })
+                        },
+                        on_open_style_menu: {
+                            let e = entity_st.clone();
+                            Rc::new(move |_w, cx| {
+                                e.update(cx, |view, cx| {
+                                    view.settings.open_style_menu();
+                                    cx.notify();
+                                })
+                            })
+                        },
+                        on_close_style_menu: {
+                            let e = entity_st.clone();
+                            Rc::new(move |_w, cx| {
+                                e.update(cx, |view, cx| {
+                                    view.settings.close_style_menu();
+                                    cx.notify();
+                                })
+                            })
+                        },
+                        on_navigate_style_menu: {
+                            let e = entity_st.clone();
+                            Rc::new(move |key: &str, _w, cx| {
+                                e.update(cx, |view, cx| {
+                                    view.settings.navigate_style_menu(key);
+                                    cx.notify();
+                                })
+                            })
+                        },
+                        on_select_style: {
+                            let e = entity_st.clone();
+                            Rc::new(move |id: VisualStyleId, _w, cx| {
+                                e.update(cx, |view, cx| {
+                                    view.settings.set_visual_style(id);
                                     cx.notify();
                                 })
                             })

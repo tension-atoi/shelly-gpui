@@ -1,14 +1,35 @@
+use crate::components::menu::{
+    MenuCheckmarkItem, MenuKeyHandler, MenuLifecycle, MenuSurface, MenuSurfaceProps,
+};
 use crate::config::{ConfigManager, GpuiUiConfig, ShellySettings};
 use crate::theme::Theme;
+use crate::visual_style::VisualStyleId;
 use gpui::*;
 use std::rc::Rc;
 
 pub type WindowActionHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
+pub type StyleSelectHandler = Rc<dyn Fn(VisualStyleId, &mut Window, &mut App) + 'static>;
+
+pub struct StyleSelectRowProps<'a> {
+    pub current: VisualStyleId,
+    pub menu_open: bool,
+    pub menu_epoch: usize,
+    pub menu_highlighted: usize,
+    pub reduce_motion: bool,
+    pub on_open: WindowActionHandler,
+    pub on_close: WindowActionHandler,
+    pub on_navigate: MenuKeyHandler,
+    pub on_select: StyleSelectHandler,
+    pub theme: &'a Theme,
+}
 
 pub struct SettingsViewProps<'a> {
     pub shelly_settings: &'a ShellySettings,
     pub gpui_config: &'a GpuiUiConfig,
     pub is_dirty: bool,
+    pub style_menu_open: bool,
+    pub style_menu_epoch: usize,
+    pub style_menu_highlighted: usize,
     pub theme: &'a Theme,
     pub on_toggle_aur: WindowActionHandler,
     pub on_toggle_flatpak: WindowActionHandler,
@@ -19,6 +40,10 @@ pub struct SettingsViewProps<'a> {
     pub on_toggle_compact_view: WindowActionHandler,
     pub on_toggle_log_drawer_auto_open: WindowActionHandler,
     pub on_toggle_reduce_motion: WindowActionHandler,
+    pub on_open_style_menu: WindowActionHandler,
+    pub on_close_style_menu: WindowActionHandler,
+    pub on_navigate_style_menu: MenuKeyHandler,
+    pub on_select_style: StyleSelectHandler,
     pub on_save: WindowActionHandler,
     pub on_reset: Option<WindowActionHandler>,
 }
@@ -28,6 +53,9 @@ pub struct SettingsView {
     pub draft_shelly: ShellySettings,
     pub draft_gpui: GpuiUiConfig,
     pub is_dirty: bool,
+    pub style_menu_open: bool,
+    pub style_menu_epoch: usize,
+    pub style_menu_highlighted: usize,
 }
 
 impl SettingsView {
@@ -36,7 +64,61 @@ impl SettingsView {
             draft_shelly: shelly_settings,
             draft_gpui: gpui_config,
             is_dirty: false,
+            style_menu_open: false,
+            style_menu_epoch: 0,
+            style_menu_highlighted: 0,
         }
+    }
+
+    fn style_menu_index(style: VisualStyleId) -> usize {
+        match style {
+            VisualStyleId::Standard => 0,
+            VisualStyleId::Transparency => 1,
+        }
+    }
+
+    fn style_at_index(index: usize) -> VisualStyleId {
+        if index == 0 {
+            VisualStyleId::Standard
+        } else {
+            VisualStyleId::Transparency
+        }
+    }
+
+    pub fn open_style_menu(&mut self) {
+        self.style_menu_open = true;
+        self.style_menu_epoch += 1;
+        self.style_menu_highlighted = Self::style_menu_index(self.draft_gpui.visual_style);
+    }
+
+    pub fn close_style_menu(&mut self) {
+        self.style_menu_open = false;
+    }
+
+    pub fn navigate_style_menu(&mut self, key: &str) {
+        match key {
+            "up" => {
+                self.style_menu_highlighted =
+                    (self.style_menu_highlighted + 1) % VisualStyleId::ALL.len();
+            }
+            "down" => {
+                self.style_menu_highlighted =
+                    (self.style_menu_highlighted + 1) % VisualStyleId::ALL.len();
+            }
+            "home" => self.style_menu_highlighted = 0,
+            "end" => self.style_menu_highlighted = VisualStyleId::ALL.len() - 1,
+            "enter" | "space" => {
+                let selected = Self::style_at_index(self.style_menu_highlighted);
+                self.set_visual_style(selected);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn set_visual_style(&mut self, style: VisualStyleId) {
+        self.draft_gpui.visual_style = style;
+        self.is_dirty = true;
+        self.style_menu_open = false;
     }
 
     pub fn toggle_aur(&mut self) {
@@ -289,7 +371,29 @@ impl SettingsView {
                 g.compact_view,
                 props.on_toggle_compact_view,
                 theme,
-            ));
+            ))
+            .child(Self::style_select_row(StyleSelectRowProps {
+                current: g.visual_style,
+                menu_open: props.style_menu_open,
+                menu_epoch: props.style_menu_epoch,
+                menu_highlighted: props.style_menu_highlighted,
+                reduce_motion: g.reduce_motion,
+                on_open: props.on_open_style_menu,
+                on_close: props.on_close_style_menu,
+                on_navigate: props.on_navigate_style_menu,
+                on_select: props.on_select_style,
+                theme,
+            }))
+            .child(
+                div()
+                    .px_3()
+                    .pt_2()
+                    .text_xs()
+                    .text_color(theme.text_muted)
+                    .child(
+                        "Transparency is declared in STYLE-00A; its visual projection arrives with STYLE-00B after Render Lab evidence.",
+                    ),
+            );
 
         root = root.child(appearance_section);
 
@@ -439,6 +543,133 @@ impl SettingsView {
 
         root = root.child(actions_bar);
         root
+    }
+
+    fn style_select_row(props: StyleSelectRowProps) -> impl IntoElement {
+        let theme = props.theme;
+        let focus_border = theme.border_focus;
+        let on_open_key = props.on_open.clone();
+        let on_open = props.on_open;
+        let on_close = props.on_close;
+        let on_navigate = props.on_navigate;
+        let on_select = props.on_select;
+        let current = props.current;
+        let menu_open = props.menu_open;
+        let menu_epoch = props.menu_epoch;
+        let menu_highlighted = props.menu_highlighted;
+        let reduce_motion = props.reduce_motion;
+
+        let mut items = Vec::new();
+        for (idx, style) in VisualStyleId::ALL.iter().enumerate() {
+            let select_cb = on_select.clone();
+            let close_cb = on_close.clone();
+            let style_val = *style;
+            let id_str = match style {
+                VisualStyleId::Standard => "menu_style_standard",
+                VisualStyleId::Transparency => "menu_style_transparency",
+            };
+            items.push(
+                MenuCheckmarkItem::render(
+                    id_str.into(),
+                    style.label(),
+                    current == *style,
+                    menu_open && menu_highlighted == idx,
+                    theme,
+                    Rc::new(move |w, a| {
+                        select_cb(style_val, w, a);
+                        close_cb(w, a);
+                    }),
+                )
+                .into_any_element(),
+            );
+        }
+
+        let dropdown = if menu_open {
+            Some(
+                deferred(
+                    anchored()
+                        .anchor(Corner::TopLeft)
+                        .offset(point(px(0.0), px(34.0)))
+                        .snap_to_window()
+                        .child(MenuSurface::render(MenuSurfaceProps {
+                            id: "style_menu_surface".into(),
+                            theme,
+                            min_width: px(220.0),
+                            reduce_motion,
+                            lifecycle: MenuLifecycle::Open,
+                            anim_epoch: menu_epoch,
+                            focus_handle: None,
+                            on_close: on_close.clone(),
+                            on_key_navigate: Some(on_navigate),
+                            children: items,
+                        })),
+                )
+                .into_any_element(),
+            )
+        } else {
+            None
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .py_3()
+            .px_3()
+            .rounded_sm()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child("Visual Style"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_secondary)
+                            .child("Selectable projection profile: Standard or Transparency"),
+                    ),
+            )
+            .child(
+                div()
+                    .id("setting_visual_style_btn")
+                    .relative()
+                    .focusable()
+                    .tab_stop(true)
+                    .focus(move |s| s.border_1().border_color(focus_border))
+                    .on_key_down(move |event, window, cx| {
+                        let key = event.keystroke.key.as_str();
+                        if key == "enter" || key == "space" {
+                            on_open_key(window, cx);
+                        }
+                    })
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_1()
+                    .rounded_md()
+                    .bg(theme.bg_surface_active)
+                    .border_1()
+                    .border_color(theme.border)
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(theme.bg_surface_hover))
+                    .child(current.label())
+                    .child("▾")
+                    .on_mouse_down(MouseButton::Left, move |_e, window, cx| {
+                        on_open(window, cx);
+                    })
+                    .children(dropdown),
+            )
     }
 
     fn toggle_row(
@@ -616,6 +847,65 @@ mod tests {
         let result = settings.save_with(|_| Ok(()), |_| Ok(()));
         assert!(result.is_ok());
         assert!(!settings.is_dirty);
+    }
+
+    #[test]
+    fn test_style_menu_open_close_navigate_select() {
+        let mut settings = SettingsView::new(ShellySettings::default(), GpuiUiConfig::default());
+        assert_eq!(settings.draft_gpui.visual_style, VisualStyleId::Standard);
+        assert!(!settings.style_menu_open);
+
+        settings.open_style_menu();
+        assert!(settings.style_menu_open);
+        assert_eq!(settings.style_menu_epoch, 1);
+        assert_eq!(settings.style_menu_highlighted, 0);
+        assert!(
+            !settings.is_dirty,
+            "Opening the menu must not dirty the draft"
+        );
+
+        settings.navigate_style_menu("down");
+        assert_eq!(settings.style_menu_highlighted, 1);
+        settings.navigate_style_menu("down");
+        assert_eq!(settings.style_menu_highlighted, 0);
+        settings.navigate_style_menu("up");
+        assert_eq!(settings.style_menu_highlighted, 1);
+        settings.navigate_style_menu("home");
+        assert_eq!(settings.style_menu_highlighted, 0);
+        settings.navigate_style_menu("end");
+        assert_eq!(settings.style_menu_highlighted, 1);
+
+        settings.navigate_style_menu("enter");
+        assert_eq!(
+            settings.draft_gpui.visual_style,
+            VisualStyleId::Transparency
+        );
+        assert!(settings.is_dirty);
+        assert!(!settings.style_menu_open);
+
+        settings.open_style_menu();
+        assert_eq!(settings.style_menu_highlighted, 1);
+        settings.close_style_menu();
+        assert!(!settings.style_menu_open);
+    }
+
+    #[test]
+    fn test_set_visual_style_dirties_and_persists_through_save() {
+        let mut settings = SettingsView::new(ShellySettings::default(), GpuiUiConfig::default());
+        settings.set_visual_style(VisualStyleId::Transparency);
+        assert!(settings.is_dirty);
+
+        let mut saved_style = VisualStyleId::Standard;
+        let result = settings.save_with(
+            |_| Ok(()),
+            |gpui| {
+                saved_style = gpui.visual_style;
+                Ok(())
+            },
+        );
+        assert!(result.is_ok());
+        assert!(!settings.is_dirty);
+        assert_eq!(saved_style, VisualStyleId::Transparency);
     }
 
     #[test]

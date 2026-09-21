@@ -14,6 +14,7 @@ mod state;
 mod theme;
 pub mod ui_metrics;
 mod views;
+pub mod visual_style;
 
 use crate::components::search_input::*;
 use gpui::*;

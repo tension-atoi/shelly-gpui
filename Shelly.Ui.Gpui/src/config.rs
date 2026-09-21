@@ -1,4 +1,5 @@
 use crate::state::session::PackageViewMode;
+use crate::visual_style::VisualStyleId;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -74,6 +75,8 @@ pub struct GpuiUiConfig {
     pub reduce_motion: bool,
     #[serde(default = "default_view_mode")]
     pub view_mode: PackageViewMode,
+    #[serde(default = "default_visual_style")]
+    pub visual_style: VisualStyleId,
 }
 
 pub const MIN_WINDOW_WIDTH: f32 = 1024.0;
@@ -111,6 +114,10 @@ fn default_view_mode() -> PackageViewMode {
     PackageViewMode::Table
 }
 
+fn default_visual_style() -> VisualStyleId {
+    VisualStyleId::Standard
+}
+
 impl Default for GpuiUiConfig {
     fn default() -> Self {
         Self {
@@ -123,6 +130,7 @@ impl Default for GpuiUiConfig {
             last_selected_tab: default_last_selected_tab(),
             reduce_motion: false,
             view_mode: default_view_mode(),
+            visual_style: default_visual_style(),
         }
     }
 }
@@ -346,6 +354,14 @@ impl ConfigManager {
                 description: "Restored application window height (minimum 680.0)".to_string(),
                 authority: "gpui-ui".to_string(),
             },
+            SettingEntry {
+                key: "visual-style".to_string(),
+                value: gpui.visual_style.as_str().to_string(),
+                default: "standard".to_string(),
+                description: "Selectable visual style profile ('standard' or 'transparency')"
+                    .to_string(),
+                authority: "gpui-ui".to_string(),
+            },
         ]
     }
 
@@ -504,6 +520,12 @@ impl ConfigManager {
                 config.window_width = val;
                 Self::save_gpui_config(&config)?;
             }
+            "visual-style" => {
+                let mut config = Self::load_gpui_config();
+                config.visual_style =
+                    VisualStyleId::parse(value).map_err(|e| anyhow::anyhow!(e))?;
+                Self::save_gpui_config(&config)?;
+            }
             "window-height" => {
                 let mut config = Self::load_gpui_config();
                 let val: f32 = value
@@ -542,6 +564,7 @@ impl ConfigManager {
             "remove-configs" => Self::set_setting("remove-configs", "true"),
             "window-width" => Self::set_setting("window-width", "1280.0"),
             "window-height" => Self::set_setting("window-height", "840.0"),
+            "visual-style" => Self::set_setting("visual-style", "standard"),
             other => anyhow::bail!("Unknown setting key '{}'", other),
         }
     }
@@ -584,6 +607,7 @@ mod tests {
         assert_eq!(parsed.last_selected_tab, 0);
         assert!(!parsed.reduce_motion);
         assert_eq!(parsed.view_mode, PackageViewMode::Table);
+        assert_eq!(parsed.visual_style, VisualStyleId::Standard);
     }
 
     #[test]
@@ -597,6 +621,19 @@ mod tests {
         let parsed: GpuiUiConfig =
             serde_json::from_str(table_json).expect("Should deserialize table");
         assert_eq!(parsed.view_mode, PackageViewMode::Table);
+    }
+
+    #[test]
+    fn test_gpui_config_preserves_explicit_visual_style() {
+        let transparency_json = r#"{"visual_style": "transparency"}"#;
+        let parsed: GpuiUiConfig =
+            serde_json::from_str(transparency_json).expect("Should deserialize transparency");
+        assert_eq!(parsed.visual_style, VisualStyleId::Transparency);
+
+        let standard_json = r#"{"visual_style": "standard"}"#;
+        let parsed: GpuiUiConfig =
+            serde_json::from_str(standard_json).expect("Should deserialize standard");
+        assert_eq!(parsed.visual_style, VisualStyleId::Standard);
     }
 
     #[test]
@@ -649,6 +686,11 @@ mod tests {
             !parsed.reduce_motion,
             "Default for reduce_motion must be false"
         );
+        assert_eq!(
+            parsed.visual_style,
+            VisualStyleId::Standard,
+            "Legacy config without visual_style must default to Standard"
+        );
     }
 
     #[test]
@@ -687,6 +729,7 @@ mod tests {
             "remove-configs",
             "window-width",
             "window-height",
+            "visual-style",
         ];
         assert_eq!(list.len(), expected_keys.len());
         for key in expected_keys {
@@ -703,6 +746,7 @@ mod tests {
         assert!(ConfigManager::get_setting("theme").is_ok());
         assert!(ConfigManager::get_setting("view-mode").is_ok());
         assert!(ConfigManager::get_setting("compact-view").is_ok());
+        assert!(ConfigManager::get_setting("visual-style").is_ok());
         assert!(ConfigManager::get_setting("non_existent_key").is_err());
     }
 
@@ -715,6 +759,7 @@ mod tests {
         assert!(ConfigManager::set_setting("log-drawer-height", "1000.0").is_err());
         assert!(ConfigManager::set_setting("window-width", "500.0").is_err());
         assert!(ConfigManager::set_setting("window-height", "400.0").is_err());
+        assert!(ConfigManager::set_setting("visual-style", "neon").is_err());
         assert!(ConfigManager::set_setting("invalid_setting_key", "val").is_err());
     }
 
