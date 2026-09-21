@@ -4,7 +4,8 @@
 
 - **RENDER-00 Baseline Commit**: `762471a5f980e57023f1de2e483adc5fb045b5b1`
 - **Canonical Re-entry Anchor**: `0f319c7aab800c9d1254ef6f98c223215b051083`
-- **RENDER-01 Implementation Commit**: `d79a9e68e4bf9c05da124804300438cf1a2f64fa`
+- **RENDER-01 Implementation Commit**: `d79a9e68b64fb0cd541dcfcc3720990e8273b217`
+- **RENDER-01 Closure Commit**: `46d9e493d42fcc9b1450ab90df44d6b7c4593006`
 - **Target Slice**: `RENDER-01 (Confrontation & Capability Ledger Closure)`
 - **Platform**: Arch Linux (Kernel 6.18.2-arch1-1), Hyprland Wayland (Display `wayland-1`), NVIDIA RTX 3070 (Driver 570.86.16)
 
@@ -105,3 +106,23 @@ semantic verdict mismatches       0
 - **Stages 1–7 Replay**: Successfully replayed all analytical SDF math, 32 material models, native GPUI gallery, and Vulkan/SPIR-V compute shaders on NVIDIA RTX 3070 (Vulkan 1.4).
 - **Stage 8 Fluid Simulation**: Replayed and executed `fluid.comp` across 90 timesteps. Discovered unbounded velocity divergence due to pressure projection instability ($\nabla \cdot \mathbf{u} \neq 0$).
 - **Disposition**: Formally preserved as an instructive technical failure. Fluid simulation is **not promoted** and is deferred to RENDER-04/05 under strict stability conditions.
+
+---
+
+## 6. RENDER-02 Ratification & Closure (Recipe Recording Graph & Telemetry)
+
+- **Previous Baseline Commit**: `46d9e493d42fcc9b1450ab90df44d6b7c4593006`
+- **Implementation Commit**: `b07ad23c6d5952f41e57c66a4ff5ef3ea0949d2c`
+- **Closure Reference**: See `docs/gpui/render-lab/07-RENDER-02-CLOSURE.md`
+
+| Gate / Requirement | Invariant Target | Empirical Outcome | Status |
+|---|---|---|---|
+| **Recipe Recording Graph IR** | Formal AST IR (`RecipePlan`, `RecipeNode`, `ColorSpec`, `Dim`, `LayoutMode`, `BorderRadius`, `ShadowSpec`, `FillSpec`) | Implemented in `render_lab/graph.rs` with lossless serde | **VERIFIED** |
+| **Iterative Compiler** | Zero recursion, post-order heap-allocated traversal (`Vec<Action>`) | Implemented in `compile_stock_gpui`, stack-safe on 32-ring trees | **VERIFIED** |
+| **All 46 Canonical Plans** | 100% coverage of all 46 fixtures (8G, 8H, 8I, 8J, 14K) | Implemented in `render_lab/plans.rs` | **VERIFIED** |
+| **Confrontation Migration** | 0 ad-hoc imperative render closures in `confront.rs` | All 46 fixtures render through `compile_stock_gpui` | **VERIFIED** |
+| **Structural Telemetry** | Extract nodes, depth, ops, fills, grads, borders, shadows, textures | Implemented in `RecipeStructuralMetrics` | **VERIFIED** |
+| **Control Protocol & CLI** | Protocol bumped to v4; `metrics`, `recipes`, `recipe <id>` CLI commands | Operational in warm & cold modes with `--json` support | **VERIFIED** |
+| **Visual Regression** | 46/46 bit-identical pixel hash match against RENDER-01 baseline | 46 / 46 PASS (100% SHA-256 match in Wayland harness) | **VERIFIED** |
+| **Quality Gates** | `cargo fmt`, `clippy -D warnings`, `cargo test --locked`, `zig test` | 100% pass across all suites (177 Rust unit tests) | **VERIFIED** |
+

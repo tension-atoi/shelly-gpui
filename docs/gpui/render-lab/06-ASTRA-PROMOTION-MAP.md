@@ -24,8 +24,8 @@ The following assets from ASTRA-FORGE-00 have been forensically replayed, reprod
 
 ### 1.2 Calibrated Material Models & Surface Responses
 - **Asset**: 32 parametric material models from `material_studies.py` covering metals, polymers, coated optics, enamel, paper, and carbon weaves.
-- **Value**: Validated reflectance and roughness parameters, dual-layer clearcoat falloffs, and anisotropic highlight ratios.
-- **Application**: Ground truth specifications for recipe styling across Board J (Tactile Substrates) and Board K (Noise & Microtextures).
+- **Value**: Reference formulation parameters replayed locally (reflectance, roughness heuristics, dual-layer clearcoat falloffs, and anisotropic highlight ratios), serving as design reference rather than physically validated lab measurements.
+- **Application**: Reference specifications for recipe styling across Board J (Tactile Substrates) and Board K (Noise & Microtextures).
 
 ### 1.3 Split-View & Fiducial Confrontation Harness
 - **Asset**: Dual-pane visual confrontation design with magenta fiducial markers (`#FF00FF`) for sub-pixel bounding-box localization.
@@ -40,7 +40,7 @@ The following assets from ASTRA-FORGE-00 have been forensically replayed, reprod
 
 ### 1.5 Deterministic PRNG & Microtexture Synthesis
 - **Asset**: Procedural texture generation algorithms using `SplitMix64`, value noise, Voronoi distance lattices, and Bayer dither matrices.
-- **Value**: Zero-cost, immutable texture synthesis in CPU memory without external asset dependencies or non-deterministic GPU timing.
+- **Value**: Immutable procedural texture synthesis in CPU memory without external asset dependencies or non-deterministic GPU timing, incurring an initial one-off generation cost that is subsequently amortized by the in-memory cache.
 - **Application**: Implemented in `texture.rs`, providing complete test coverage for all 16 Board K microtexture fixtures.
 
 ---
