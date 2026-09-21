@@ -53,9 +53,10 @@ flowchart TD
 1. **Tier 1 (Authentic Source Icon)**:
    - Flatpak packages probe `/var/lib/flatpak/exports/share/icons/hicolor/` and `~/.local/share/flatpak/exports/share/icons/hicolor/` for high-resolution PNG or SVG assets matching the App ID.
    - AppImage packages probe declared sibling assets or standard desktop icon locations.
-   - Standard ALPM and AUR packages strictly require provenance verification: if installed, Shelly inspects package-owned files in `/var/lib/pacman/local/<pkg>-<version>/files`, finds owned `usr/share/applications/*.desktop` entries, extracts the `Icon=` field under `[Desktop Entry]`, and resolves the icon path.
+   - Standard ALPM and AUR packages strictly require provenance verification: if installed, Shelly inspects `/var/lib/pacman/local/*/desc`, parses the `%NAME%` record field, guarantees that `%NAME% == pkg.name` exactly (preventing false prefix candidates like `python` matching `python-jinja`), reads that record's `files` list for owned `usr/share/applications/*.desktop` entries, extracts the `Icon=` field under `[Desktop Entry]`, and resolves the icon path.
    - Uninstalled packages, packages without owned desktop files, or non-desktop CLI tools honestly return Tier 2 Symbolic icons without guessing or name-based heuristics.
-   - Hot-path rendering enforces `IdentityCache`: cached hits render in $O(1)$ memory; cache misses immediately render Tier 2 Symbolic in $O(1)$ with zero synchronous disk I/O, spawning asynchronous background prefetch to populate the cache.
+   - Hot-path rendering enforces `IdentityCache`: cached hits render in $O(1)$ memory; cache misses immediately return Tier 2 Symbolic in $O(1)$ with zero synchronous disk I/O and submit the key to a single bounded background worker queue (`shelly-identity-resolver`). Upon resolution, the worker emits `IdentityResolved(key)`, invalidating the UI surface reactively. Zero OS threads are created on the render path.
+   - A single unified authority governs both proactive `preload()` (Browse search results, initial loads, refresh cycles) and on-demand cache-miss resolution, deduplicated by in-flight keys.
 2. **Tier 2 (Verified Source Symbolic Vector)**:
    - High-contrast geometric vector glyphs for known sources: Arch Swoosh (`source-alpm.svg`), AUR Crest (`source-aur.svg`), Flatpak Cube (`source-flatpak.svg`), AppImage Diamond (`source-appimage.svg`).
 3. **Tier 3 (Generic Fallback)**:

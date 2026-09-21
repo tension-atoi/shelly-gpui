@@ -164,19 +164,22 @@ The complete visual evidence suite captured directly from the live Wayland compo
 - **Target OS**: Arch Linux x86_64
 - **Compositor**: Hyprland (Native Wayland, `xwayland: false`)
 - **Display**: `WAYLAND_DISPLAY=wayland-1`
-- **Installed Package**: `shelly-gpui-git r4699.ga172c43e-1`
-- **Source Git Commit**: `a172c43e`
+- **Installed Package**: `shelly-gpui-git r4701.gd79e4aeb-1`
+- **Source Git Commit**: `d79e4aeb`
 - **Running Binary**: `/usr/lib/shelly/shelly-gpui-bin`
 - **Verification Command**:
   ```sh
   pacman -Q shelly-gpui-git
-  # Output: shelly-gpui-git r4699.ga172c43e-1
+  # Output: shelly-gpui-git r4701.gd79e4aeb-1
   ```
 - **Architectural Invariants Verified**:
-  1. **Strict Provenance-Backed Tier 1 for ALPM & AUR**: Probes `/var/lib/pacman/local/<pkg>-<version>/files` for owned `usr/share/applications/*.desktop` entries and resolves `Icon=` on disk. Uninstalled packages or CLI packages without owned desktop files honestly fall back to Tier 2 Symbolic (`SourceAlpm`, `SourceAur`) with zero fake logos and zero guessing.
-  2. **Hot-Path Render Performance & Zero Sync Disk I/O**: `IdentityCache` provides $O(1)$ memory lookup on hits and immediate $O(1)$ symbolic rendering on misses, enqueuing background asynchronous prefetch workers. Proactive `PackageIdentity::preload` resolves package lists upon receipt.
-  3. **Mathematical WCAG 2.1 AA Compliance**: `theme.rs` unit tests assert $\ge 4.5:1$ contrast ratios across all text tokens against `bg_surface` and `bg_app` in both Dark and Light themes. Text labels use dedicated `success_text` (`#047857` in light, `#34d399` in dark) and `warning_text` (`#b45309` in light, `#fbbf24` in dark), separating text contrast from indicator accent dots.
-  4. **Outer Wrapper Inset Clarification**: Clarified that $80 + 4 + 4 = 88\text{px}$ is the outer row wrapper inset (`py_1()` in `package_workstation.rs`), distinct from the inner card padding (`py(px(6.0))` in `package_card.rs`).
+  1. **Strict Provenance-Backed Tier 1 for ALPM & AUR**: Probes `/var/lib/pacman/local/*/desc`, parses `%NAME%`, matches `== pkg.name` exactly (guaranteeing exact identity match, rejecting false prefix candidates like `python` matching `python-jinja`, and supporting letters in version strings like `r4699.ga172c43e-1`). Reads `files` list for owned `usr/share/applications/*.desktop` entries and resolves `Icon=` on disk. Uninstalled packages or CLI packages without owned desktop files honestly fall back to Tier 2 Symbolic (`SourceAlpm`, `SourceAur`) with zero fake logos and zero guessing.
+  2. **Hot-Path Render Performance & Zero OS Thread Spawning**: `IdentityCache` provides $O(1)$ memory lookup on hits and immediate $O(1)$ symbolic rendering on misses. Cache misses enqueue into a bounded queue (2048) consumed by a dedicated background worker (`shelly-identity-resolver`). Zero OS threads are created on the render hot path.
+  3. **Reactive UI Invalidation on Identity Resolution**: When background worker resolves an authentic icon, it emits `IdentityResolved(key)`, triggering a GPUI redraw so newly resolved Tier 1 icons appear reactively without requiring separate user interaction.
+  4. **Single Preload Authority**: A single authority governs both proactive `preload()` (Browse search results, initial loads, refresh cycles) and cache-miss resolution, deduplicated by in-flight keys.
+  5. **Failure-Truth Invariant Restored**: Failed `load_installed_packages` or `load_updates` preserves existing known-good package data and displays the error with a retry action, never wiping data or clearing the error flag.
+  6. **Mathematical WCAG 2.1 AA Compliance**: `theme.rs` unit tests assert $\ge 4.5:1$ contrast ratios across all text tokens against `bg_surface` and `bg_app` in both Dark and Light themes. Text labels use dedicated `success_text` (`#047857` in light, `#34d399` in dark) and `warning_text` (`#b45309` in light, `#fbbf24` in dark), separating text contrast from indicator accent dots.
+  7. **Outer Wrapper Inset Clarification**: Clarified that $80 + 4 + 4 = 88\text{px}$ is the outer row wrapper inset (`py_1()` in `package_workstation.rs`), distinct from the inner card padding (`py(px(6.0))` in `package_card.rs`).
 
 ### 8.2 Live Wayland UX-03R2 Gallery
 
