@@ -3,11 +3,16 @@ pub mod catalog;
 pub mod confront;
 pub mod diagnostics;
 pub mod fixture;
+pub mod graph;
 pub mod ledger;
 pub mod manifest;
+pub mod plans;
 pub mod recipe;
 pub mod state;
 pub mod texture;
+
+pub use graph::{compile_stock_gpui, RecipeNode, RecipePlan, RecipeStructuralMetrics};
+pub use plans::plan_for_recipe;
 
 pub use capability::CapabilityClass;
 pub use catalog::FixtureCatalog;

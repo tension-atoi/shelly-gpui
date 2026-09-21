@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 /// - v1: Initial Shelly GPUI runtime control (navigation, search, view mode, inspection)
 /// - v2: Render Lab baseline surface commands (open, fixture, material, topology, motion, quality, time, status)
 /// - v3: RenderLabStyle command & schema v2 manifest fields (recipe, seed, diagnostics) for RENDER-01 confrontation
-pub const CONTROL_PROTOCOL_VERSION: u32 = 3;
+/// - v4: RenderLabMetrics, RenderLabRecipes, RenderLabRecipe for RENDER-02 structural telemetry
+pub const CONTROL_PROTOCOL_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ControlRequest {
@@ -46,6 +47,9 @@ pub enum ControlCommand {
     RenderLabTime { seconds: f32 },
     RenderLabStatus,
     RenderLabStyle { style: String },
+    RenderLabMetrics { fixture: Option<String> },
+    RenderLabRecipes,
+    RenderLabRecipe { id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -197,6 +201,14 @@ mod tests {
             ControlCommand::RenderLabStatus,
             ControlCommand::RenderLabStyle {
                 style: "transparency".to_string(),
+            },
+            ControlCommand::RenderLabMetrics {
+                fixture: Some("field.zero-positive-scalar".to_string()),
+            },
+            ControlCommand::RenderLabMetrics { fixture: None },
+            ControlCommand::RenderLabRecipes,
+            ControlCommand::RenderLabRecipe {
+                id: "g01-linear-scalar-gradient/r1".to_string(),
             },
         ];
 

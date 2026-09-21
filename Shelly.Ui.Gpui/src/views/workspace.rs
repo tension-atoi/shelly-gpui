@@ -781,6 +781,120 @@ impl WorkspaceView {
                     Err(e) => ControlResponse::error(e),
                 }
             }
+            ControlCommand::RenderLabMetrics { fixture } => {
+                let target_fixture = match fixture {
+                    Some(f) => Some(f),
+                    None => {
+                        let rl = self.render_lab.read(cx);
+                        rl.active_fixture.as_ref().map(|f| f.as_str().to_string())
+                    }
+                };
+
+                if let Some(fid) = target_fixture {
+                    let catalog = crate::render_lab::catalog::FixtureCatalog::all();
+                    let fdef = catalog.iter().find(|d| d.id.as_str() == fid.as_str());
+                    if let Some(def) = fdef {
+                        if let Some(recipe) =
+                            crate::render_lab::recipe::RecipeCatalog::find(def.id.as_str())
+                        {
+                            if let Some(plan) = crate::render_lab::plans::plan_for_recipe(recipe.id)
+                            {
+                                let metrics = plan.structural_metrics();
+                                ControlResponse::ok_with_data(
+                                    format!("Structural metrics for {}", recipe.id),
+                                    serde_json::json!({
+                                        "fixture": def.id.as_str(),
+                                        "recipe": recipe.id,
+                                        "metrics": metrics,
+                                    }),
+                                )
+                            } else {
+                                ControlResponse::error(format!(
+                                    "No plan for recipe '{}'",
+                                    recipe.id
+                                ))
+                            }
+                        } else {
+                            ControlResponse::error(format!(
+                                "No recipe for fixture '{}'",
+                                def.id.as_str()
+                            ))
+                        }
+                    } else if let Some(plan) = crate::render_lab::plans::plan_for_recipe(&fid) {
+                        let metrics = plan.structural_metrics();
+                        ControlResponse::ok_with_data(
+                            format!("Structural metrics for {}", plan.recipe_id),
+                            serde_json::json!({
+                                "recipe": plan.recipe_id,
+                                "metrics": metrics,
+                            }),
+                        )
+                    } else {
+                        ControlResponse::error(format!("Unknown fixture or recipe '{fid}'"))
+                    }
+                } else {
+                    let catalog = crate::render_lab::catalog::FixtureCatalog::all();
+                    let mut list = Vec::new();
+                    for def in catalog {
+                        if let Some(recipe) =
+                            crate::render_lab::recipe::RecipeCatalog::find(def.id.as_str())
+                        {
+                            if let Some(plan) = crate::render_lab::plans::plan_for_recipe(recipe.id)
+                            {
+                                list.push(serde_json::json!({
+                                    "fixture": def.id.as_str(),
+                                    "recipe": recipe.id,
+                                    "metrics": plan.structural_metrics(),
+                                }));
+                            }
+                        }
+                    }
+                    ControlResponse::ok_with_data(
+                        "Structural metrics for all 46 recipes",
+                        serde_json::Value::Array(list),
+                    )
+                }
+            }
+            ControlCommand::RenderLabRecipes => {
+                let catalog = crate::render_lab::catalog::FixtureCatalog::all();
+                let mut list = Vec::new();
+                for def in catalog {
+                    if let Some(recipe) =
+                        crate::render_lab::recipe::RecipeCatalog::find(def.id.as_str())
+                    {
+                        if let Some(plan) = crate::render_lab::plans::plan_for_recipe(recipe.id) {
+                            list.push(serde_json::to_value(&plan).unwrap_or_default());
+                        }
+                    }
+                }
+                ControlResponse::ok_with_data(
+                    "All 46 canonical RecipePlans",
+                    serde_json::Value::Array(list),
+                )
+            }
+            ControlCommand::RenderLabRecipe { id } => {
+                let catalog = crate::render_lab::catalog::FixtureCatalog::all();
+                let recipe_id =
+                    if let Some(def) = catalog.iter().find(|d| d.id.as_str() == id.as_str()) {
+                        crate::render_lab::recipe::RecipeCatalog::find(def.id.as_str())
+                            .map(|r| r.id.to_string())
+                    } else {
+                        Some(id.clone())
+                    };
+
+                if let Some(rid) = recipe_id {
+                    if let Some(plan) = crate::render_lab::plans::plan_for_recipe(&rid) {
+                        ControlResponse::ok_with_data(
+                            format!("Recipe plan for {rid}"),
+                            serde_json::to_value(&plan).unwrap_or_default(),
+                        )
+                    } else {
+                        ControlResponse::error(format!("Recipe plan not found for '{id}'"))
+                    }
+                } else {
+                    ControlResponse::error(format!("Recipe not found for '{id}'"))
+                }
+            }
         }
     }
 

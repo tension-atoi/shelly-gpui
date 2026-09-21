@@ -43,6 +43,9 @@ pub enum CliRenderLabCommand {
     Status,
     Style { style: String },
     Ledger,
+    Metrics { fixture: Option<String> },
+    Recipes,
+    Recipe { id: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -219,7 +222,7 @@ impl CliInvocation {
             "render-lab" | "render_lab" => {
                 if positional.len() < 2 {
                     return Err(
-                        "Missing subcommand for 'render-lab' ('open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', 'status', 'style', 'ledger')".into(),
+                        "Missing subcommand for 'render-lab' ('open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', 'status', 'style', 'ledger', 'metrics', 'recipes', 'recipe')".into(),
                     );
                 }
                 let sub = positional[1].to_ascii_lowercase();
@@ -300,9 +303,28 @@ impl CliInvocation {
                         CliCommand::RenderLab(CliRenderLabCommand::Style { style })
                     }
                     "ledger" => CliCommand::RenderLab(CliRenderLabCommand::Ledger),
+                    "metrics" => {
+                        let fixture = if positional.len() >= 3 {
+                            Some(positional[2].clone())
+                        } else {
+                            None
+                        };
+                        CliCommand::RenderLab(CliRenderLabCommand::Metrics { fixture })
+                    }
+                    "recipes" => CliCommand::RenderLab(CliRenderLabCommand::Recipes),
+                    "recipe" => {
+                        if positional.len() < 3 {
+                            return Err(
+                                "Missing recipe or fixture ID for 'render-lab recipe'".into(),
+                            );
+                        }
+                        CliCommand::RenderLab(CliRenderLabCommand::Recipe {
+                            id: positional[2].clone(),
+                        })
+                    }
                     other => {
                         return Err(format!(
-                            "Unknown render-lab subcommand '{other}'. Expected 'open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', 'status', 'style', or 'ledger'"
+                            "Unknown render-lab subcommand '{other}'. Expected 'open', 'fixture', 'material', 'topology', 'motion', 'quality', 'time', 'status', 'style', 'ledger', 'metrics', 'recipes', or 'recipe'"
                         ))
                     }
                 }
@@ -416,6 +438,9 @@ Render Lab Commands (RENDER-00, CLI-only developer surface):
   render-lab status                    Print the lab manifest (works offline)
   render-lab style <style>            Set lab style axis ('standard' or 'transparency')
   render-lab ledger                    Print the capability ledger (works offline)
+  render-lab metrics [fixture]         Print structural metrics table or fixture metrics (works offline)
+  render-lab recipes                   List all 46 canonical recipe plans (works offline)
+  render-lab recipe <id>               Print details and plan for a specific recipe (works offline)
 "#
         );
     }
@@ -854,6 +879,226 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                 }
                 Ok(CliOutcome::Exit(0))
             }
+            CliRenderLabCommand::Metrics { fixture } => {
+                if let Some(fid) = fixture {
+                    let catalog = crate::render_lab::catalog::FixtureCatalog::all();
+                    let fdef = catalog.iter().find(|d| d.id.as_str() == fid.as_str());
+                    let (recipe_id, fixture_str) = if let Some(def) = fdef {
+                        if let Some(r) =
+                            crate::render_lab::recipe::RecipeCatalog::find(def.id.as_str())
+                        {
+                            (r.id.to_string(), def.id.as_str().to_string())
+                        } else {
+                            let resp = ControlResponse::error(format!(
+                                "No recipe for fixture '{}'",
+                                def.id.as_str()
+                            ));
+                            return outcome_from_response(&resp, json);
+                        }
+                    } else {
+                        (fid.clone(), String::new())
+                    };
+
+                    let plan = match crate::render_lab::plans::plan_for_recipe(&recipe_id) {
+                        Some(p) => p,
+                        None => {
+                            let resp = ControlResponse::error(format!(
+                                "Recipe plan not found for '{recipe_id}'"
+                            ));
+                            return outcome_from_response(&resp, json);
+                        }
+                    };
+
+                    let metrics = plan.structural_metrics();
+                    if json {
+                        let resp = ControlResponse::ok_with_data(
+                            format!("Structural metrics for {recipe_id}"),
+                            serde_json::json!({
+                                "fixture": if fixture_str.is_empty() { None } else { Some(&fixture_str) },
+                                "recipe": recipe_id,
+                                "metrics": metrics,
+                            }),
+                        );
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&resp).unwrap_or_default()
+                        );
+                    } else {
+                        println!("Structural Metrics for {}:", recipe_id);
+                        if !fixture_str.is_empty() {
+                            println!("  Fixture:            {}", fixture_str);
+                        }
+                        println!("  Graph Nodes:        {}", metrics.graph_nodes);
+                        println!("  Expanded Ops:       {}", metrics.expanded_ops);
+                        println!("  Max Nesting Depth:  {}", metrics.max_depth);
+                        println!("  Fill Operations:    {}", metrics.fill_ops);
+                        println!("  Linear Gradients:   {}", metrics.gradient_ops);
+                        println!("  Borders:            {}", metrics.border_ops);
+                        println!("  Shadow Lobes:       {}", metrics.shadow_lobes);
+                        println!(
+                            "  Textures:           {} ({} px, {} bytes)",
+                            metrics.texture_count,
+                            metrics.texture_pixels,
+                            metrics.texture_rgba_bytes
+                        );
+                    }
+                    Ok(CliOutcome::Exit(0))
+                } else {
+                    let catalog = crate::render_lab::catalog::FixtureCatalog::all();
+                    let mut rows = Vec::new();
+                    for def in catalog {
+                        if let Some(recipe) =
+                            crate::render_lab::recipe::RecipeCatalog::find(def.id.as_str())
+                        {
+                            if let Some(plan) = crate::render_lab::plans::plan_for_recipe(recipe.id)
+                            {
+                                let m = plan.structural_metrics();
+                                rows.push((def.id.as_str(), recipe.id, m));
+                            }
+                        }
+                    }
+
+                    if json {
+                        let items: Vec<serde_json::Value> = rows
+                            .iter()
+                            .map(|(f, r, m)| {
+                                serde_json::json!({
+                                    "fixture": f,
+                                    "recipe": r,
+                                    "metrics": m,
+                                })
+                            })
+                            .collect();
+                        let resp = ControlResponse::ok_with_data(
+                            "Structural metrics for all 46 recipes",
+                            serde_json::Value::Array(items),
+                        );
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&resp).unwrap_or_default()
+                        );
+                    } else {
+                        println!(
+                            "{:<36} {:<34} {:>5} {:>8} {:>5} {:>5} {:>5} {:>7} {:>7} {:>8}",
+                            "FIXTURE",
+                            "RECIPE",
+                            "NODES",
+                            "EXPANDED",
+                            "DEPTH",
+                            "FILLS",
+                            "GRADS",
+                            "BORDERS",
+                            "SHADOWS",
+                            "TEXBYTES"
+                        );
+                        println!("{}", "-".repeat(130));
+                        for (f, r, m) in &rows {
+                            println!(
+                                "{:<36} {:<34} {:>5} {:>8} {:>5} {:>5} {:>5} {:>7} {:>7} {:>8}",
+                                f,
+                                r,
+                                m.graph_nodes,
+                                m.expanded_ops,
+                                m.max_depth,
+                                m.fill_ops,
+                                m.gradient_ops,
+                                m.border_ops,
+                                m.shadow_lobes,
+                                m.texture_rgba_bytes
+                            );
+                        }
+                        println!("{}", "-".repeat(130));
+                        println!("Total: {} recipes", rows.len());
+                    }
+                    Ok(CliOutcome::Exit(0))
+                }
+            }
+            CliRenderLabCommand::Recipes => {
+                let catalog = crate::render_lab::catalog::FixtureCatalog::all();
+                let mut plans = Vec::new();
+                for def in catalog {
+                    if let Some(recipe) =
+                        crate::render_lab::recipe::RecipeCatalog::find(def.id.as_str())
+                    {
+                        if let Some(plan) = crate::render_lab::plans::plan_for_recipe(recipe.id) {
+                            plans.push((def.id.as_str(), plan));
+                        }
+                    }
+                }
+
+                if json {
+                    let items: Vec<serde_json::Value> = plans
+                        .iter()
+                        .map(|(_, p)| serde_json::to_value(p).unwrap_or_default())
+                        .collect();
+                    let resp = ControlResponse::ok_with_data(
+                        "All 46 canonical RecipePlans",
+                        serde_json::Value::Array(items),
+                    );
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&resp).unwrap_or_default()
+                    );
+                } else {
+                    println!("Canonical Recipe Plans ({} total):", plans.len());
+                    for (fixture, plan) in &plans {
+                        let m = plan.structural_metrics();
+                        println!(
+                            "  {:<36} -> {:<34} (nodes: {}, depth: {}, ops: {})",
+                            fixture, plan.recipe_id, m.graph_nodes, m.max_depth, m.expanded_ops
+                        );
+                    }
+                }
+                Ok(CliOutcome::Exit(0))
+            }
+            CliRenderLabCommand::Recipe { id } => {
+                let catalog = crate::render_lab::catalog::FixtureCatalog::all();
+                let (recipe_id, fixture_str) =
+                    if let Some(def) = catalog.iter().find(|d| d.id.as_str() == id.as_str()) {
+                        let r = crate::render_lab::recipe::RecipeCatalog::find(def.id.as_str())
+                            .map(|rec| rec.id.to_string())
+                            .unwrap_or_else(|| id.clone());
+                        (r, Some(def.id.as_str().to_string()))
+                    } else {
+                        (id.clone(), None)
+                    };
+
+                let plan = match crate::render_lab::plans::plan_for_recipe(&recipe_id) {
+                    Some(p) => p,
+                    None => {
+                        let resp =
+                            ControlResponse::error(format!("Recipe plan not found for '{id}'"));
+                        return outcome_from_response(&resp, json);
+                    }
+                };
+
+                if json {
+                    let resp = ControlResponse::ok_with_data(
+                        format!("RecipePlan for {recipe_id}"),
+                        serde_json::to_value(&plan).unwrap_or_default(),
+                    );
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&resp).unwrap_or_default()
+                    );
+                } else {
+                    println!("Recipe Plan: {}", plan.recipe_id);
+                    if let Some(f) = fixture_str {
+                        println!("Fixture:     {}", f);
+                    }
+                    println!("Schema:      v{}", plan.schema_version);
+                    let m = plan.structural_metrics();
+                    println!(
+                        "Metrics:     nodes={}, expanded={}, depth={}, fills={}, grads={}, borders={}, shadows={}, textures={} ({} bytes)",
+                        m.graph_nodes, m.expanded_ops, m.max_depth, m.fill_ops, m.gradient_ops, m.border_ops, m.shadow_lobes, m.texture_count, m.texture_rgba_bytes
+                    );
+                    println!(
+                        "Plan JSON:\n{}",
+                        serde_json::to_string_pretty(&plan).unwrap_or_default()
+                    );
+                }
+                Ok(CliOutcome::Exit(0))
+            }
         },
         CliCommand::Appearance(appearance_cmd) => match appearance_cmd {
             CliAppearanceCommand::StyleGet => match ConfigManager::get_setting("visual-style") {
@@ -1215,6 +1460,38 @@ mod tests {
                 Some(CliCommand::RenderLab(CliRenderLabCommand::Ledger)),
             ),
             (
+                vec!["shelly-gpui", "render-lab", "metrics"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Metrics {
+                    fixture: None,
+                })),
+            ),
+            (
+                vec![
+                    "shelly-gpui",
+                    "render-lab",
+                    "metrics",
+                    "field.zero-positive-scalar",
+                ],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Metrics {
+                    fixture: Some("field.zero-positive-scalar".to_string()),
+                })),
+            ),
+            (
+                vec!["shelly-gpui", "render-lab", "recipes"],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Recipes)),
+            ),
+            (
+                vec![
+                    "shelly-gpui",
+                    "render-lab",
+                    "recipe",
+                    "g01-linear-scalar-gradient/r1",
+                ],
+                Some(CliCommand::RenderLab(CliRenderLabCommand::Recipe {
+                    id: "g01-linear-scalar-gradient/r1".to_string(),
+                })),
+            ),
+            (
                 vec!["shelly-gpui", "appearance", "style", "get"],
                 Some(CliCommand::Appearance(CliAppearanceCommand::StyleGet)),
             ),
@@ -1304,6 +1581,13 @@ mod tests {
             "style".to_string(),
         ];
         assert!(CliInvocation::parse_from_args(&missing_lab_style).is_err());
+
+        let missing_recipe_id = vec![
+            "shelly-gpui".to_string(),
+            "render-lab".to_string(),
+            "recipe".to_string(),
+        ];
+        assert!(CliInvocation::parse_from_args(&missing_recipe_id).is_err());
 
         let missing_appearance_sub = vec!["shelly-gpui".to_string(), "appearance".to_string()];
         assert!(CliInvocation::parse_from_args(&missing_appearance_sub).is_err());

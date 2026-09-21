@@ -30,9 +30,12 @@ impl SplitMix64 {
     }
 }
 
+use serde::{Deserialize, Serialize};
+
 /// Procedural texture family painted into an immutable memory buffer and
 /// served to stock GPUI through `img(RenderImage)`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum TextureKind {
     UniformNoise,
     StratifiedJitter,

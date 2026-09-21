@@ -766,6 +766,7 @@ mod tests {
     #[test]
     fn test_atomic_write_file_integrity() {
         let test_dir = ConfigManager::config_dir().join(".test_atomic");
+        let _ = std::fs::remove_dir_all(&test_dir);
         let _ = std::fs::create_dir_all(&test_dir);
         let target_file = test_dir.join("test_write.json");
 
