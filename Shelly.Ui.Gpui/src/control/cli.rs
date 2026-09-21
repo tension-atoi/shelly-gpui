@@ -9,6 +9,7 @@ use anyhow::Result;
 pub struct CliInvocation {
     pub json: bool,
     pub command: Option<CliCommand>,
+    pub internal_gui: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,12 +38,20 @@ pub enum CliSettingsCommand {
 }
 
 pub enum CliOutcome {
-    LaunchGui(Option<ControlCommand>),
+    LaunchGui,
     Exit(i32),
 }
 
 impl CliInvocation {
     pub fn parse_from_args(args: &[String]) -> Result<Self, String> {
+        if args.iter().any(|a| a == "--internal-gui") {
+            return Ok(Self {
+                json: false,
+                command: None,
+                internal_gui: true,
+            });
+        }
+
         let mut json = false;
         let mut positional = Vec::new();
 
@@ -53,12 +62,14 @@ impl CliInvocation {
                     return Ok(Self {
                         json,
                         command: Some(CliCommand::Help),
+                        internal_gui: false,
                     })
                 }
                 "-V" | "--version" => {
                     return Ok(Self {
                         json,
                         command: Some(CliCommand::Version),
+                        internal_gui: false,
                     })
                 }
                 other => positional.push(other.to_string()),
@@ -69,6 +80,7 @@ impl CliInvocation {
             return Ok(Self {
                 json,
                 command: None,
+                internal_gui: false,
             });
         }
 
@@ -190,6 +202,7 @@ impl CliInvocation {
         Ok(Self {
             json,
             command: Some(cmd),
+            internal_gui: false,
         })
     }
 
@@ -232,7 +245,37 @@ Settings Authority Commands:
     }
 }
 
+/// Ensures that a background Shelly GPUI instance is running and listening on the socket.
+/// Spawns the GUI in detached mode with `--internal-gui` and waits bounded time for socket readiness.
+pub async fn ensure_gui_running() -> Result<()> {
+    if ControlSocket::is_instance_running().await {
+        return Ok(());
+    }
+
+    let exe = std::env::current_exe()?;
+    let _child = std::process::Command::new(exe)
+        .arg("--internal-gui")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+
+    // Wait bounded readiness for the socket (up to 3 seconds, polling every 50ms)
+    for _ in 0..60 {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        if ControlSocket::is_instance_running().await {
+            return Ok(());
+        }
+    }
+
+    anyhow::bail!("Timed out waiting for Shelly GPUI instance to initialize socket")
+}
+
 pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome> {
+    if invocation.internal_gui {
+        return Ok(CliOutcome::LaunchGui);
+    }
+
     let json = invocation.json;
 
     let cmd = match invocation.command {
@@ -261,7 +304,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                 let resp = ControlSocket::send_command(ControlCommand::Open).await?;
                 return outcome_from_response(&resp, json);
             } else {
-                return Ok(CliOutcome::LaunchGui(None));
+                return Ok(CliOutcome::LaunchGui);
             }
         }
         Some(c) => c,
@@ -272,12 +315,11 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
     match cmd {
         CliCommand::Help | CliCommand::Version => unreachable!(),
         CliCommand::Open => {
-            if is_running {
-                let resp = ControlSocket::send_command(ControlCommand::Open).await?;
-                outcome_from_response(&resp, json)
-            } else {
-                Ok(CliOutcome::LaunchGui(Some(ControlCommand::Open)))
+            if !is_running {
+                ensure_gui_running().await?;
             }
+            let resp = ControlSocket::send_command(ControlCommand::Open).await?;
+            outcome_from_response(&resp, json)
         }
         CliCommand::Focus => {
             if is_running {
@@ -348,25 +390,19 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
             }
         }
         CliCommand::Navigate { destination } => {
-            if is_running {
-                let resp =
-                    ControlSocket::send_command(ControlCommand::Navigate { destination }).await?;
-                outcome_from_response(&resp, json)
-            } else {
-                Ok(CliOutcome::LaunchGui(Some(ControlCommand::Navigate {
-                    destination,
-                })))
+            if !is_running {
+                ensure_gui_running().await?;
             }
+            let resp =
+                ControlSocket::send_command(ControlCommand::Navigate { destination }).await?;
+            outcome_from_response(&resp, json)
         }
         CliCommand::Search { query } => {
-            if is_running {
-                let resp = ControlSocket::send_command(ControlCommand::Search { query }).await?;
-                outcome_from_response(&resp, json)
-            } else {
-                Ok(CliOutcome::LaunchGui(Some(ControlCommand::Search {
-                    query,
-                })))
+            if !is_running {
+                ensure_gui_running().await?;
             }
+            let resp = ControlSocket::send_command(ControlCommand::Search { query }).await?;
+            outcome_from_response(&resp, json)
         }
         CliCommand::View { mode } => {
             if is_running {
@@ -387,23 +423,18 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
             }
         }
         CliCommand::Inspect { package } => {
-            if is_running {
-                let resp = ControlSocket::send_command(ControlCommand::Inspect { package }).await?;
-                outcome_from_response(&resp, json)
-            } else {
-                Ok(CliOutcome::LaunchGui(Some(ControlCommand::Inspect {
-                    package,
-                })))
+            if !is_running {
+                ensure_gui_running().await?;
             }
+            let resp = ControlSocket::send_command(ControlCommand::Inspect { package }).await?;
+            outcome_from_response(&resp, json)
         }
         CliCommand::Inspector { tab } => {
-            if is_running {
-                let resp = ControlSocket::send_command(ControlCommand::Inspector { tab }).await?;
-                outcome_from_response(&resp, json)
-            } else {
-                let resp = ControlResponse::error("Shelly GUI is not running");
-                outcome_from_response(&resp, json)
+            if !is_running {
+                ensure_gui_running().await?;
             }
+            let resp = ControlSocket::send_command(ControlCommand::Inspector { tab }).await?;
+            outcome_from_response(&resp, json)
         }
         CliCommand::Logs { operation } => {
             if is_running {
@@ -671,5 +702,40 @@ mod tests {
 
         let missing_search = vec!["shelly-gpui".to_string(), "search".to_string()];
         assert!(CliInvocation::parse_from_args(&missing_search).is_err());
+    }
+
+    #[test]
+    fn test_parse_internal_gui_flag() {
+        let args = vec!["shelly-gpui".to_string(), "--internal-gui".to_string()];
+        let parsed = CliInvocation::parse_from_args(&args).expect("Should parse --internal-gui");
+        assert!(parsed.internal_gui);
+        assert_eq!(parsed.command, None);
+        assert!(!parsed.json);
+
+        let args_with_extra = vec![
+            "shelly-gpui".to_string(),
+            "--internal-gui".to_string(),
+            "something".to_string(),
+        ];
+        let parsed_extra =
+            CliInvocation::parse_from_args(&args_with_extra).expect("Should parse --internal-gui");
+        assert!(parsed_extra.internal_gui);
+    }
+
+    #[test]
+    fn test_outcome_from_response_exit_codes() {
+        let ok_resp = ControlResponse::ok("operation succeeded");
+        let ok_outcome = outcome_from_response(&ok_resp, false).expect("outcome ok");
+        match ok_outcome {
+            CliOutcome::Exit(code) => assert_eq!(code, 0),
+            _ => panic!("Expected CliOutcome::Exit(0)"),
+        }
+
+        let err_resp = ControlResponse::error("operation failed");
+        let err_outcome = outcome_from_response(&err_resp, false).expect("outcome err");
+        match err_outcome {
+            CliOutcome::Exit(code) => assert_eq!(code, 1),
+            _ => panic!("Expected CliOutcome::Exit(1)"),
+        }
     }
 }

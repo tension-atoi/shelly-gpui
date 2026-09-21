@@ -7,7 +7,7 @@
 | **Compilation** | Clean release build, zero warnings | **PASS** |
 | **Strict Clippy** | `cargo clippy --release --locked -- -D warnings` | **PASS (0 warnings)** |
 | **Formatting** | `cargo fmt --check` | **PASS (clean)** |
-| **Unit Test Suite** | 124 tests passing | **PASS (124/124)** |
+| **Unit Test Suite** | 126 tests passing | **PASS (126/126)** |
 | **Zero Deadcode** | `#![deny(dead_code)]`, strict YAGNI | **PASS** |
 | **Zero `/tmp/` Ban** | No volatile `/tmp/` staging | **PASS** |
 | **No ydotoold** | No synthetic keystroke injection | **PASS** |
@@ -22,3 +22,4 @@
 5. **Atomic Durability**: Configuration writes perform sibling temp write, fsync, atomic rename, parent directory fsync, and cleanup on failure. `reset_all` provides per-file atomic crash-safety.
 6. **Kernel-Level Single Instance**: `flock(LOCK_EX | LOCK_NB)` on `instance.lock` eliminates startup TOCTOU races. Healthy sockets are never unlinked.
 7. **Inspect Provenance Truth**: Package inspect resolves exact matches across store, updates, installed, and authoritative database with optional `source:name` prefix. Returns explicit errors for ambiguity and missing packages instead of fabricating ALPM keys.
+8. **Cold-Start Command Authority Closure**: Cold-start invocations (`shelly-gpui navigate/search/inspect`) bootstrap background GUI daemon (`--internal-gui`), wait boundedly on the control socket, and route uniformly through the socket command handler. Invalid cold-start invocations exit 1 with structured JSON errors and do not block the caller terminal.

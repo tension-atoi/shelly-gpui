@@ -36,11 +36,11 @@ fn main() {
     let is_json = invocation.json;
     let outcome =
         backend::process::runtime().block_on(crate::control::cli::run_cli_invocation(invocation));
-    let intent = match outcome {
+    match outcome {
         Ok(crate::control::cli::CliOutcome::Exit(code)) => {
             std::process::exit(code);
         }
-        Ok(crate::control::cli::CliOutcome::LaunchGui(intent)) => intent,
+        Ok(crate::control::cli::CliOutcome::LaunchGui) => {}
         Err(err) => {
             eprintln!("Error: {err}");
             std::process::exit(1);
@@ -52,13 +52,14 @@ fn main() {
         Ok(Some(lock)) => lock,
         Ok(None) => {
             // Another instance holds the lifetime lock.
-            // Forward intent (or Open) to the primary instance over the control socket and exit cleanly.
-            let cmd = intent.unwrap_or(crate::control::protocol::ControlCommand::Open);
+            // Forward Open command to the primary instance over the control socket and propagate outcome exit code.
             let rt = backend::process::runtime();
             let forwarded = rt.block_on(async {
-                for _ in 0..10 {
-                    if let Ok(resp) =
-                        crate::control::socket::ControlSocket::send_command(cmd.clone()).await
+                for _ in 0..20 {
+                    if let Ok(resp) = crate::control::socket::ControlSocket::send_command(
+                        crate::control::protocol::ControlCommand::Open,
+                    )
+                    .await
                     {
                         return Ok(resp);
                     }
@@ -68,8 +69,11 @@ fn main() {
             });
             match forwarded {
                 Ok(resp) => {
-                    let _ = crate::control::cli::outcome_from_response(&resp, is_json);
-                    std::process::exit(0);
+                    let outcome = crate::control::cli::outcome_from_response(&resp, is_json);
+                    match outcome {
+                        Ok(crate::control::cli::CliOutcome::Exit(code)) => std::process::exit(code),
+                        _ => std::process::exit(0),
+                    }
                 }
                 Err(err) => {
                     eprintln!("Error forwarding to primary instance: {err}");
@@ -133,12 +137,7 @@ fn main() {
 
             let _ = cx.open_window(options, move |_, cx| {
                 cx.new(|cx| {
-                    WorkspaceView::with_config_and_intent(
-                        initial_shelly_settings,
-                        initial_gpui_config,
-                        intent,
-                        cx,
-                    )
+                    WorkspaceView::with_config(initial_shelly_settings, initial_gpui_config, cx)
                 })
             });
         });

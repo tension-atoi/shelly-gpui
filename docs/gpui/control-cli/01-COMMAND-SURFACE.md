@@ -54,13 +54,13 @@ The CLI guarantees strict exit code determinism across all invocations:
 - **Behavior**:
   - If destination is valid: navigates running view, updates state, and exits 0.
   - If destination is invalid: returns an explicit error and exits 1.
-  - If offline: boots GUI with startup intent applied to the specified destination.
+  - If offline: bootstraps the desktop GUI in the background, waits boundedly for socket readiness, sends the navigate command over the control socket, and exits deterministically (0 on valid destination, 1 on invalid).
 
 ### `shelly-gpui search <query>`
 - **Behavior**:
   - Synchronously updates `session.search_query = query` and search input text before returning the ACK response, ensuring immediate read-your-writes consistency for subsequent status queries.
   - Sets destination to Browse and dispatches debounced background backend search execution.
-  - If offline: boots GUI with search startup intent.
+  - If offline: bootstraps the desktop GUI in the background, waits boundedly for socket readiness, executes the search over the control socket, and returns the response.
 
 ### `shelly-gpui view <table|cards>`
 - **Behavior**:
@@ -78,7 +78,7 @@ The CLI guarantees strict exit code determinism across all invocations:
   - **Ambiguity**: If multiple packages with different distribution sources match an un-prefixed name, returns an error detailing candidates and exits 1.
   - **Not Found**: If no package matches, returns an error and exits 1.
   - If exactly one package matches: selects package key in `AppSession`, triggers inspector load, and exits 0.
-  - If offline: boots GUI with inspect startup intent.
+  - If offline: bootstraps the desktop GUI in the background, waits boundedly for socket readiness, dispatches the inspect command over the control socket, and returns the response with exit code 0 or 1.
 
 ### `shelly-gpui inspector <tab>`
 - **Arguments**: `overview`, `dependencies` (or `deps`), `files` (or `files-build`).

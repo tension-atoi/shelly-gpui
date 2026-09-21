@@ -15,12 +15,17 @@ impl InstanceLock {
     /// Returns Ok(None) if another process already holds the lock.
     pub fn try_acquire() -> Result<Option<Self>> {
         let dir = ControlSocket::socket_dir();
-        std::fs::create_dir_all(&dir)?;
+        Self::try_acquire_in(&dir)
+    }
 
-        if let Ok(metadata) = std::fs::metadata(&dir) {
+    /// Attempts to acquire the exclusive lifetime lock in the specified directory.
+    pub fn try_acquire_in(dir: &std::path::Path) -> Result<Option<Self>> {
+        std::fs::create_dir_all(dir)?;
+
+        if let Ok(metadata) = std::fs::metadata(dir) {
             let mut perms = metadata.permissions();
             perms.set_mode(0o700);
-            let _ = std::fs::set_permissions(&dir, perms);
+            let _ = std::fs::set_permissions(dir, perms);
         }
 
         let lock_path = dir.join("instance.lock");
@@ -172,16 +177,25 @@ mod tests {
 
     #[test]
     fn test_instance_lock_acquisition() {
-        let lock1 = InstanceLock::try_acquire().expect("First acquisition should succeed");
+        let test_dir = ControlSocket::socket_dir().join(".test_instance_lock");
+        let _ = std::fs::create_dir_all(&test_dir);
+
+        let lock1 =
+            InstanceLock::try_acquire_in(&test_dir).expect("First acquisition should succeed");
         assert!(lock1.is_some());
 
         // Second acquisition while first is held must return None (EWOULDBLOCK)
-        let lock2 = InstanceLock::try_acquire().expect("Second attempt should not error");
+        let lock2 =
+            InstanceLock::try_acquire_in(&test_dir).expect("Second attempt should not error");
         assert!(lock2.is_none());
 
         // Dropping first lock allows subsequent acquisition
         drop(lock1);
-        let lock3 = InstanceLock::try_acquire().expect("Re-acquisition after drop should succeed");
+        let lock3 = InstanceLock::try_acquire_in(&test_dir)
+            .expect("Re-acquisition after drop should succeed");
         assert!(lock3.is_some());
+
+        drop(lock3);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 }

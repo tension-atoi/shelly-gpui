@@ -51,10 +51,9 @@ pub struct WorkspaceView {
 }
 
 impl WorkspaceView {
-    pub fn with_config_and_intent(
+    pub fn with_config(
         shelly_settings: ShellySettings,
         gpui_config: GpuiUiConfig,
-        intent: Option<ControlCommand>,
         cx: &mut Context<Self>,
     ) -> Self {
         let theme = if gpui_config.dark_theme {
@@ -386,13 +385,8 @@ impl WorkspaceView {
         })
         .detach();
 
-        let mut view = view;
         // Chargement initial asynchrone non-bloquant
         view.trigger_initial_load(cx);
-
-        if let Some(cmd) = intent {
-            let _ = view.handle_control_command(cmd, cx);
-        }
 
         view
     }
