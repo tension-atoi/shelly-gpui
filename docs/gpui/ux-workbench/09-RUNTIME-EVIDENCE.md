@@ -200,28 +200,35 @@ The complete visual evidence suite captured directly from the live Wayland compo
 - **Target OS**: Arch Linux x86_64
 - **Compositor**: Hyprland (Native Wayland, `xwayland: false`)
 - **Display**: `WAYLAND_DISPLAY=wayland-1`
-- **Installed Package**: `shelly-gpui-git r4704.g77192c38-1`
-- **Source Git Commit**: `77192c38`
-- **Running Binary**: `/proc/2136065/exe -> /usr/lib/shelly/shelly-gpui-bin`
-- **Running Process ID (PID)**: `2136065`
+- **Installed Package**: `shelly-gpui-git r4706.gdb16458f-1`
+- **Source Git Commit**: `db16458f`
+- **Running Binary**: `/proc/2344595/exe -> /usr/lib/shelly/shelly-gpui-bin`
+- **Running Process ID (PID)**: `2344595`
 - **Verification Command**:
   ```sh
   pacman -Q shelly-gpui-git
-  # Output: shelly-gpui-git r4704.g77192c38-1
+  # Output: shelly-gpui-git r4706.gdb16458f-1
   ```
 - **Architectural Invariants Verified**:
-  1. **Pinned Header Architecture**: The upper region `#inspector_pinned_header` contains the 32x32 `PackageIdentity` avatar, bold package name, monospace version string, update delta, calm metadata line, action buttons (`Install` / `Uninstall`, `Copy install command`), and desktop tabs (`Overview`, `Dependencies`, `Files & Build`). It is fixed and non-scrolling, ensuring essential context and action controls are permanently accessible.
+  1. **Pinned Header Architecture**: The upper region `#inspector_pinned_header` contains the 32x32 `PackageIdentity` avatar, bold package name, monospace version string, update delta, calm metadata line, action buttons (`Install` / `Uninstall`, `Copy install command`), and desktop tabs (`Overview`, `Dependencies`, `Files & Build`). It is fixed and non-scrolling, ensuring essential context and action controls are permanently accessible even when scrolling through hundreds of dependencies or long descriptions.
   2. **Single Scrollable Container**: `#inspector_scroll_body` is the only scrollable element (`flex_1().overflow_scroll()`), containing detail error banners and the tab body.
-  3. **Calm Desktop Metadata Line & WCAG 2.1 AA Compliance**: Completely eliminated candy pill badges (`StatusPill::source_badge`, `StatusPill::installed_pill`). Replaced with `Arch · extra · ● Installed` using mathematically verified `theme.success_text` and `theme.warning_text` tokens.
-  4. **Centered Calm Empty State**: When no package is selected, `#empty_inspector` displays a centered 40x40 `AppIcon::PackageGeneric` icon in `theme.text_muted`, bold `"No Package Selected"` title, and guidance text.
-  5. **Macro Recursion Prevention**: Disambiguated unit test attributes using `#[core::prelude::v1::test]` to prevent `gpui::test` macro recursion during compilation.
-  6. **Zero Deadcode & Strict Quality Gates**: All 112 unit tests pass in release locked profile; zero clippy warnings with `#![deny(dead_code)]`.
+  3. **Calm Desktop Metadata Line & WCAG 2.1 AA Compliance**: Completely eliminated candy pill badges (`StatusPill::source_badge`, `StatusPill::installed_pill`). Replaced with `Arch · extra · ● Installed` using mathematically verified `theme.success_text` and `theme.warning_text` tokens. When copied, feedback text strictly uses `theme.success_text` ($\ge 4.5:1$ contrast against surface).
+  4. **Busy Action Focus Order**: When an action is busy (`is_busy == true`), buttons omit `.focusable()` and `.tab_stop(true)`, guaranteeing disabled actions do not occupy keyboard tab stops.
+  5. **Empty-State Copy Parity**: Neutral copy `"Select a package from the results to inspect its details, dependencies, and files."` accurately addresses both Table and Cards view surfaces.
+  6. **320px Legal Minimum Width Geometry**: Tested at 320px minimum width; action buttons wrap safely (`flex_wrap()`), tabs fit compactly (`px_2().py_1p5().gap(px(4.0))`), and container margins (`px_4().pt_3()` / `px_4().py_3()`) prevent horizontal clipping or visual collision.
+  7. **Macro Recursion Prevention**: Disambiguated unit test attributes using `#[core::prelude::v1::test]` to prevent `gpui::test` macro recursion during compilation.
+  8. **Zero Deadcode & Strict Quality Gates**: All 112 unit tests pass in release locked profile; zero clippy warnings with `#![deny(dead_code)]`.
 
 ### 9.2 Live Wayland UX-04A Gallery
 
 | Figure | State / Component | Screenshot Artifact | Verified UX Properties | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **01** | **Calm Empty Inspector State** | [`evidence_ux04a_01_empty_inspector.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux04a_01_empty_inspector.png) | Centered calm placeholder with 40x40 `PackageGeneric` vector glyph in `text_muted`, `text-sm font-semibold` "No Package Selected" title, and readable guidance description docked in right inspector pane | **PASSED** |
+| **01** | **Calm Empty Inspector State** | [`evidence_ux04a_01_empty_inspector.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux04a_01_empty_inspector.png) | Centered calm placeholder with 40x40 `PackageGeneric` vector glyph in `text_muted`, `text-sm font-semibold` "No Package Selected" title, and neutral copy `"Select a package from the results to inspect its details, dependencies, and files."` docked in right inspector pane | **PASSED** |
+| **02** | **Populated Inspector (Nominal Width)** | [`evidence_ux04a_02_populated_inspector.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux04a_02_populated_inspector.png) | Compact identity header with 32x32 Arch avatar, package name (`aalib`), monospace version (`1.4rc5-19.1`), calm metadata line, `Uninstall` danger button, `Copy install command` button, underlined tabs (`Overview` active, `Dependencies`, `Files & Build`), and Overview metadata grid | **PASSED** |
+| **03** | **Populated Inspector Scrolled** | [`evidence_ux04a_03_populated_inspector_scrolled.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux04a_03_populated_inspector_scrolled.png) | Body scrolled down showing lower overview items (`INSTALL REASON: Not Installed`), proving `#inspector_pinned_header` (avatar, title, version, action buttons, tab bar) remains rock-solid and physically pinned | **PASSED** |
+| **04** | **Inspector at 320px Legal Min Width** | [`evidence_ux04a_04_inspector_min_width.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux04a_04_inspector_min_width.png) | Splitter dragged to clamp at legal maximum list width / 320px minimum inspector width; verifies that header, action buttons, and 3 tabs compose without text truncation, horizontal overflow, or clipping | **PASSED** |
+| **05** | **Copy Feedback WCAG Verified** | [`evidence_ux04a_05_copy_feedback.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux04a_05_copy_feedback.png) | Copy command action rendered using high-contrast `theme.success_text` token, preserving $\ge 4.5:1$ contrast against surface | **PASSED** |
+
 
 
 
