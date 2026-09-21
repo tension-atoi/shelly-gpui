@@ -112,7 +112,7 @@ semantic verdict mismatches       0
 ## 6. RENDER-02 Ratification & Closure (Recipe Recording Graph & Telemetry)
 
 - **Previous Baseline Commit**: `46d9e493d42fcc9b1450ab90df44d6b7c4593006`
-- **Implementation Commit**: `b07ad23c6d5952f41e57c66a4ff5ef3ea0949d2c`
+- **Implementation Commit**: `b07ad23c3a27783ad575ff662fd984f61cb77640`
 - **Closure Reference**: See `docs/gpui/render-lab/07-RENDER-02-CLOSURE.md`
 
 | Gate / Requirement | Invariant Target | Empirical Outcome | Status |

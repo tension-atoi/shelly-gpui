@@ -3,7 +3,8 @@
 
 - **Slice**: `RENDER-02`
 - **Previous Baseline Commit**: `46d9e493d42fcc9b1450ab90df44d6b7c4593006`
-- **Implementation Commit**: `b07ad23c6d5952f41e57c66a4ff5ef3ea0949d2c`
+- **Implementation Commit**: `b07ad23c3a27783ad575ff662fd984f61cb77640`
+- **Closure Commit**: `801674a2d9fed03c25f213b55d59d26cb7999057`
 - **Status**: COMPLETE & VERIFIED — Ready for Ratification (No Push)
 - **Target Platform**: Arch Linux (Kernel 6.18.2-arch1-1), Hyprland Wayland (`wayland-1`), NVIDIA RTX 3070 (Driver 570.86.16)
 
@@ -20,7 +21,7 @@ In RENDER-01, recipes were dispatched through 46 imperative, ad-hoc closure func
    - Structural telemetry computation (`RecipeStructuralMetrics`) extracting graph node counts, expanded operations, maximum tree depth, fill operations, gradient stops, border operations, shadow lobes, and texture memory allocations.
 2. **Deterministic Heap-Allocated Compiler (`compile_stock_gpui`)**:
    - Implemented as an explicit post-order iterative traversal using a heap-allocated `Vec<Action>` stack (`Action::Expand`, `Action::BuildRect`).
-   - Completely eliminates call-stack frame recursion, guaranteeing identical, overflow-safe execution across debug and release builds on deeply nested trees (e.g. 32-ring concentric falloffs).
+   - `compile_stock_gpui` parcourt le `RecipePlan` sans récursion Rust et la profondeur du graph n'augmente donc pas sa call stack, garantissant une exécution sûre et déterministe entre profils debug et release sur les arbres profonds (notamment le falloff optique à 32 anneaux concentriques `i01`).
 3. **All 46 Canonical Recipe Plans (`plans.rs`)**:
    - Complete coverage across all 46 fixtures (8 Group G, 8 Group H, 8 Group I, 8 Group J, 14 Group K).
    - In-crate unit tests proving 100% lossless JSON serialization and deserialization round-trip.
@@ -41,7 +42,7 @@ In RENDER-01, recipes were dispatched through 46 imperative, ad-hoc closure func
 
 ## 2. Structural Telemetry Summary Across All 46 Recipes
 
-| Group | Fixture Count | Total Nodes | Total Expanded Ops | Max Depth Range | Textures | Total Texture RAM |
+| Group | Fixture Count | Total Nodes | Total Expanded Ops | Max Depth Range | Textures | RGBA Texture Payload Bytes |
 |---|---|---|---|---|---|---|
 | **Group G (Fields)** | 8 | 13 | 43 | 2 - 3 | 0 | 0 KB |
 | **Group H (Depth)** | 8 | 17 | 45 | 2 - 4 | 0 | 0 KB |
