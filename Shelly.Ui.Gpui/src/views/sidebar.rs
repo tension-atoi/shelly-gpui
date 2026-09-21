@@ -4,6 +4,7 @@ use crate::state::session::{AppSession, NavDestination, SessionEvent};
 use crate::state::{AnimatedScalar, MotionDurations};
 use crate::theme::Theme;
 use crate::ui_metrics::UiMetrics;
+use crate::visual_style::VisualStyleId;
 use gpui::*;
 use std::rc::Rc;
 use std::time::Instant;
@@ -16,6 +17,7 @@ pub struct SidebarView {
     pub store: Entity<PackageStore>,
     pub width_scalar: AnimatedScalar,
     pub theme: Theme,
+    pub visual_style: VisualStyleId,
     pub reduce_motion: bool,
     _session_sub: Subscription,
 }
@@ -26,6 +28,7 @@ impl SidebarView {
         store: Entity<PackageStore>,
         theme: Theme,
         reduce_motion: bool,
+        visual_style: VisualStyleId,
         cx: &mut Context<Self>,
     ) -> Self {
         let is_collapsed = session.read(cx).sidebar_collapsed;
@@ -58,6 +61,7 @@ impl SidebarView {
             store,
             width_scalar,
             theme,
+            visual_style,
             reduce_motion,
             _session_sub: session_sub,
         }
@@ -73,6 +77,11 @@ impl SidebarView {
 
     pub fn set_theme(&mut self, theme: Theme, cx: &mut Context<Self>) {
         self.theme = theme;
+        cx.notify();
+    }
+
+    pub fn set_visual_style(&mut self, visual_style: VisualStyleId, cx: &mut Context<Self>) {
+        self.visual_style = visual_style;
         cx.notify();
     }
 }
@@ -100,6 +109,7 @@ impl Render for SidebarView {
             is_collapsed,
             current_width,
             theme: &self.theme,
+            visual_style: self.visual_style,
             on_select_destination: Rc::new(move |dest: NavDestination, _w, cx| {
                 session_dest.update(cx, |s, cx| s.set_destination(dest, cx));
             }),

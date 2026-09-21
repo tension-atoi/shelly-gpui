@@ -2,6 +2,9 @@ use crate::components::status_pill::StatusPill;
 use crate::icons::AppIcon;
 use crate::state::NavDestination;
 use crate::theme::Theme;
+use crate::visual_style::paint::apply_surface_projection;
+use crate::visual_style::roles::SurfaceRole;
+use crate::visual_style::VisualStyleId;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use std::rc::Rc;
@@ -15,6 +18,7 @@ pub struct SidebarProps<'a> {
     pub is_collapsed: bool,
     pub current_width: f32,
     pub theme: &'a Theme,
+    pub visual_style: VisualStyleId,
     pub on_select_destination: NavDestinationHandler,
     pub on_toggle_collapse: WindowActionHandler,
 }
@@ -222,50 +226,57 @@ impl Sidebar {
                 })
         };
 
-        div()
+        let base_container = div()
             .flex()
             .flex_col()
             .justify_between()
             .w(width)
             .h_full()
             .overflow_hidden()
-            .bg(theme.bg_sidebar)
             .border_r_1()
             .border_color(theme.border)
-            .py(px(6.0))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.0))
-                    // Header de la barre latérale avec logo Shelly SVG
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .px(if is_collapsed { px(14.0) } else { px(16.0) })
-                            .py(px(10.0))
-                            .border_b_1()
-                            .border_color(theme.border)
-                            .child(
-                                svg()
-                                    .path(AppIcon::Shelly.path())
-                                    .size_5()
-                                    .text_color(theme.accent),
-                            )
-                            .child(if !is_collapsed {
-                                div()
-                                    .text_xs()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(theme.text_primary)
-                                    .child("SHELLY GPUI")
-                            } else {
-                                div()
-                            }),
-                    )
-                    .child(nav_items),
-            )
-            .child(collapse_toggle)
+            .py(px(6.0));
+
+        apply_surface_projection(
+            base_container,
+            SurfaceRole::NavigationRail,
+            props.visual_style,
+            theme.bg_sidebar,
+            theme,
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                // Header de la barre latérale avec logo Shelly SVG
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .px(if is_collapsed { px(14.0) } else { px(16.0) })
+                        .py(px(10.0))
+                        .border_b_1()
+                        .border_color(theme.border)
+                        .child(
+                            svg()
+                                .path(AppIcon::Shelly.path())
+                                .size_5()
+                                .text_color(theme.accent),
+                        )
+                        .child(if !is_collapsed {
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(theme.text_primary)
+                                .child("SHELLY GPUI")
+                        } else {
+                            div()
+                        }),
+                )
+                .child(nav_items),
+        )
+        .child(collapse_toggle)
     }
 }

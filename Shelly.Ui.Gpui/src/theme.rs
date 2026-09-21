@@ -87,6 +87,10 @@ impl Theme {
         }
     }
 
+    pub fn is_dark(&self) -> bool {
+        self.bg_app.r < 0.5
+    }
+
     /// Calcule la luminance relative standard sRGB (WCAG 2.1)
     #[cfg(test)]
     pub fn relative_luminance(c: Rgba) -> f64 {

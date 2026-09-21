@@ -156,7 +156,15 @@ impl RenderLabState {
         id_str: &str,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        let fixture_id = FixtureId::new(id_str).map_err(|e| e.to_string())?;
+        let trimmed = id_str.trim();
+        if trimmed.is_empty()
+            || trimmed.eq_ignore_ascii_case("none")
+            || trimmed.eq_ignore_ascii_case("clear")
+        {
+            self.set_fixture(None, cx);
+            return Ok(());
+        }
+        let fixture_id = FixtureId::new(trimmed).map_err(|e| e.to_string())?;
         if FixtureCatalog::find(&fixture_id).is_none() {
             return Err(format!("Fixture '{id_str}' not found in catalog"));
         }

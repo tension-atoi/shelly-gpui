@@ -16,6 +16,7 @@ use crate::state::{
 use crate::theme::Theme;
 use crate::ui_metrics::UiMetrics;
 use crate::views::inspector::{PackageInspectorProps, PackageInspectorView};
+use crate::visual_style::VisualStyleId;
 use gpui::*;
 use gpui::{uniform_list, UniformListScrollHandle};
 use std::rc::Rc;
@@ -103,6 +104,7 @@ pub struct PackageWorkstationView {
     pub is_loading_pkgbuild: bool,
     pub reduce_motion: bool,
     pub theme: Theme,
+    pub visual_style: VisualStyleId,
     pub compact: bool,
     pub aur_enabled: bool,
     pub flatpak_enabled: bool,
@@ -124,6 +126,7 @@ pub struct PackageWorkstationConfig {
     pub aur_enabled: bool,
     pub flatpak_enabled: bool,
     pub appimage_enabled: bool,
+    pub visual_style: VisualStyleId,
 }
 
 impl PackageWorkstationView {
@@ -180,6 +183,7 @@ impl PackageWorkstationView {
             is_loading_pkgbuild: false,
             reduce_motion: config.reduce_motion,
             theme: config.theme,
+            visual_style: config.visual_style,
             compact: config.compact,
             aur_enabled: config.aur_enabled,
             flatpak_enabled: config.flatpak_enabled,
@@ -526,6 +530,11 @@ impl PackageWorkstationView {
         cx.notify();
     }
 
+    pub fn set_visual_style(&mut self, style: VisualStyleId, cx: &mut Context<Self>) {
+        self.visual_style = style;
+        cx.notify();
+    }
+
     pub fn on_pointer_up(&mut self, cx: &mut Context<Self>) {
         if self.drag_state.is_some() {
             self.drag_state = None;
@@ -677,6 +686,7 @@ impl Render for PackageWorkstationView {
                     appimage_enabled: self.appimage_enabled,
                     source_health: &store.source_health,
                     theme: &theme,
+                    visual_style: self.visual_style,
                     filters_btn_focus: self.filters_btn_focus.clone(),
                     state_btn_focus: self.state_btn_focus.clone(),
                     sort_btn_focus: self.sort_btn_focus.clone(),
@@ -1038,6 +1048,7 @@ impl Render for PackageWorkstationView {
                     UiMetrics::CARD_WRAPPER_NORMAL
                 };
                 let is_compact = self.compact;
+                let visual_style = self.visual_style;
                 uniform_list("package-list-surface", package_count, {
                     let packages = packages.clone();
                     let selected_name = selected_name.clone();
@@ -1062,6 +1073,7 @@ impl Render for PackageWorkstationView {
                                         is_selected,
                                         theme: &list_theme,
                                         compact: is_compact,
+                                        visual_style,
                                     }))
                                     .on_mouse_down(MouseButton::Left, move |_e, _w, cx| {
                                         let key = pkg_key.clone();

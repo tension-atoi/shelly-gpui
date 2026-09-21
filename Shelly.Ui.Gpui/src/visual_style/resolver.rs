@@ -1,5 +1,6 @@
 use crate::render_lab::CapabilityClass;
 use crate::visual_style::profile::{ColorScheme, VisualStyleId, VisualStyleRegistry};
+use crate::visual_style::projection::SurfacePaintProjection;
 use crate::visual_style::roles::{SurfaceRole, SurfaceTreatment};
 use serde::{Deserialize, Serialize};
 
@@ -52,12 +53,11 @@ impl std::fmt::Display for EffectKind {
 
 /// Honest per-effect capability report for the stock GPUI backend.
 ///
-/// STYLE-00A proves nothing: every request resolves to
-/// [`CapabilityClass::Unknown`]. Existing stock support may appear only as
-/// a hypothesis note. The first real capability observations belong to the
-/// RENDER-01 backend-specific ledger, so STYLE-00A never competes with it
-/// as a verdict authority. No request may resolve to `ShaderRequired`
-/// before RENDER-03.
+/// In STYLE-00B, effects reflect actual empirical confrontation from RENDER-01/02:
+/// - ContactDepth: Proven NATIVE via stock BoxShadow (depth.contact-shadow)
+/// - RimResponse: Proven NATIVE via stock perimeter borders (depth.rim-highlight-outline)
+/// - Microstructure: Proven TEXTURE_PROOF via deterministic immutable memory textures (Board K)
+/// - BackdropBlur: Remains UNKNOWN (per-surface backdrop blur unproven in stock GPUI 0.2.2)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EffectResolution {
     pub kind: EffectKind,
@@ -71,19 +71,19 @@ impl EffectResolution {
         let (resolved, note) = match kind {
             EffectKind::BackdropBlur => (
                 CapabilityClass::Unknown,
-                "Stock window-level path exists via WindowBackgroundAppearance::Blurred (org_kde_kwin_blur, compositor-dependent); per-surface evaluation deferred to RENDER-01",
+                "Stock window-level appearance exists, but per-surface backdrop blur is unproven in stock GPUI 0.2.2; active=false",
             ),
             EffectKind::Microstructure => (
-                CapabilityClass::Unknown,
-                "No proven stock texture path in STYLE-00A; spike scheduled in RENDER-01",
+                CapabilityClass::TextureProof,
+                "Proven TextureProof in RENDER-01/02 across 16 Board K/J fixtures via deterministic immutable textures and RenderImage",
             ),
             EffectKind::RimResponse => (
-                CapabilityClass::Unknown,
-                "Uniform borders proven in stock UI; directional rim unevaluated until RENDER-01",
+                CapabilityClass::Native,
+                "Proven Native in RENDER-01/02 via stock perimeter borders and directional rim highlights (depth.rim-highlight-outline)",
             ),
             EffectKind::ContactDepth => (
-                CapabilityClass::Unknown,
-                "Hypothesis only: existing stock BoxShadow/border path makes Native plausible; RENDER-01 decides",
+                CapabilityClass::Native,
+                "Proven Native in RENDER-01/02 via stock BoxShadow and directional borders (depth.contact-shadow / h01)",
             ),
         };
         Self {
@@ -93,13 +93,17 @@ impl EffectResolution {
             note,
         }
     }
+
+    pub fn is_active(&self) -> bool {
+        self.requested && self.resolved != CapabilityClass::Unknown
+    }
 }
 
 /// Resolved visual projection for one (style, role, scheme) triple.
 ///
-/// STYLE-00A projections are reporting-consumed (CLI status/resolve):
-/// paint integration arrives with STYLE-00B.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Projections carry semantic classification and deterministic paint magnitudes
+/// consumed by `apply_surface_projection`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StyleProjection {
     pub style: VisualStyleId,
     pub role: SurfaceRole,
@@ -108,6 +112,7 @@ pub struct StyleProjection {
     pub opaque: bool,
     pub content_scrim: bool,
     pub effects: Vec<EffectResolution>,
+    pub paint: SurfacePaintProjection,
 }
 
 /// Machine-readable appearance authority report.
@@ -145,6 +150,7 @@ pub fn resolve_style(
         .collect();
     let opaque = style == VisualStyleId::Standard;
     let content_scrim = style == VisualStyleId::Transparency && role.requires_content_protection();
+    let paint = SurfacePaintProjection::compute(style, role, color_scheme);
     StyleProjection {
         style,
         role,
@@ -153,6 +159,7 @@ pub fn resolve_style(
         opaque,
         content_scrim,
         effects,
+        paint,
     }
 }
 
@@ -194,16 +201,29 @@ mod tests {
     }
 
     #[test]
-    fn test_resolution_neutrality_all_unknown_in_style_00a() {
+    fn test_resolution_evidence_resolution_in_style_00b() {
         for kind in EffectKind::ALL {
             let res = EffectResolution::resolve(*kind);
             assert!(res.requested);
             assert!(!res.note.is_empty());
-            assert_eq!(
-                res.resolved,
-                CapabilityClass::Unknown,
-                "{kind} must stay Unknown: RENDER-01 owns first observations"
-            );
+            match kind {
+                EffectKind::ContactDepth => {
+                    assert_eq!(res.resolved, CapabilityClass::Native);
+                    assert!(res.is_active());
+                }
+                EffectKind::RimResponse => {
+                    assert_eq!(res.resolved, CapabilityClass::Native);
+                    assert!(res.is_active());
+                }
+                EffectKind::Microstructure => {
+                    assert_eq!(res.resolved, CapabilityClass::TextureProof);
+                    assert!(res.is_active());
+                }
+                EffectKind::BackdropBlur => {
+                    assert_eq!(res.resolved, CapabilityClass::Unknown);
+                    assert!(!res.is_active(), "BackdropBlur remains inactive (Unknown)");
+                }
+            }
             assert_ne!(
                 res.resolved,
                 CapabilityClass::ShaderRequired,
@@ -231,6 +251,22 @@ mod tests {
                     );
                     let expected_requests = VisualStyleRegistry::get(*style).requests.len();
                     assert_eq!(first.effects.len(), expected_requests);
+
+                    // Check paint projection properties
+                    if *style == VisualStyleId::Standard {
+                        assert_eq!(first.paint.surface_opacity, 1.0);
+                        assert!(!first.paint.rim_active);
+                        assert_eq!(
+                            first.paint.shadow_active,
+                            first.treatment == SurfaceTreatment::ElevatedSurface
+                        );
+                    } else {
+                        assert!(first.paint.surface_opacity < 1.0);
+                        assert_eq!(
+                            first.paint.content_scrim,
+                            role.requires_content_protection()
+                        );
+                    }
                 }
             }
         }
@@ -269,8 +305,8 @@ mod tests {
         assert_eq!(standard.effects[0].kind, EffectKind::ContactDepth);
         assert_eq!(
             standard.effects[0].resolved,
-            CapabilityClass::Unknown,
-            "Standard requests ContactDepth but 00A observes nothing"
+            CapabilityClass::Native,
+            "Standard requests ContactDepth and RENDER-01 proves it Native"
         );
     }
 }

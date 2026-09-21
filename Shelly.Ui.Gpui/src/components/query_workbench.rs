@@ -9,6 +9,9 @@ use crate::state::package_store::{SourceHealthMap, SourceHealthStatus};
 use crate::state::query::{PackageStateFilter, SortMode, SourceScope, WorkbenchBreakpoint};
 use crate::state::{PackageSourceKind, PackageViewMode};
 use crate::theme::Theme;
+use crate::visual_style::paint::apply_surface_projection;
+use crate::visual_style::roles::SurfaceRole;
+use crate::visual_style::VisualStyleId;
 use gpui::*;
 use std::rc::Rc;
 
@@ -51,6 +54,7 @@ pub struct QueryWorkbenchProps<'a> {
     pub appimage_enabled: bool,
     pub source_health: &'a SourceHealthMap,
     pub theme: &'a Theme,
+    pub visual_style: VisualStyleId,
     pub filters_btn_focus: FocusHandle,
     pub state_btn_focus: FocusHandle,
     pub sort_btn_focus: FocusHandle,
@@ -501,6 +505,7 @@ impl QueryWorkbench {
                             lifecycle: filters_lifecycle,
                             anim_epoch: filters_epoch,
                             focus_handle: Some(props.menu_surface_focus.clone()),
+                            visual_style: props.visual_style,
                             on_close: on_close_filters,
                             on_key_navigate: Some(on_nav_filters),
                             children: filter_menu_items,
@@ -647,6 +652,7 @@ impl QueryWorkbench {
                                 lifecycle: state_lifecycle,
                                 anim_epoch: state_epoch,
                                 focus_handle: Some(props.menu_surface_focus.clone()),
+                                visual_style: props.visual_style,
                                 on_close: on_close_state,
                                 on_key_navigate: Some(on_nav_state),
                                 children: state_items,
@@ -800,6 +806,7 @@ impl QueryWorkbench {
                             lifecycle: sort_lifecycle,
                             anim_epoch: sort_epoch,
                             focus_handle: Some(props.menu_surface_focus.clone()),
+                            visual_style: props.visual_style,
                             on_close: on_close_sort,
                             on_key_navigate: Some(on_nav_sort),
                             children: sort_items,
@@ -1041,19 +1048,26 @@ impl QueryWorkbench {
             );
 
         // ── 8. Final Container Assembly (Fixed Invariant Geometry) ────────────
-        div()
+        let base_container = div()
             .id("query_workbench_container")
             .w_full()
             .flex()
             .flex_col()
             .gap(px(4.0))
             .p(px(8.0))
-            .bg(theme.bg_sidebar)
             .border_b_1()
-            .border_color(theme.border)
-            .child(row1)
-            .child(row2)
-            .child(status_rail)
+            .border_color(theme.border);
+
+        apply_surface_projection(
+            base_container,
+            SurfaceRole::QueryChrome,
+            props.visual_style,
+            theme.bg_sidebar,
+            theme,
+        )
+        .child(row1)
+        .child(row2)
+        .child(status_rail)
     }
 }
 

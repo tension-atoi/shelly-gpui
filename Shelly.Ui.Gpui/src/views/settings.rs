@@ -599,6 +599,7 @@ impl SettingsView {
                             lifecycle: MenuLifecycle::Open,
                             anim_epoch: menu_epoch,
                             focus_handle: None,
+                            visual_style: current,
                             on_close: on_close.clone(),
                             on_key_navigate: Some(on_navigate),
                             children: items,

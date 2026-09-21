@@ -105,13 +105,22 @@ impl WorkspaceView {
                     aur_enabled,
                     flatpak_enabled,
                     appimage_enabled,
+                    visual_style: gpui_config.visual_style,
                 },
                 cx,
             )
         });
 
-        let sidebar =
-            cx.new(|cx| SidebarView::new(session.clone(), store.clone(), theme, reduce_motion, cx));
+        let sidebar = cx.new(|cx| {
+            SidebarView::new(
+                session.clone(),
+                store.clone(),
+                theme,
+                reduce_motion,
+                gpui_config.visual_style,
+                cx,
+            )
+        });
 
         let console_view = cx.new(|cx| {
             OperationConsoleView::new(
@@ -935,6 +944,7 @@ impl WorkspaceView {
 
         self.workstation.update(cx, |ws, cx| {
             ws.set_theme(theme, cx);
+            ws.set_visual_style(gpui.visual_style, cx);
             ws.set_reduce_motion(reduce, cx);
             ws.set_compact(gpui.compact_view, cx);
             ws.set_sources_enabled(
@@ -947,6 +957,7 @@ impl WorkspaceView {
 
         self.sidebar.update(cx, |sb, cx| {
             sb.set_theme(theme, cx);
+            sb.set_visual_style(gpui.visual_style, cx);
             sb.set_reduce_motion(reduce, cx);
         });
 
@@ -1731,6 +1742,7 @@ impl WorkspaceView {
 
                 self.workstation.update(cx, |ws, cx| {
                     ws.set_theme(theme, cx);
+                    ws.set_visual_style(self.gpui_config.visual_style, cx);
                     ws.set_reduce_motion(reduce, cx);
                     ws.set_compact(self.gpui_config.compact_view, cx);
                     ws.set_sources_enabled(draft_aur, draft_flatpak, draft_appimage, cx);
@@ -1744,6 +1756,7 @@ impl WorkspaceView {
 
                 self.sidebar.update(cx, |sb, cx| {
                     sb.set_theme(theme, cx);
+                    sb.set_visual_style(self.gpui_config.visual_style, cx);
                     sb.set_reduce_motion(reduce, cx);
                 });
 
@@ -2134,14 +2147,28 @@ impl Render for WorkspaceView {
                         crate::views::render_lab::RenderLabViewProps {
                             state: rl_state,
                             theme: &theme,
-                            on_select_fixture: Rc::new(move |id, _w, cx| {
-                                entity_rl.update(cx, |view, cx| {
-                                    view.render_lab.update(cx, |rl, cx| {
-                                        rl.set_fixture(Some(id), cx);
+                            on_select_fixture: {
+                                let e = entity_rl.clone();
+                                Rc::new(move |id, _w, cx| {
+                                    e.update(cx, |view, cx| {
+                                        view.render_lab.update(cx, |rl, cx| {
+                                            rl.set_fixture(Some(id), cx);
+                                        });
+                                        cx.notify();
                                     });
-                                    cx.notify();
-                                });
-                            }),
+                                })
+                            },
+                            on_clear_fixture: {
+                                let e = entity_rl.clone();
+                                Rc::new(move |_w, cx| {
+                                    e.update(cx, |view, cx| {
+                                        view.render_lab.update(cx, |rl, cx| {
+                                            rl.set_fixture(None, cx);
+                                        });
+                                        cx.notify();
+                                    });
+                                })
+                            },
                         },
                     ))
             }

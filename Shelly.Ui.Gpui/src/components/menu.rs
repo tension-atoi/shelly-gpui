@@ -1,5 +1,8 @@
 use crate::icons::AppIcon;
 use crate::theme::Theme;
+use crate::visual_style::paint::apply_surface_projection;
+use crate::visual_style::roles::SurfaceRole;
+use crate::visual_style::VisualStyleId;
 use gpui::*;
 use std::rc::Rc;
 
@@ -23,6 +26,7 @@ pub struct MenuSurfaceProps<'a> {
     pub lifecycle: MenuLifecycle,
     pub anim_epoch: usize,
     pub focus_handle: Option<FocusHandle>,
+    pub visual_style: VisualStyleId,
     pub on_close: MenuActionHandler,
     pub on_key_navigate: Option<MenuKeyHandler>,
     pub children: Vec<AnyElement>,
@@ -65,12 +69,19 @@ impl MenuSurface {
             .min_w(props.min_width)
             .max_w(px(340.0))
             .p_1p5()
-            .bg(theme.bg_surface)
             .border_1()
             .border_color(theme.border)
-            .rounded_md()
-            .shadow_lg()
-            .children(props.children);
+            .rounded_md();
+
+        base = apply_surface_projection(
+            base,
+            SurfaceRole::Menu,
+            props.visual_style,
+            theme.bg_surface,
+            theme,
+        );
+
+        base = base.children(props.children);
 
         if let Some(ref fh) = props.focus_handle {
             base = base.track_focus(fh);
