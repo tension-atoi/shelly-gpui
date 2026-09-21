@@ -74,3 +74,21 @@
 | **Zero Deadcode & 110/110 Tests** | `#![deny(dead_code)]` with zero warnings; 110 unit tests passing in release locked profile | Strict YAGNI, 110 unit tests passing in release locked profile | `cargo test --release --locked` exits 0 (110 passed), `cargo clippy` exits 0 | **PASSED** |
 | **Native PKGBUILD Installation** | Arch package built and installed matching commit SHA | Packaged via `makepkg -C -c -f`, installed via `pacman -U` | Packaged and installed; native Wayland verification | **PASSED** |
 
+---
+
+## Phase UX-04A Acceptance Matrix (Inspector Information Architecture & Compact Header)
+
+| Requirement | Specification | Implementation | Verification Method | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Pinned Header Architecture** | Header, action buttons, and desktop tabs must remain stationary and pinned; never scroll off-screen | `#inspector_pinned_header` flex column container inside `#inspector_container` | Code audit of `views/inspector/mod.rs`; runtime verification | **PASSED** |
+| **Single Scrollable Body** | Inspector body containing error banners and tab content must be the ONLY scrollable element | `#inspector_scroll_body` with `flex_1().overflow_scroll()` | Code audit of `views/inspector/mod.rs`; runtime verification | **PASSED** |
+| **Compact Identity Header** | Eradicate oversized `text-2xl` hero title; integrate 32x32 `PackageIdentity` avatar, bold `text-base` package name, monospace version | `PackageIdentity::render_avatar(pkg, 32.0, 6.0, theme)`, title row with monospace version and update delta | Wayland runtime verification; unit tests in `inspector_header.rs` | **PASSED** |
+| **Calm Desktop Metadata Line** | Replace chip/pill vocabulary with calm desktop metadata line: `Arch · extra · ● Installed` | `InspectorHeader::format_metadata_line` pure formatter with WCAG-tested text tokens (`success_text`, `warning_text`, `text_muted`) | Unit test `test_inspector_header_metadata_line_formatting` | **PASSED** |
+| **Eradication of Candy Pills** | Eradicate `source_badge` and `installed_pill` from `StatusPill`; zero pill badges in inspector | Removed unused methods from `status_pill.rs`; codebase audit confirmed zero remaining references | `cargo clippy --release --locked -- -D warnings` exits 0; strict deadcode check | **PASSED** |
+| **Desktop Tab Bar** | Underline tabs (`Overview`, `Dependencies`, `Files & Build`) with active indicator line and keyboard support | `InspectorHeader::render_tab_item` with `border_b_2()`, focus ring, and Enter/Space handlers | Code audit of `inspector_header.rs`; unit test in `inspector/mod.rs` | **PASSED** |
+| **Centered Calm Empty State** | When no package is selected, display centered calm placeholder with generic icon, title, and guidance | `#empty_inspector` with 40x40 `AppIcon::PackageGeneric`, "No Package Selected", and guidance text | Wayland capture `evidence_ux04a_01_empty_inspector.png`; unit test in `inspector/mod.rs` | **PASSED** |
+| **Macro Recursion Prevention** | Avoid `gpui::test` proc-macro stack overflow on synchronous unit tests | Annotated synchronous tests with `#[core::prelude::v1::test]` to avoid `gpui::test` macro recursion | `cargo test --release --locked` compiles cleanly and executes in 0.05s | **PASSED** |
+| **Frozen Surfaces Invariant** | Results Workbench and Query Workbench remain completely untouched | Zero lines modified in `query_workbench.rs`, `package_card.rs`, `package_table.rs` | `git diff` audit against UX-03 baseline | **PASSED** |
+| **Zero Deadcode & 112/112 Tests** | `#![deny(dead_code)]` with zero warnings; 112 unit tests passing in release locked profile | Strict YAGNI, 112 passing unit tests in release locked profile | `cargo test --release --locked` exits 0 (112 passed), `cargo clippy` exits 0 | **PASSED** |
+| **Native PKGBUILD Packaging** | Arch package `shelly-gpui-git` built via `makepkg` and installed on system | `r4704.g77192c38-1` packaged and installed via `pacman -U` | `pacman -Q shelly-gpui-git` verified; PID 2136065 running native Wayland | **PASSED** |
+

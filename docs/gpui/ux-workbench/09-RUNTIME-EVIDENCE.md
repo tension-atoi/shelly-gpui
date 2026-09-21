@@ -192,4 +192,36 @@ The complete visual evidence suite captured directly from the live Wayland compo
 | **05** | **Compact Cards View** | [`evidence_ux03_05_cards_view_compact_mode.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_05_cards_view_compact_mode.png) | Compact view mode active (70px wrapper, 62px card height, 28x28 avatar, collapsed 56px navigation rail, 1-line description clamp via `.line_clamp(1)`) maximizing vertical density with 13+ cards visible simultaneously | **PASSED** |
 | **06** | **Light Theme Parity & WCAG 2.1 AA** | [`evidence_ux03_06_light_theme_parity.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux03_06_light_theme_parity.png) | Complete light theme visual parity; high-contrast source avatars, clean text columns (`Arch / local`), monospace versions and sizes, status text meeting strict WCAG 2.1 AA ($\ge 4.5:1$ with `success_text: #047857` and `text_muted: #64748b`) | **PASSED** |
 
+---
+
+## 9. Phase UX-04A Runtime Evidence: Detail Inspector & Compact Header Architecture
+
+### 9.1 Environment & Package Verification
+- **Target OS**: Arch Linux x86_64
+- **Compositor**: Hyprland (Native Wayland, `xwayland: false`)
+- **Display**: `WAYLAND_DISPLAY=wayland-1`
+- **Installed Package**: `shelly-gpui-git r4704.g77192c38-1`
+- **Source Git Commit**: `77192c38`
+- **Running Binary**: `/proc/2136065/exe -> /usr/lib/shelly/shelly-gpui-bin`
+- **Running Process ID (PID)**: `2136065`
+- **Verification Command**:
+  ```sh
+  pacman -Q shelly-gpui-git
+  # Output: shelly-gpui-git r4704.g77192c38-1
+  ```
+- **Architectural Invariants Verified**:
+  1. **Pinned Header Architecture**: The upper region `#inspector_pinned_header` contains the 32x32 `PackageIdentity` avatar, bold package name, monospace version string, update delta, calm metadata line, action buttons (`Install` / `Uninstall`, `Copy install command`), and desktop tabs (`Overview`, `Dependencies`, `Files & Build`). It is fixed and non-scrolling, ensuring essential context and action controls are permanently accessible.
+  2. **Single Scrollable Container**: `#inspector_scroll_body` is the only scrollable element (`flex_1().overflow_scroll()`), containing detail error banners and the tab body.
+  3. **Calm Desktop Metadata Line & WCAG 2.1 AA Compliance**: Completely eliminated candy pill badges (`StatusPill::source_badge`, `StatusPill::installed_pill`). Replaced with `Arch · extra · ● Installed` using mathematically verified `theme.success_text` and `theme.warning_text` tokens.
+  4. **Centered Calm Empty State**: When no package is selected, `#empty_inspector` displays a centered 40x40 `AppIcon::PackageGeneric` icon in `theme.text_muted`, bold `"No Package Selected"` title, and guidance text.
+  5. **Macro Recursion Prevention**: Disambiguated unit test attributes using `#[core::prelude::v1::test]` to prevent `gpui::test` macro recursion during compilation.
+  6. **Zero Deadcode & Strict Quality Gates**: All 112 unit tests pass in release locked profile; zero clippy warnings with `#![deny(dead_code)]`.
+
+### 9.2 Live Wayland UX-04A Gallery
+
+| Figure | State / Component | Screenshot Artifact | Verified UX Properties | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **01** | **Calm Empty Inspector State** | [`evidence_ux04a_01_empty_inspector.png`](file:///home/tension_atoi/Projects/shelly-gpui/docs/gpui/ux-workbench/evidence_ux04a_01_empty_inspector.png) | Centered calm placeholder with 40x40 `PackageGeneric` vector glyph in `text_muted`, `text-sm font-semibold` "No Package Selected" title, and readable guidance description docked in right inspector pane | **PASSED** |
+
+
 
