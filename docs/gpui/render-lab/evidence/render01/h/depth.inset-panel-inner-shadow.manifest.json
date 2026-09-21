@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "depth.inset-panel-inner-shadow",
+  "recipe": "h04-inset-panel-directional-bevel/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "29a5038fa2c20c484c61cc7b12081eb477e9a83ffb366fcdaf95c010c72ba376",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Inner shadow illusion composed from directional border strokes and linear falloff child."
+}

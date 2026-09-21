@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "field.zero-positive-scalar",
+  "recipe": "g01-linear-scalar-gradient/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "eb5c1c8d5c811fb784a062f58a38349476eae27b9907ed620c1e6f072175a60d",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Direct 1D linear scalar field natively supported by GPUI linear_gradient. 2D non-linear gradients require composition."
+}

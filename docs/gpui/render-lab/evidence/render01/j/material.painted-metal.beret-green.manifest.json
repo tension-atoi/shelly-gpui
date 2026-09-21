@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "material.painted-metal.beret-green",
+  "recipe": "j03-beret-green-coating/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "d7b9145bfd6b0b26fe973d44bbce050d1f04fe802923269a6ed3c61507e2c4d2",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Muted tactical paint cleanly represented by stock solid fill, subtle gradient, and edge border."
+}

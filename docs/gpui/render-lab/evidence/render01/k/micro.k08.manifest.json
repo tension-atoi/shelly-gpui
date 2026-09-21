@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "micro.k08",
+  "recipe": "k08-value-noise-lattice-texture/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "TEXTURE_PROOF",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "c2d2a9576b1ebbd3c20878b2220d4e3182bc3c7cd906619537b1e8420e6e7fb9",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Bilinear value noise lattice synthesized into deterministic immutable texture buffer."
+}

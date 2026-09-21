@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "material.painted-metal.signal-orange",
+  "recipe": "j02-signal-orange-coating/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "ffe09cdce248743aa0043ca5fc7755ddc53a0b0de4ece7aabbe7d05ab288ee5a",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Vibrant painted metal finish cleanly represented by stock solid fill, 1px highlight border and subtle top sheen."
+}

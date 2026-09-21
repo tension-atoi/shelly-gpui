@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "micro.k02",
+  "recipe": "k02-stratified-jitter-texture/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "TEXTURE_PROOF",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "afd610f235e3e9ffba8a9cfb79bbc282cb925fa0bba920c18a6e750b7fbbf460",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Stratified jitter grid marks synthesized into deterministic immutable texture buffer."
+}

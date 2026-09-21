@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "depth.rim-highlight-outline",
+  "recipe": "h07-continuous-perimeter-rim/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "9402939a065c3c4493009a2b5de03af12315035ae2b1a49e05523b167e954363",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Uniform perimeter highlight directly expressible via stock border_1 and border_color."
+}

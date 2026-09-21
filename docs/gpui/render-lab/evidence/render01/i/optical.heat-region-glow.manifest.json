@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "optical.heat-region-glow",
+  "recipe": "i08-thermal-emission-envelope/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "e54427cc0964e639558adc8c02f4aa15b150f36488b94527deaa6a5930896764",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Volumetric heat glow approximated by layered concentric thermal discs with nonlinear opacity falloff."
+}

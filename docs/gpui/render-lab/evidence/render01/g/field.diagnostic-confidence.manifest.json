@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "field.diagnostic-confidence",
+  "recipe": "g06-probabilistic-confidence-band/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "ec2e2374c4aa10115403d416acc9af5931324fe2ea7ad5ee3e2d8de78c6ad486",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "1D probability density cleanly maps to single stock linear_gradient."
+}

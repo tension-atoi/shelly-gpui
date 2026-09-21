@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "field.selection-density",
+  "recipe": "g08-continuous-density-plane/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "e75bdb57be488f710297ee2ccf9b5d8151329e1f61a5695752fed2b074dbfd7a",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "2D bilinear density plane approximated by cross-fading orthogonal linear gradients."
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "depth.soft-edge-top-highlight",
+  "recipe": "h06-ambient-top-highlight-rim/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "7292d844507490bebd307fb057eed7ecf8e6e33039604febc82379ce7b69bb9a",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Single top-edge specular line directly expressible via stock border_t_1 and border_color."
+}

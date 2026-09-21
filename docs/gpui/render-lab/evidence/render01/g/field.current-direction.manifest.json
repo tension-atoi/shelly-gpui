@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "field.current-direction",
+  "recipe": "g04-streamline-vector-field/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "6486a1760ea6eea884ed7d8e26b06f1683a13c8b75f1634a64e4cf49ed27643f",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Directional vector field expressed via composed vector paths; continuous dense vector direction field requires texture."
+}

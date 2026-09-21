@@ -1,9 +1,12 @@
-# RENDER-00 Acceptance & Ratification Ledger
+# RENDER Acceptance & Ratification Ledger
 
-## 0. Baseline Reference
+## 0. Baseline References & Commit Provenance
 
-- Baseline Commit: `762471a5f980e57023f1de2e483adc5fb045b5b1`
-- Phase Target: `RENDER-00`
+- **RENDER-00 Baseline Commit**: `762471a5f980e57023f1de2e483adc5fb045b5b1`
+- **Canonical Re-entry Anchor**: `0f319c7aab800c9d1254ef6f98c223215b051083`
+- **RENDER-01 Implementation Commit**: `d79a9e68e4bf9c05da124804300438cf1a2f64fa`
+- **Target Slice**: `RENDER-01 (Confrontation & Capability Ledger Closure)`
+- **Platform**: Arch Linux (Kernel 6.18.2-arch1-1), Hyprland Wayland (Display `wayland-1`), NVIDIA RTX 3070 (Driver 570.86.16)
 
 ---
 
@@ -11,10 +14,12 @@
 
 | Gate | Target | Result | Status |
 |---|---|---|---|
-| `cargo fmt --check` | 0 formatting diffs | Clean | PASS |
-| `cargo clippy --release --locked -- -D warnings` | 0 warnings | Clean (1 future-incompat in third-party dep) | PASS |
-| `cargo test --release --locked` | >= 142 tests passing | 142 passed, 0 failed | PASS |
-| `cargo build --release --locked` | Clean release binary | Completed in 29.75s | PASS |
+| `cargo fmt --check` | 0 formatting diffs | Clean | **PASS** |
+| `cargo clippy --release --locked -- -D warnings` | 0 warnings | Clean (zero warnings tolerated) | **PASS** |
+| `cargo test --release --locked` | >= 173 tests passing | 173 passed, 0 failed in 0.05s | **PASS** |
+| `cargo build --release --locked` | Clean release binary | Completed cleanly | **PASS** |
+| `zig build test` (all Zig components) | All backend tests passing | 100% passed across all crates | **PASS** |
+| `CapabilityLedger::validate()` | 46 validated observations | 46 valid, 0 unknown, 0 shader-required | **PASS** |
 
 ---
 
@@ -22,46 +27,81 @@
 
 | Invariant | Requirement | Verification Method | Status |
 |---|---|---|---|
-| **Corpus Completeness** | Exactly 46 fixtures (8G, 8H, 8I, 8J, 14K) | `test_fixture_catalog_completeness` | VERIFIED |
-| **Integrity & Provenance** | Immutable source images hashed (SHA-256) | `SHA256SUMS` match against disk files | VERIFIED |
-| **Capability Neutrality** | All 46 fixtures initialized to `UNKNOWN` | `test_fixture_catalog_completeness` | VERIFIED |
-| **Deterministic State** | Frozen(t) clock mode and lab seeds | `test_clock_mode_serde` & catalog tests | VERIFIED |
-| **Protocol v2 Authority** | Version 2 with 7 new render-lab commands | `test_render_lab_protocol_round_trip` | VERIFIED |
-| **Sidebar Concealment** | RenderLab hidden from sidebar items | `components/sidebar.rs` destinations array | VERIFIED |
-| **Session Memory Guard** | `set_destination` preserves last workspace | `test_set_destination_render_lab_does_not_update_last_workspace` | VERIFIED |
-| **Zero Deadcode** | Deny dead code enforced | Strict rustc crate-root policy | VERIFIED |
-| **Renderer Boundary** | Zero shader / custom WGSL / fork code | Architecture audit | VERIFIED |
+| **Corpus Completeness** | Exactly 46 fixtures (8G, 8H, 8I, 8J, 14K) | `test_fixture_catalog_completeness` + confrontation registry | **VERIFIED** |
+| **Integrity & Provenance** | Immutable source reference images hashed (SHA-256) | `SHA256SUMS` match against disk files | **VERIFIED** |
+| **Empirical Verdicts** | All 46 fixtures evaluated; 0 UNKNOWN remaining | `CapabilityLedger::validate()` & `EVIDENCE_INDEX.json` | **VERIFIED** |
+| **Zero Speculative Shaders** | `SHADER_REQUIRED` strictly forbidden in RENDER-01 | Ledger validation enforcing `verdict != ShaderRequired` | **VERIFIED** |
+| **Deterministic RGBA Hashes** | Dual-pass screenshot capture with identical ROI hashes | 46 `.roi.png` and `.manifest.json` with SHA-256 | **VERIFIED** |
+| **Deterministic Textures** | 17 procedural texture kinds via `SplitMix64` | `texture.rs` deterministic test suite | **VERIFIED** |
+| **ASTRA Replay & Qualification**| 8/8 ASTRA-FORGE-00 stages replayed & qualified | Complete forensic ingest; qualified as non-canonical reference | **VERIFIED** |
+| **Renderer Boundary** | Stock GPUI 0.2.2 public primitives only | Architecture audit: zero custom shaders or forks in Shelly | **VERIFIED** |
+| **Zero Deadcode Policy** | Strict crate-root deny (`dead_code`, `unused_*`) | Cargo clippy and rustc compiler enforcement | **VERIFIED** |
+| **Sidebar Concealment** | RenderLab hidden from public navigation rail | `components/sidebar.rs` destination filter | **VERIFIED** |
+| **Session Memory Guard** | Navigation preserves active workspace memory | `test_set_destination_render_lab_does_not_update_last_workspace` | **VERIFIED** |
 
 ---
 
-## 3. Runtime & Packaging Provenance (Wayland Closure Evidence)
+## 3. Evidence Corpus Machine Audit & Semantic Verdicts
 
-Verified live on 2026-09-21 against the exact installed build of `f673d9a2`.
+Automated machine audit executed via `docs/gpui/render-lab/tools/audit_evidence.py` directly against the decoded RGBA buffers of all `.roi.png` files and manifests:
 
-| Check | Command / Probe | Result | Status |
+```text
+canonical catalog fixtures       46
+ledger observations              46
+evidence manifests               46
+ROI images                       46
+
+missing fixture IDs               0
+duplicate fixture IDs             0
+unknown fixture IDs               0
+
+runs_identical=false              0
+missing pixel hashes              0
+missing recipes                   0
+missing backend IDs               0
+decoded RGBA hash mismatches      0
+
+semantic verdict mismatches       0
+```
+
+### Family Breakdown:
+- **Family G (Fields)** (8/8 OK): 2 NATIVE, 6 COMPOSABLE, 0 TEXTURE_PROOF
+- **Family H (Depth & Elevation)** (8/8 OK): 4 NATIVE, 4 COMPOSABLE, 0 TEXTURE_PROOF
+- **Family I (Optical & Glow)** (8/8 OK): 2 NATIVE, 6 COMPOSABLE, 0 TEXTURE_PROOF
+- **Family J (Tactile Substrates)** (8/8 OK): 4 NATIVE, 2 COMPOSABLE, 2 TEXTURE_PROOF
+- **Family K (Noise & Microtextures)** (14/14 OK): 0 NATIVE, 0 COMPOSABLE, 14 TEXTURE_PROOF
+
+### Candidate Capability Ledger Breakdown:
+
+| Capability Class | Count | Percentage | Description |
 |---|---|---|---|
-| **Installed package** | `pacman -Q shelly-gpui-git` | `r4712.gf673d9a2-1` | VERIFIED |
-| **Package ownership** | `pacman -Ql` | Owns `/usr/bin/shelly-gpui` and `/usr/lib/shelly/shelly-gpui-bin` | VERIFIED |
-| **Canonical launch** | `shelly-gpui open` | PID `3615677` | VERIFIED |
-| **PID provenance** | `readlink /proc/<pid>/exe` | `/usr/lib/shelly/shelly-gpui-bin` | VERIFIED |
-| **Native Wayland** | `hyprctl clients` | `class: shelly-gpui`, `xwayland: 0` | VERIFIED |
-| **Control protocol** | `shelly-gpui status` | Online, `Protocol: v2` | VERIFIED |
-| **Offline manifest** | `render-lab status --json` (GUI offline) | `gui_running: false`, `catalog_count: 46` | VERIFIED |
-| **Online manifest** | `render-lab status --json` (GUI online) | `gui_running: true`, `catalog_count: 46` | VERIFIED |
-| **Fixture select** | `render-lab fixture depth.contact-shadow` | Active fixture round-trips in status + UI | VERIFIED |
-| **Topology axis** | `render-lab topology full-band` | Reflected in status and ledger panel | VERIFIED |
-| **Motion axis** | `render-lab motion smooth` | Reflected in status and ledger panel | VERIFIED |
-| **Frozen clock** | `render-lab time 0.500` | `clock_mode: frozen`, `t = 0.500s` in ledger | VERIFIED |
-| **Quality guard** | `render-lab quality ultra` | Clean rejection, exit 1, `stock`-only message | VERIFIED |
-| **Nav transitions** | `navigate updates` / `render-lab open` / `navigate browse` | `updates` → `render lab` → `browse` | VERIFIED |
-| **Sidebar concealment (runtime)** | Wayland screenshot | Rail shows Browse/Installed/Updates/News/Settings only | VERIFIED |
-| **SHA-256 on disk** | `sha256sum -c SHA256SUMS` in `references/` | Both artifacts `OK` | VERIFIED |
-| **SHA-256 in code** | `catalog.rs` constants vs `SHA256SUMS` | Exact match (GHIJ + K) | VERIFIED |
-| **UI provenance** | Wayland screenshot, `depth.contact-shadow` | Board H (Cell 1), label, artifact, seed 2001, Deterministic | VERIFIED |
-| **Capability neutrality (runtime)** | Wayland screenshot | `Capability: UNKNOWN` badge | VERIFIED |
+| **`NATIVE`** | 12 | 26.1% | Directly reproducible at full design fidelity via stock GPUI 0.2.2 primitives (`generated_texture == false`) |
+| **`COMPOSABLE`** | 18 | 39.1% | Assembled from multi-layer native primitives, borders, clipping, and shadows (`generated_texture == false`) |
+| **`TEXTURE_PROOF`** | 16 | 34.8% | Pre-rendered or procedurally synthesized deterministic immutable memory textures via stock `gpui::RenderImage` |
+| **`UNKNOWN`** | 0 | 0.0% | Complete closure; zero unclassified baseline fixtures |
+| **`SHADER_REQUIRED`**| 0 | 0.0% | Forbidden in RENDER-01; composition ceiling thoroughly measured first |
+| **Total** | 46 | 100.0% | Complete canonical confrontation |
 
-Visual evidence: `evidence_render00_lab_populated.png` (cropped `shelly-gpui` window, 1263x1302, native Wayland).
+---
 
-### Non-blocking observation (candidate for RENDER-01)
+## 4. Dependency & Protocol Audits
 
-- The full SHA-256 string is visually truncated in the provenance panel at this window width. The complete value remains available via manifest/JSON. Cosmetic only; no data loss.
+### 4.1 Dependency Audit
+- **`image = "0.25"`**: Canonical runtime dependency in `Shelly.Ui.Gpui/Cargo.toml`. Required by `texture.rs` to construct `image::Frame` and `image::RgbaImage` passed directly into stock GPUI `RenderImage::new(vec![frame])`.
+- **`walkdir`**: Audited across the codebase. Confirmed **not present** in `Cargo.toml`. Zero unused runtime dependencies.
+
+### 4.2 Control Protocol v3 Verification
+- **Protocol Version Bump**: Formally documented in `Shelly.Ui.Gpui/src/control/protocol.rs`. Bumped from v2 to v3 for `ControlCommand::RenderLabStyle` and schema v2 manifest fields (`recipe`, `seed`, `diagnostics`).
+- **Cold CLI Verification**: `shelly-gpui render-lab status --json` returns valid offline static manifest (`gui_running: false`, `catalog_count: 46`).
+- **Warm CLI Verification**: `shelly-gpui status`, `render-lab status`, and `render-lab ledger` (both text table and JSON format) operate with full telemetry.
+- **Single-Instance Invariant**: `shelly-gpui open` focuses the existing window without duplicate process spawning.
+- **Error Handling**: Invalid commands (e.g. `render-lab quality ultra`) cleanly exit with code 1 and explanatory diagnostics.
+- **Appearance Subsystem**: Existing commands (`appearance status`, `appearance resolve`) remain 100% operational and unaffected.
+
+---
+
+## 5. ASTRA Forensic Replay Provenance & Fluid Disposition
+
+- **Stages 1–7 Replay**: Successfully replayed all analytical SDF math, 32 material models, native GPUI gallery, and Vulkan/SPIR-V compute shaders on NVIDIA RTX 3070 (Vulkan 1.4).
+- **Stage 8 Fluid Simulation**: Replayed and executed `fluid.comp` across 90 timesteps. Discovered unbounded velocity divergence due to pressure projection instability ($\nabla \cdot \mathbf{u} \neq 0$).
+- **Disposition**: Formally preserved as an instructive technical failure. Fluid simulation is **not promoted** and is deferred to RENDER-04/05 under strict stability conditions.

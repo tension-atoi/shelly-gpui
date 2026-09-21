@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "micro.k09",
+  "recipe": "k09-halftone-mesh-texture/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "TEXTURE_PROOF",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "01925e672d4c5aa1a59fb71b19da87af2fd052713d3714e883034c63317017a4",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Geometric halftone dot mesh synthesized into deterministic immutable texture buffer."
+}

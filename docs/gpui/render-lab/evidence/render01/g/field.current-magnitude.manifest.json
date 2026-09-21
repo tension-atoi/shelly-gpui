@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "field.current-magnitude",
+  "recipe": "g03-magnitude-contour-stops/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "70e69bacf9e0c1b08d0a566f6accbde0cb136fa2f68207da93c9ad2b09c9f864",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Magnitude ramp composable via multi-stop linear gradient; discrete isoline steps achieved by stepped color stops."
+}

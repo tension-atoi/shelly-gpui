@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "depth.shallow-bevel-3d-edge",
+  "recipe": "h08-prismatic-shallow-bevel/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "0dd8d52d7da31119ace080b74d78cc69f0038156a6ef053cfa224b682b0ac0cf",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Multi-stage prismatic bevel composed of concentric nested borders and contrasting elevation shadows."
+}

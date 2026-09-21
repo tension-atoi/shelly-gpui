@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "micro.k11",
+  "recipe": "k11-crater-relief-texture/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "TEXTURE_PROOF",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "996b5b17156eba665e99c0647aaa93135103613432f338ca885bcbe773af2df8",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Crater pore depressions with directional lighting synthesized into deterministic immutable texture buffer."
+}

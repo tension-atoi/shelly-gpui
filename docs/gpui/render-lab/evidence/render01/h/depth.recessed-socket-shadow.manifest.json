@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "depth.recessed-socket-shadow",
+  "recipe": "h03-cavity-occlusion-bevel/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "3babe69a08f44117b15b48243b6cbc8c6baf1493d99b289872eac01a21bf9660",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "GPUI has no native inner shadow; cavity depth is composed from directional 1px/2px inner bevel borders and linear cavity gradient."
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "optical.radial-fade",
+  "recipe": "i01-concentric-falloff/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "ebeadcf55c3c6e5e32098a13dc35df84d7c75b30c3b7784b262e2fc2f00c10db",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Stock GPUI lacks radial gradient primitive; radial fade is approximated by concentric geometric discs. High ring count has tessellation cost."
+}

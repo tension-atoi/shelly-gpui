@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "material.dark-anodized-aluminum",
+  "recipe": "j06-dark-anodized-satin/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "e83fbdc4a4f31cd1a135a083d9c51b920cd0ac949f6be24c2a9757c6f80d0843",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Satin anodized sheen composed of subtle multi-stage linear gradient, low-contrast specular rim, and dark metallic fill."
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "material.painted-metal.matte-anthracite",
+  "recipe": "j01-matte-anthracite-coating/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "bd979004d0601cf4345c4b82bb31a726549934e8acd63d59ddeac617bb336ff6",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Diffuse matte industrial finish cleanly represented by stock solid fill with subtle structural edge highlight."
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "optical.soft-rectangle-rounded",
+  "recipe": "i03-soft-rounded-box-glow/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "d2c45d34e639ec3c71ccae25ecf6a311ce3069c444b9255725db1be098f71278",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Soft rounded glow boundary cleanly produced by stock BoxShadow with zero offset and positive spread."
+}

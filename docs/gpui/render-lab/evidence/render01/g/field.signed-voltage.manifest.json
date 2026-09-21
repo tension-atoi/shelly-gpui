@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "field.signed-voltage",
+  "recipe": "g02-bipolar-split/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "2eaa3d665f278484ff58e7a8fe2303091ef6f91e91dea8418a35a675dbb60e2f",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Zero-crossing threshold composed from two adjacent opposite-polarity gradients. Sharp boundary or nonlinear transition requires quad tessellation or texture."
+}

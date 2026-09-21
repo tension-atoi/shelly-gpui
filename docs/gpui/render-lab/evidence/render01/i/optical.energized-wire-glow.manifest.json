@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "optical.energized-wire-glow",
+  "recipe": "i07-filament-core-bloom/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "d13ac542ef4aa6871edd81c6d5bf60aa6ec0c37033ff68ef681d409949c798a4",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Bloom illusion composed of crisp 2px central filament and dual-stage soft BoxShadow glow."
+}

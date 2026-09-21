@@ -44,9 +44,13 @@ docs/gpui/render-lab/
 ├── 02-FIXTURE-CATALOG.md      # Full 46-fixture registry and provenance ledger
 ├── 03-CAPABILITY-LEDGER.md    # CapabilityClass promotion ladder and criteria
 ├── 04-DETERMINISM-CONTRACT.md # Seeds, frozen clock, and reproducible state
-├── 05-ACCEPTANCE.md           # RENDER-00 sign-off criteria and gate matrix
+├── 05-ACCEPTANCE.md           # RENDER-00 and RENDER-01 sign-off criteria and gate matrix
+├── 06-ASTRA-PROMOTION-MAP.md  # ASTRA technical capital assimilation & promotion ladder
+├── evidence/                  # Dual-pass captured ROI images and manifests (render01)
+├── tools/                     # Wayland dual-pass capture harness & ledger tools
 └── references/                # Immutable source board artifacts
     ├── gnosix-board-GHIJ-source.png
     ├── gnosix-board-K-source.png
     └── SHA256SUMS
 ```
+

@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "material.brushed-aluminum",
+  "recipe": "j05-brushed-sphere-texture/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "TEXTURE_PROOF",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "ed697fda33086db5214f2d5e118b25efffa2992ca44aeb93c8856a32502e850f",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Directional anisotropic grain and micro-streaks cannot be synthesized via vector primitives; proven through deterministic immutable memory texture."
+}

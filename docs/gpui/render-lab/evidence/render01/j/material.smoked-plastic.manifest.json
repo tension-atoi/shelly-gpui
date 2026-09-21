@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "material.smoked-plastic",
+  "recipe": "j08-smoked-polycarbonate-translucent/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "204a4e9a78d8d3d5952b97b2a84d511a7386cd3e308fce3353bfd9c45de2b3a9",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Optical transmission and surface reflection composed of translucent tinted fill, inner highlight line, and backdrop contrast."
+}

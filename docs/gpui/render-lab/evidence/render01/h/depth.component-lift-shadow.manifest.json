@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "depth.component-lift-shadow",
+  "recipe": "h02-diffused-elevation-shadow/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "d80e3f348b13eb93efedae3962154aa42c45df8ae36d82627323dbb8e5bf77c3",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Elevation penumbra produced by stock BoxShadow with larger blur and vertical offset."
+}

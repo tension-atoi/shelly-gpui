@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "material.painted-metal.royal-blue",
+  "recipe": "j04-royal-blue-coating/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "NATIVE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "7720604f14100922ed59f2c96d0d681c3c7f148cf67ae775ce18bb051873b289",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "Precision instrument enamel cleanly represented by stock solid fill, subtle gradient, and edge border."
+}

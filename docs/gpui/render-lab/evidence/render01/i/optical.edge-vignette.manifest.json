@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "gui_running": true,
+  "active_fixture": "optical.edge-vignette",
+  "recipe": "i05-corner-darkening-vignette/r1",
+  "backend": "gpui-stock-0.2.2",
+  "verdict": "COMPOSABLE",
+  "clock_mode": "frozen",
+  "clock_time": 0.5,
+  "roi": {
+    "x": 476,
+    "y": 109,
+    "w": 481,
+    "h": 336
+  },
+  "pixel_sha256": "0d3c444258e594ad05bc9cd8c7bfdcfe1b195a33edc9b451571c580c3e8efc8a",
+  "runs_identical": true,
+  "window_geom": "-621,653 1263x1302",
+  "compositor_scale": 1,
+  "caveats": "True radial vignette composed of peripheral linear gradients and corner shadow anchors."
+}
