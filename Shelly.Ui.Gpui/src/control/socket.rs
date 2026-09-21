@@ -5,6 +5,56 @@ use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 
+pub struct InstanceLock {
+    _file: std::fs::File,
+}
+
+impl InstanceLock {
+    /// Attempts to acquire the exclusive non-blocking lifetime lock for the Shelly GUI instance.
+    /// Returns Ok(Some(lock)) if this process is the sole authoritative instance.
+    /// Returns Ok(None) if another process already holds the lock.
+    pub fn try_acquire() -> Result<Option<Self>> {
+        let dir = ControlSocket::socket_dir();
+        std::fs::create_dir_all(&dir)?;
+
+        if let Ok(metadata) = std::fs::metadata(&dir) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o700);
+            let _ = std::fs::set_permissions(&dir, perms);
+        }
+
+        let lock_path = dir.join("instance.lock");
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)?;
+
+        if let Ok(metadata) = file.metadata() {
+            let mut file_perms = metadata.permissions();
+            file_perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(&lock_path, file_perms);
+        }
+
+        use std::os::unix::io::AsRawFd;
+        let fd = file.as_raw_fd();
+        let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+        if ret == 0 {
+            Ok(Some(Self { _file: file }))
+        } else {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EWOULDBLOCK)
+                || err.raw_os_error() == Some(libc::EAGAIN)
+            {
+                Ok(None)
+            } else {
+                Err(err.into())
+            }
+        }
+    }
+}
+
 pub struct ControlSocket;
 
 impl ControlSocket {
@@ -30,19 +80,14 @@ impl ControlSocket {
             return false;
         }
 
-        match tokio::time::timeout(
-            std::time::Duration::from_millis(150),
-            UnixStream::connect(&path),
+        matches!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(150),
+                UnixStream::connect(&path),
+            )
+            .await,
+            Ok(Ok(_stream))
         )
-        .await
-        {
-            Ok(Ok(_stream)) => true,
-            _ => {
-                // Stale socket or timeout; clean up stale file
-                let _ = std::fs::remove_file(&path);
-                false
-            }
-        }
     }
 
     /// Sends a typed command to the running GUI instance over the control socket
@@ -71,7 +116,8 @@ impl ControlSocket {
         Ok(response)
     }
 
-    /// Binds the Unix domain socket for the GPUI server listener
+    /// Binds the Unix domain socket for the GPUI server listener.
+    /// Never unlinks a socket that is actively connected and listening.
     pub fn bind_listener() -> Result<UnixListener> {
         let dir = Self::socket_dir();
         std::fs::create_dir_all(&dir)?;
@@ -83,6 +129,14 @@ impl ControlSocket {
 
         let path = Self::socket_path();
         if path.exists() {
+            // Check if existing socket is active; never unlink a healthy listener socket!
+            if std::os::unix::net::UnixStream::connect(&path).is_ok() {
+                anyhow::bail!(
+                    "Cannot bind listener: active instance is already listening on {}",
+                    path.display()
+                );
+            }
+            // Stale socket confirmed unreachable; safe to unlink
             let _ = std::fs::remove_file(&path);
         }
 
@@ -114,5 +168,20 @@ mod tests {
     fn test_socket_path_resolution() {
         let path = ControlSocket::socket_path();
         assert!(path.ends_with("shelly-gpui/control.sock"));
+    }
+
+    #[test]
+    fn test_instance_lock_acquisition() {
+        let lock1 = InstanceLock::try_acquire().expect("First acquisition should succeed");
+        assert!(lock1.is_some());
+
+        // Second acquisition while first is held must return None (EWOULDBLOCK)
+        let lock2 = InstanceLock::try_acquire().expect("Second attempt should not error");
+        assert!(lock2.is_none());
+
+        // Dropping first lock allows subsequent acquisition
+        drop(lock1);
+        let lock3 = InstanceLock::try_acquire().expect("Re-acquisition after drop should succeed");
+        assert!(lock3.is_some());
     }
 }

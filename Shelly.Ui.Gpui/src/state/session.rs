@@ -11,6 +11,17 @@ pub enum PackageSourceKind {
     AppImage,
 }
 
+impl PackageSourceKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PackageSourceKind::Alpm => "alpm",
+            PackageSourceKind::Aur => "aur",
+            PackageSourceKind::Flatpak => "flatpak",
+            PackageSourceKind::AppImage => "appimage",
+        }
+    }
+}
+
 impl std::fmt::Display for PackageSourceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

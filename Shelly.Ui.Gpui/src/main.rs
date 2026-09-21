@@ -33,6 +33,7 @@ fn main() {
         }
     };
 
+    let is_json = invocation.json;
     let outcome =
         backend::process::runtime().block_on(crate::control::cli::run_cli_invocation(invocation));
     let intent = match outcome {
@@ -42,6 +43,42 @@ fn main() {
         Ok(crate::control::cli::CliOutcome::LaunchGui(intent)) => intent,
         Err(err) => {
             eprintln!("Error: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    // Single-instance lifetime lock (eliminates TOCTOU startup races)
+    let _instance_lock = match crate::control::socket::InstanceLock::try_acquire() {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            // Another instance holds the lifetime lock.
+            // Forward intent (or Open) to the primary instance over the control socket and exit cleanly.
+            let cmd = intent.unwrap_or(crate::control::protocol::ControlCommand::Open);
+            let rt = backend::process::runtime();
+            let forwarded = rt.block_on(async {
+                for _ in 0..10 {
+                    if let Ok(resp) =
+                        crate::control::socket::ControlSocket::send_command(cmd.clone()).await
+                    {
+                        return Ok(resp);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                }
+                Err(anyhow::anyhow!("Timed out connecting to primary instance"))
+            });
+            match forwarded {
+                Ok(resp) => {
+                    let _ = crate::control::cli::outcome_from_response(&resp, is_json);
+                    std::process::exit(0);
+                }
+                Err(err) => {
+                    eprintln!("Error forwarding to primary instance: {err}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to acquire instance lock: {err}");
             std::process::exit(1);
         }
     };

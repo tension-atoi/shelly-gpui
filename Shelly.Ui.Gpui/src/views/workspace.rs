@@ -474,6 +474,7 @@ impl WorkspaceView {
             ControlCommand::Search { query } => {
                 self.session.update(cx, |s, cx| {
                     s.set_destination(NavDestination::Browse, cx);
+                    s.search_query = query.clone();
                 });
                 self.workstation.update(cx, |ws, cx| {
                     ws.search_input.update(cx, |si, cx| {
@@ -485,19 +486,21 @@ impl WorkspaceView {
             }
             ControlCommand::View { mode } => match mode.to_ascii_lowercase().as_str() {
                 "table" => {
-                    self.session
-                        .update(cx, |s, cx| s.set_view_mode(PackageViewMode::Table, cx));
                     let mut config = ConfigManager::load_gpui_config();
                     config.view_mode = PackageViewMode::Table;
-                    let _ = ConfigManager::save_gpui_config(&config);
+                    if let Err(e) = ConfigManager::save_gpui_config(&config) {
+                        return ControlResponse::error(e.to_string());
+                    }
+                    self.apply_committed_settings_to_runtime(cx);
                     ControlResponse::ok("View mode set to table")
                 }
                 "cards" => {
-                    self.session
-                        .update(cx, |s, cx| s.set_view_mode(PackageViewMode::Cards, cx));
                     let mut config = ConfigManager::load_gpui_config();
                     config.view_mode = PackageViewMode::Cards;
-                    let _ = ConfigManager::save_gpui_config(&config);
+                    if let Err(e) = ConfigManager::save_gpui_config(&config) {
+                        return ControlResponse::error(e.to_string());
+                    }
+                    self.apply_committed_settings_to_runtime(cx);
                     ControlResponse::ok("View mode set to cards")
                 }
                 other => ControlResponse::error(format!(
@@ -506,19 +509,111 @@ impl WorkspaceView {
                 )),
             },
             ControlCommand::Inspect { package } => {
-                let found_key = self
-                    .store
-                    .read(cx)
-                    .active_results
-                    .iter()
-                    .find(|p| p.name.eq_ignore_ascii_case(&package))
-                    .map(|p| p.key());
-                let key = found_key
-                    .unwrap_or_else(|| PackageKey::new(PackageSourceKind::Alpm, &package, None));
-                self.session.update(cx, |s, cx| {
-                    s.select_package(Some(key), cx);
-                });
-                ControlResponse::ok(format!("Inspecting package '{}'", package))
+                let (req_source, req_name) =
+                    if let Some((src_str, name_str)) = package.split_once(':') {
+                        let src_kind = match src_str.to_ascii_lowercase().as_str() {
+                            "alpm" => Some(PackageSourceKind::Alpm),
+                            "aur" => Some(PackageSourceKind::Aur),
+                            "flatpak" => Some(PackageSourceKind::Flatpak),
+                            "appimage" => Some(PackageSourceKind::AppImage),
+                            _ => None,
+                        };
+                        if let Some(src) = src_kind {
+                            (Some(src), name_str)
+                        } else {
+                            (None, package.as_str())
+                        }
+                    } else {
+                        (None, package.as_str())
+                    };
+
+                let store = self.store.read(cx);
+                let mut candidates: Vec<PackageKey> = Vec::new();
+
+                let mut check_pkg = |key: PackageKey, name: &str| {
+                    if let Some(src) = req_source {
+                        if key.source != src {
+                            return;
+                        }
+                    }
+                    if name.eq_ignore_ascii_case(req_name) && !candidates.contains(&key) {
+                        candidates.push(key);
+                    }
+                };
+
+                for p in store.active_results.iter() {
+                    check_pkg(p.key(), &p.name);
+                }
+                for p in store.installed_packages.iter() {
+                    check_pkg(p.key(), &p.name);
+                }
+                for p in store.updates_packages.iter() {
+                    check_pkg(p.key(), &p.name);
+                }
+                for cached_list in store.search_cache.values() {
+                    for p in cached_list.iter() {
+                        check_pkg(p.key(), &p.name);
+                    }
+                }
+
+                if candidates.is_empty() {
+                    // Try authoritative standard ALPM backend query if req_source is None or Alpm
+                    if req_source.is_none() || req_source == Some(PackageSourceKind::Alpm) {
+                        let bin = store.client.binary_path.clone();
+                        if let Ok(output) = std::process::Command::new(&bin)
+                            .args(["search", "standard", "-d", req_name, "-j"])
+                            .output()
+                        {
+                            if output.status.success() {
+                                let text = String::from_utf8_lossy(&output.stdout);
+                                if let Ok(Some(pkg)) = serde_json::from_str::<
+                                    crate::backend::models::AlpmPackage,
+                                >(&text)
+                                .map(Some)
+                                .or_else(|_| {
+                                    serde_json::from_str::<
+                                            Vec<crate::backend::models::AlpmPackage>,
+                                        >(&text)
+                                        .map(|v| v.into_iter().next())
+                                }) {
+                                    if pkg.name.eq_ignore_ascii_case(req_name) {
+                                        candidates.push(PackageKey::new(
+                                            PackageSourceKind::Alpm,
+                                            &pkg.name,
+                                            None,
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if candidates.is_empty() {
+                    ControlResponse::error(format!(
+                        "Package '{}' not found in active collections or system database",
+                        package
+                    ))
+                } else if candidates.len() > 1 {
+                    let sources: Vec<&str> = candidates.iter().map(|k| k.source.as_str()).collect();
+                    ControlResponse::error(format!(
+                        "Ambiguous package name '{}'. Found matches in multiple sources: [{}]. Please specify with source prefix (e.g. '{}:{}').",
+                        package,
+                        sources.join(", "),
+                        sources[0],
+                        req_name
+                    ))
+                } else {
+                    let key = candidates.remove(0);
+                    self.session.update(cx, |s, cx| {
+                        s.select_package(Some(key.clone()), cx);
+                    });
+                    ControlResponse::ok(format!(
+                        "Inspecting package '{}' ({})",
+                        key.name,
+                        key.source.as_str()
+                    ))
+                }
             }
             ControlCommand::Inspector { tab } => {
                 let target_tab = match tab.to_ascii_lowercase().as_str() {
@@ -540,17 +635,17 @@ impl WorkspaceView {
             }
             ControlCommand::Logs { operation } => match operation.to_ascii_lowercase().as_str() {
                 "show" | "open" => {
-                    self.console.update(cx, |c, cx| {
-                        c.is_open = true;
-                        cx.notify();
-                    });
+                    let mut config = ConfigManager::load_gpui_config();
+                    config.log_drawer_open = true;
+                    let _ = ConfigManager::save_gpui_config(&config);
+                    self.apply_committed_settings_to_runtime(cx);
                     ControlResponse::ok("Logs drawer opened")
                 }
                 "hide" | "close" => {
-                    self.console.update(cx, |c, cx| {
-                        c.is_open = false;
-                        cx.notify();
-                    });
+                    let mut config = ConfigManager::load_gpui_config();
+                    config.log_drawer_open = false;
+                    let _ = ConfigManager::save_gpui_config(&config);
+                    self.apply_committed_settings_to_runtime(cx);
                     ControlResponse::ok("Logs drawer closed")
                 }
                 "clear" => {
@@ -579,61 +674,32 @@ impl WorkspaceView {
                 Err(e) => ControlResponse::error(e.to_string()),
             },
             ControlCommand::SettingsSet { key, value } => {
+                if self.settings.is_dirty {
+                    return ControlResponse::error(
+                        "Settings edit conflict: settings view has uncommitted changes in GUI. Save or reset GUI draft first."
+                    );
+                }
                 match ConfigManager::set_setting(&key, &value) {
                     Ok(()) => {
-                        self.apply_setting_to_runtime(&key, &value, cx);
+                        self.apply_committed_settings_to_runtime(cx);
                         ControlResponse::ok(format!("Setting '{key}' set to '{value}'"))
                     }
                     Err(e) => ControlResponse::error(e.to_string()),
                 }
             }
             ControlCommand::SettingsReset { key } => {
+                if self.settings.is_dirty {
+                    return ControlResponse::error(
+                        "Settings edit conflict: settings view has uncommitted changes in GUI. Save or reset GUI draft first."
+                    );
+                }
                 let res = match key.as_deref() {
                     Some(k) => ConfigManager::reset_setting(k),
                     None => ConfigManager::reset_all(),
                 };
                 match res {
                     Ok(()) => {
-                        let gpui = ConfigManager::load_gpui_config();
-                        let shelly = ConfigManager::load_shelly_settings();
-                        self.shelly_settings = shelly.clone();
-                        self.gpui_config = gpui.clone();
-                        self.apply_setting_to_runtime(
-                            "theme",
-                            if gpui.dark_theme { "dark" } else { "light" },
-                            cx,
-                        );
-                        self.apply_setting_to_runtime(
-                            "view-mode",
-                            match gpui.view_mode {
-                                PackageViewMode::Table => "table",
-                                PackageViewMode::Cards => "cards",
-                            },
-                            cx,
-                        );
-                        self.apply_setting_to_runtime(
-                            "compact-view",
-                            &gpui.compact_view.to_string(),
-                            cx,
-                        );
-                        self.apply_setting_to_runtime(
-                            "reduce-motion",
-                            &gpui.reduce_motion.to_string(),
-                            cx,
-                        );
-                        self.apply_setting_to_runtime(
-                            "log-drawer-open",
-                            &gpui.log_drawer_open.to_string(),
-                            cx,
-                        );
-                        self.session.update(cx, |s, cx| {
-                            s.clamp_source_scope(
-                                shelly.aur_enabled,
-                                shelly.flat_pack_enabled,
-                                shelly.app_image_enabled,
-                                cx,
-                            );
-                        });
+                        self.apply_committed_settings_to_runtime(cx);
                         let target = key.as_deref().unwrap_or("all settings");
                         ControlResponse::ok(format!("Reset '{target}' to default"))
                     }
@@ -643,67 +709,84 @@ impl WorkspaceView {
         }
     }
 
-    fn apply_setting_to_runtime(&mut self, key: &str, value: &str, cx: &mut Context<Self>) {
-        match key.to_ascii_lowercase().as_str() {
-            "theme" => {
-                self.theme = if value.eq_ignore_ascii_case("dark") {
-                    Theme::dark()
-                } else {
-                    Theme::light()
-                };
-                cx.notify();
+    /// Single authority synchronization: loads persisted settings from disk and updates
+    /// all runtime state, draft settings, and view components.
+    pub fn apply_committed_settings_to_runtime(&mut self, cx: &mut Context<Self>) {
+        let shelly = ConfigManager::load_shelly_settings();
+        let gpui = ConfigManager::load_gpui_config_sanitized();
+
+        let old_aur = self.shelly_settings.aur_enabled;
+        let old_flatpak = self.shelly_settings.flat_pack_enabled;
+        let old_appimage = self.shelly_settings.app_image_enabled;
+
+        self.shelly_settings = shelly.clone();
+        self.gpui_config = gpui.clone();
+        self.settings.reset_to(shelly.clone(), gpui.clone());
+
+        self.theme = if gpui.dark_theme {
+            Theme::dark()
+        } else {
+            Theme::light()
+        };
+        let theme = self.theme;
+
+        self.motion_policy = crate::state::motion::MotionPolicy::new(gpui.reduce_motion);
+        let reduce = self.motion_policy.reduce_motion;
+
+        self.session.update(cx, |s, cx| {
+            s.set_view_mode(gpui.view_mode, cx);
+            s.set_sidebar_collapsed(gpui.compact_view, cx);
+            s.clamp_source_scope(
+                shelly.aur_enabled,
+                shelly.flat_pack_enabled,
+                shelly.app_image_enabled,
+                cx,
+            );
+        });
+
+        self.workstation.update(cx, |ws, cx| {
+            ws.set_theme(theme, cx);
+            ws.set_reduce_motion(reduce, cx);
+            ws.set_compact(gpui.compact_view, cx);
+            ws.set_sources_enabled(
+                shelly.aur_enabled,
+                shelly.flat_pack_enabled,
+                shelly.app_image_enabled,
+                cx,
+            );
+        });
+
+        self.sidebar.update(cx, |sb, cx| {
+            sb.set_theme(theme, cx);
+            sb.set_reduce_motion(reduce, cx);
+        });
+
+        self.console_view.update(cx, |cv, cx| {
+            cv.set_theme(theme, cx);
+            cv.set_reduce_motion(reduce, cx);
+            cv.set_configured_height(gpui.log_drawer_height, cx);
+        });
+
+        self.console.update(cx, |c, _| {
+            c.set_auto_open(gpui.log_drawer_open);
+            c.is_open = gpui.log_drawer_open;
+        });
+
+        let sources_changed = old_aur != shelly.aur_enabled
+            || old_flatpak != shelly.flat_pack_enabled
+            || old_appimage != shelly.app_image_enabled;
+
+        if sources_changed {
+            self.store.update(cx, |st, _| {
+                st.search_cache.clear();
+            });
+            let query = self.session.read(cx).search_query.clone();
+            if !query.trim().is_empty() {
+                self.execute_search(query, cx);
             }
-            "view-mode" => {
-                let mode = if value.eq_ignore_ascii_case("cards") {
-                    PackageViewMode::Cards
-                } else {
-                    PackageViewMode::Table
-                };
-                self.session.update(cx, |s, cx| s.set_view_mode(mode, cx));
-            }
-            "compact-view" => {
-                if let Ok(val) = value.parse::<bool>() {
-                    self.session.update(cx, |s, cx| {
-                        s.sidebar_collapsed = val;
-                        cx.notify();
-                    });
-                }
-            }
-            "reduce-motion" => {
-                if let Ok(val) = value.parse::<bool>() {
-                    self.motion_policy = crate::state::motion::MotionPolicy::new(val);
-                    cx.notify();
-                }
-            }
-            "log-drawer-open" => {
-                if let Ok(val) = value.parse::<bool>() {
-                    self.console.update(cx, |c, cx| {
-                        c.is_open = val;
-                        cx.notify();
-                    });
-                }
-            }
-            "log-drawer-height" => {
-                if let Ok(val) = value.parse::<f32>() {
-                    self.console_view.update(cx, |cv, cx| {
-                        cv.set_configured_height(val, cx);
-                    });
-                }
-            }
-            "aur-enabled" | "flatpak-enabled" | "appimage-enabled" => {
-                let shelly = ConfigManager::load_shelly_settings();
-                self.shelly_settings = shelly.clone();
-                self.session.update(cx, |s, cx| {
-                    s.clamp_source_scope(
-                        shelly.aur_enabled,
-                        shelly.flat_pack_enabled,
-                        shelly.app_image_enabled,
-                        cx,
-                    );
-                });
-            }
-            _ => {}
         }
+
+        cx.notify();
     }
 
     /// Déclenche le chargement initial en arrière-plan

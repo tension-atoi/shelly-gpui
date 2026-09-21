@@ -150,7 +150,8 @@ impl ConfigManager {
         (width, height)
     }
 
-    /// Writes file atomically via sibling temporary file, fsync, and atomic rename
+    /// Writes file atomically via sibling temporary file, fsync, atomic rename, and parent dir fsync.
+    /// In case of error prior to successful rename, cleans up the temporary file.
     pub fn atomic_write_file(target: &Path, content: &str) -> Result<()> {
         let parent = target
             .parent()
@@ -169,14 +170,29 @@ impl ConfigManager {
         );
         let temp_path = parent.join(temp_name);
 
-        {
+        let write_res = (|| -> Result<()> {
             use std::io::Write;
             let mut file = fs::File::create(&temp_path)?;
             file.write_all(content.as_bytes())?;
             file.sync_all()?;
+            Ok(())
+        })();
+
+        if let Err(e) = write_res {
+            let _ = fs::remove_file(&temp_path);
+            return Err(e);
         }
 
-        fs::rename(&temp_path, target)?;
+        if let Err(e) = fs::rename(&temp_path, target) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(e.into());
+        }
+
+        // Fsync the parent directory to ensure directory entry durability across crashes
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+
         Ok(())
     }
 
@@ -530,7 +546,8 @@ impl ConfigManager {
         }
     }
 
-    /// Reset all settings across both configurations to defaults atomically
+    /// Resets all settings across both configurations to defaults.
+    /// Provides crash-safe atomic replacement per configuration file (not a multi-file POSIX transaction).
     pub fn reset_all() -> Result<()> {
         Self::save_shelly_settings(&ShellySettings::default())?;
         Self::save_gpui_config(&GpuiUiConfig::default())?;
@@ -713,6 +730,9 @@ mod tests {
 
         let read_back = std::fs::read_to_string(&target_file).expect("File should exist");
         assert_eq!(read_back, sample_content);
+
+        let entries = std::fs::read_dir(&test_dir).unwrap().collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1);
 
         let _ = std::fs::remove_dir_all(&test_dir);
     }

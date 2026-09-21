@@ -259,8 +259,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
             if ControlSocket::is_instance_running().await {
                 // Focus existing window
                 let resp = ControlSocket::send_command(ControlCommand::Open).await?;
-                print_response(&resp, json);
-                return Ok(CliOutcome::Exit(0));
+                return outcome_from_response(&resp, json);
             } else {
                 return Ok(CliOutcome::LaunchGui(None));
             }
@@ -275,8 +274,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
         CliCommand::Open => {
             if is_running {
                 let resp = ControlSocket::send_command(ControlCommand::Open).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 Ok(CliOutcome::LaunchGui(Some(ControlCommand::Open)))
             }
@@ -284,12 +282,10 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
         CliCommand::Focus => {
             if is_running {
                 let resp = ControlSocket::send_command(ControlCommand::Focus).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 let resp = ControlResponse::error("Shelly GUI is not running");
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(1))
+                outcome_from_response(&resp, json)
             }
         }
         CliCommand::Status => {
@@ -321,7 +317,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                 } else {
                     println!("Shelly GUI is running");
                 }
-                Ok(CliOutcome::Exit(0))
+                Ok(CliOutcome::Exit(if resp.ok { 0 } else { 1 }))
             } else {
                 let offline_status = ControlStatus::not_running();
                 if json {
@@ -345,20 +341,17 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
         CliCommand::Quit => {
             if is_running {
                 let resp = ControlSocket::send_command(ControlCommand::Quit).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 let resp = ControlResponse::error("Shelly GUI is not running");
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(1))
+                outcome_from_response(&resp, json)
             }
         }
         CliCommand::Navigate { destination } => {
             if is_running {
                 let resp =
                     ControlSocket::send_command(ControlCommand::Navigate { destination }).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 Ok(CliOutcome::LaunchGui(Some(ControlCommand::Navigate {
                     destination,
@@ -368,8 +361,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
         CliCommand::Search { query } => {
             if is_running {
                 let resp = ControlSocket::send_command(ControlCommand::Search { query }).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 Ok(CliOutcome::LaunchGui(Some(ControlCommand::Search {
                     query,
@@ -379,20 +371,17 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
         CliCommand::View { mode } => {
             if is_running {
                 let resp = ControlSocket::send_command(ControlCommand::View { mode }).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 match ConfigManager::set_setting("view-mode", &mode) {
                     Ok(()) => {
                         let resp =
                             ControlResponse::ok(format!("View mode set to '{mode}' (offline)"));
-                        print_response(&resp, json);
-                        Ok(CliOutcome::Exit(0))
+                        outcome_from_response(&resp, json)
                     }
                     Err(e) => {
                         let resp = ControlResponse::error(e.to_string());
-                        print_response(&resp, json);
-                        Ok(CliOutcome::Exit(1))
+                        outcome_from_response(&resp, json)
                     }
                 }
             }
@@ -400,8 +389,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
         CliCommand::Inspect { package } => {
             if is_running {
                 let resp = ControlSocket::send_command(ControlCommand::Inspect { package }).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 Ok(CliOutcome::LaunchGui(Some(ControlCommand::Inspect {
                     package,
@@ -411,33 +399,28 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
         CliCommand::Inspector { tab } => {
             if is_running {
                 let resp = ControlSocket::send_command(ControlCommand::Inspector { tab }).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 let resp = ControlResponse::error("Shelly GUI is not running");
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(1))
+                outcome_from_response(&resp, json)
             }
         }
         CliCommand::Logs { operation } => {
             if is_running {
                 let resp = ControlSocket::send_command(ControlCommand::Logs { operation }).await?;
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else if operation == "show" || operation == "hide" {
                 let open_val = if operation == "show" { "true" } else { "false" };
                 let _ = ConfigManager::set_setting("log-drawer-open", open_val);
                 let resp = ControlResponse::ok(format!(
                     "Log drawer default set to '{operation}' (offline)"
                 ));
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(0))
+                outcome_from_response(&resp, json)
             } else {
                 let resp = ControlResponse::error(
                     "Shelly GUI is not running (cannot clear in-memory logs)",
                 );
-                print_response(&resp, json);
-                Ok(CliOutcome::Exit(1))
+                outcome_from_response(&resp, json)
             }
         }
         CliCommand::Settings(settings_cmd) => match settings_cmd {
@@ -485,8 +468,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                 }
                 Err(e) => {
                     let resp = ControlResponse::error(e.to_string());
-                    print_response(&resp, json);
-                    Ok(CliOutcome::Exit(1))
+                    outcome_from_response(&resp, json)
                 }
             },
             CliSettingsCommand::Set { key, value } => {
@@ -494,25 +476,18 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                     let resp =
                         ControlSocket::send_command(ControlCommand::SettingsSet { key, value })
                             .await?;
-                    print_response(&resp, json);
-                    if resp.ok {
-                        Ok(CliOutcome::Exit(0))
-                    } else {
-                        Ok(CliOutcome::Exit(1))
-                    }
+                    outcome_from_response(&resp, json)
                 } else {
                     match ConfigManager::set_setting(&key, &value) {
                         Ok(()) => {
                             let resp = ControlResponse::ok(format!(
                                 "Setting '{key}' set to '{value}' (offline)"
                             ));
-                            print_response(&resp, json);
-                            Ok(CliOutcome::Exit(0))
+                            outcome_from_response(&resp, json)
                         }
                         Err(e) => {
                             let resp = ControlResponse::error(e.to_string());
-                            print_response(&resp, json);
-                            Ok(CliOutcome::Exit(1))
+                            outcome_from_response(&resp, json)
                         }
                     }
                 }
@@ -521,12 +496,7 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                 if is_running {
                     let resp =
                         ControlSocket::send_command(ControlCommand::SettingsReset { key }).await?;
-                    print_response(&resp, json);
-                    if resp.ok {
-                        Ok(CliOutcome::Exit(0))
-                    } else {
-                        Ok(CliOutcome::Exit(1))
-                    }
+                    outcome_from_response(&resp, json)
                 } else {
                     let res = match key.as_deref() {
                         Some(k) => ConfigManager::reset_setting(k),
@@ -538,18 +508,25 @@ pub async fn run_cli_invocation(invocation: CliInvocation) -> Result<CliOutcome>
                             let resp = ControlResponse::ok(format!(
                                 "Reset '{target}' to default (offline)"
                             ));
-                            print_response(&resp, json);
-                            Ok(CliOutcome::Exit(0))
+                            outcome_from_response(&resp, json)
                         }
                         Err(e) => {
                             let resp = ControlResponse::error(e.to_string());
-                            print_response(&resp, json);
-                            Ok(CliOutcome::Exit(1))
+                            outcome_from_response(&resp, json)
                         }
                     }
                 }
             }
         },
+    }
+}
+
+pub(crate) fn outcome_from_response(resp: &ControlResponse, json: bool) -> Result<CliOutcome> {
+    print_response(resp, json);
+    if resp.ok {
+        Ok(CliOutcome::Exit(0))
+    } else {
+        Ok(CliOutcome::Exit(1))
     }
 }
 

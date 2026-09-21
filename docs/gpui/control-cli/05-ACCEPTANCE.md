@@ -7,7 +7,7 @@
 | **Compilation** | Clean release build, zero warnings | **PASS** |
 | **Strict Clippy** | `cargo clippy --release --locked -- -D warnings` | **PASS (0 warnings)** |
 | **Formatting** | `cargo fmt --check` | **PASS (clean)** |
-| **Unit Test Suite** | 123 tests passing | **PASS (123/123)** |
+| **Unit Test Suite** | 124 tests passing | **PASS (124/124)** |
 | **Zero Deadcode** | `#![deny(dead_code)]`, strict YAGNI | **PASS** |
 | **Zero `/tmp/` Ban** | No volatile `/tmp/` staging | **PASS** |
 | **No ydotoold** | No synthetic keystroke injection | **PASS** |
@@ -16,6 +16,9 @@
 ## Verified Invariants
 
 1. **Protocol Stability**: Protocol version 1 guarantees schema compatibility between client and server.
-2. **Settings Authority**: Validation rejects invalid inputs (`banana`, negative dimensions, out-of-range drawer heights).
-3. **Atomic Writes**: Configuration changes use sibling temp files and atomic rename to guarantee filesystem integrity.
-4. **Single Instance**: Opening or running `shelly-gpui` focuses existing window and avoids process duplicate.
+2. **Exit Code Determinism**: Commands exit 0 on `response.ok == true` and 1 on failure across both human and `--json` invocations.
+3. **Search Determinism**: `search <query>` synchronously writes `session.search_query` before ACK, guaranteeing read-your-writes consistency for subsequent `status` queries.
+4. **Live Settings Single Authority**: Updates reject dirty drafts in GUI, persist atomically to disk, reload committed values, and propagate to all runtime effects including `cascade-delete` and `remove-configs`.
+5. **Atomic Durability**: Configuration writes perform sibling temp write, fsync, atomic rename, parent directory fsync, and cleanup on failure. `reset_all` provides per-file atomic crash-safety.
+6. **Kernel-Level Single Instance**: `flock(LOCK_EX | LOCK_NB)` on `instance.lock` eliminates startup TOCTOU races. Healthy sockets are never unlinked.
+7. **Inspect Provenance Truth**: Package inspect resolves exact matches across store, updates, installed, and authoritative database with optional `source:name` prefix. Returns explicit errors for ambiguity and missing packages instead of fabricating ALPM keys.

@@ -41,3 +41,18 @@ In accordance with strict system reliability standards, configuration files are 
 3. **Data Sync**: `file.sync_all()` is executed to ensure all data and inode metadata are physically written to durable storage.
 4. **Atomic Rename**: `std::fs::rename(&tmp_path, target)` atomically replaces the destination file. If power or the process is lost before this point, the destination file remains 100% intact.
 5. **Parent Directory Sync**: The parent directory descriptor is opened and `sync_all()` is invoked to persist the directory entry update.
+6. **Error Cleanup**: In the event of any write or rename failure, the sibling temporary file is unlinked immediately.
+
+### Multi-File Operations
+Commands modifying multiple configuration files (e.g. `settings reset all`) perform independent crash-safe atomic writes per configuration file (`settings.json` and `gpui-ui.json`). Each individual file replacement is completely atomic and crash-durable, while adhering to POSIX filesystem primitives.
+
+## Live Synchronization & Single Authority Path
+
+To prevent race conditions between the graphical Settings UI and external CLI / Agent commands:
+1. **Dirty Draft Protection**: If the GUI user has modified settings in the UI draft without committing (`SettingsView.is_dirty == true`), any incoming `settings set` or `settings reset` command is immediately rejected with an explicit conflict error (`Settings edit conflict: settings view has uncommitted changes in GUI`). Zero disk mutation takes place.
+2. **Single Authority Pipeline**: When valid, changes flow through a unified sequence:
+   - Atomic disk write via `ConfigManager`.
+   - Re-reading committed configuration state from disk (`load_shelly_settings` & `load_gpui_config_sanitized`).
+   - Updating `WorkspaceView` committed models and resetting `SettingsView` drafts.
+   - Synchronizing all affected runtime effects: `theme`, `view_mode`, `compact_view`, `reduce_motion`, `log_drawer_open`, `log_drawer_height`, `aur_enabled`, `flatpak_enabled`, `appimage_enabled`, `cascade_delete`, and `remove_configs`.
+   - Dispatching reactive notifications (`cx.notify()`) to render the changes immediately.
