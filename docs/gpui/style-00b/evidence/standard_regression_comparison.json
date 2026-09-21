@@ -1,0 +1,18 @@
+{
+  "protocol": "STYLE-00B-R2 evidence normalization",
+  "status": "incomplete",
+  "invalid_previous_pairs": {
+    "NavigationRail": "INVALID_CAPTURE_PAIR: previous window heights were 883 and 1302",
+    "QueryChrome": "INVALID_FOCUS_STATE_PAIR: previous captures differed in focus ring state"
+  },
+  "standard_regression": {
+    "NavigationRail": "not_replayed",
+    "QueryChrome": "not_replayed",
+    "ResultSurface": {
+      "before_hash": "84b9ebdf2143b1e29b5ac0a7293e2a2d44e5a0f48f8487a98ddd62cfa78a454c",
+      "after_hash": "84b9ebdf2143b1e29b5ac0a7293e2a2d44e5a0f48f8487a98ddd62cfa78a454c",
+      "equal": true
+    },
+    "Menu": "NOT_MEASURED: requires manual operator interaction"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "package": "shelly-gpui-git r4722.g801674a2-1",
+  "style": "standard",
+  "scheme": "dark",
+  "rois": {
+    "NavigationRail": {
+      "size": [
+        160,
+        1302
+      ],
+      "sha256_rgba": "fa79e38b99b46cf898387fd19285e40f63e54931ff790e53e298aa61d2b0d335",
+      "roi_coords_in_window": [
+        0,
+        0,
+        160,
+        1302
+      ]
+    },
+    "QueryChrome": {
+      "size": [
+        480,
+        65
+      ],
+      "sha256_rgba": "b46fdc04153035285446caa5ad5073bb2be19e2d4d3524ad860964a6b8059c65",
+      "roi_coords_in_window": [
+        160,
+        30,
+        640,
+        95
+      ]
+    },
+    "ResultSurface": {
+      "size": [
+        623,
+        1127
+      ],
+      "sha256_rgba": "2b894a17759d3e9b42eb2cbea8f685a8c856d22dfd115c0a7dd0863aa028505a",
+      "roi_coords_in_window": [
+        160,
+        95,
+        783,
+        1222
+      ]
+    }
+  }
+}
