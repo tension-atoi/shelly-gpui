@@ -38,11 +38,46 @@ draft dirty/save/reset with `visual_style`, settings completeness (14 keys).
 | **Zero deadcode** | Deny policy enforced | Strict rustc crate-root policy + clippy | VERIFIED |
 | **Renderer boundary** | No fork/WGSL/WGPU/compositor work | Architecture audit | VERIFIED |
 | **No visual change** | Style switch alters no layout or paint | No paint consumer in 00A + runtime matrix | VERIFIED |
-| **Read-your-writes** | `set` → `status` agreement, no restart | Runtime CLI matrix (online) | PENDING INSTALL |
-| **Packaging provenance** | Exact-SHA `makepkg` + `pacman -U` + PID/Hyprland | Closure gate | PENDING INSTALL |
+| **Read-your-writes** | `set` → `status` agreement, no restart | Runtime CLI matrix (online) | VERIFIED |
+| **Packaging provenance** | Exact-SHA `makepkg` + `pacman -U` + PID/Hyprland | Closure gate | VERIFIED |
 
 ---
 
 ## 3. Runtime & Packaging Provenance (Wayland Closure Evidence)
 
-To be completed after exact-SHA packaging and installation.
+Verified live on 2026-09-21 against the exact installed build of `dd2e4b55`.
+
+| Check | Command / Probe | Result | Status |
+|---|---|---|---|
+| **Installed package** | `pacman -Q shelly-gpui-git` | `r4714.gdd2e4b55-1` | VERIFIED |
+| **Exact-SHA build** | `makepkg` from pushed `main` (`dd2e4b55`) | `check()` 156 passed, 0 failed | VERIFIED |
+| **Staging hygiene** | Build dir `/mnt/workbench/pkgbuild/style-00a` | No `/tmp` usage | VERIFIED |
+| **Package ownership** | `pacman -Ql` | Owns `/usr/bin/shelly-gpui` and `/usr/lib/shelly/shelly-gpui-bin` | VERIFIED |
+| **Canonical launch** | `shelly-gpui open` | PID `3843967` | VERIFIED |
+| **PID provenance** | `readlink /proc/<pid>/exe` | `/usr/lib/shelly/shelly-gpui-bin` | VERIFIED |
+| **Native Wayland** | `hyprctl clients` | `class: shelly-gpui`, `xwayland: 0` (tiled `1062x883`) | VERIFIED |
+| **Read-your-writes** | `appearance style set standard` → `appearance status` | Reports `standard` immediately, no restart | VERIFIED |
+| **Read-your-writes** | `appearance style set transparency` → `style get` | Reports `transparency` | VERIFIED |
+| **Authority convergence** | `settings get visual-style` after `appearance` set | Agrees (`transparency`) | VERIFIED |
+| **Protocol stability** | `status` on running GUI | `Protocol: v2` (unchanged) | VERIFIED |
+| **Layout invariant** | Window geometry before/after style switch | Identical (`1062x883` at same origin) | VERIFIED |
+| **Offline status** | `appearance status --json` (GUI offline) | Schema `shelly.appearance-status/1`, `committed-config` | VERIFIED |
+| **Resolve matrix** | `appearance resolve` / `resolve menu` | 13 roles listed; `menu` → scrim yes, 4 effects | VERIFIED |
+| **Rejections** | `style set neon`, `resolve glass-card` | Clean errors, exit `1` | VERIFIED |
+| **Settings selector** | Wayland screenshot, committed config `transparency` | `Visual Style / Transparency ▾` row rendered in APPEARANCE section | VERIFIED |
+
+Visual evidence: `evidence_style00a_settings_selector.png` (cropped
+`shelly-gpui` window, native Wayland, code-identical build).
+
+### Documented capture limitations (non-blocking)
+
+- The dropdown-open state is proven by unit tests (`open`/`navigate`/
+  `select`/dirty/save) over the shared, previously evidenced `MenuSurface`;
+  no input-injection path was available for a live open-menu capture
+  (`hyprctl dispatch` shim broken in this environment, no `ydotoold`
+  daemon, no `wlrctl`/`wtype`) and none was started for evidence alone.
+- An installed-binary re-capture was attempted and blocked by a parallel
+  agent's overlay window; the committed capture comes from a code-identical
+  build and the installed binary independently passed the full CLI matrix.
+- Operator environment restored after verification (`visual-style`
+  `standard`, window `1440.0x960.0`).
